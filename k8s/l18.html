@@ -1,0 +1,75 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 18 课 · 自动扩缩容：HPA、VPA 与节点扩缩</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 18 课</span><span class="sp"></span><a href="l17.html">← 第 17 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 18 课</div><h1>自动扩缩容：HPA、VPA 与节点扩缩</h1>
+<p>负载变化时，Kubernetes 可以在三个层面自动调整：Pod 的数量（HPA）、Pod 的资源大小（VPA）、节点的数量（Cluster Autoscaler、Karpenter）。本课讲它们的算法、相互关系和常见的配置错误。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">HPA 的控制循环</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">节点自动扩缩</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：HPA 怎么算</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>HPA 的控制循环</h2><div class="goal">从指标到副本数。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>节点自动扩缩</h2><div class="goal">Pod 放不下时加节点，空闲时减节点。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：HPA 怎么算</h2><div class="goal">Deployment 当前 4 个副本，每个 requests <code>cpu: 500m</code>，HPA 目标利用率 60%，min 2、max 10。选择当前的平均 CPU 用量，看 HPA 的决定。</div></div></div>
+<div class="chal"><div class="cmds" id="hl"></div><div class="log" id="hc" style="height:auto;min-height:90px"></div><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查看指标和扩缩容决策。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">kind 默认没有 metrics-server，先安装（kind 的 kubelet 使用自签名证书，需要 <code>--kubelet-insecure-tls</code>）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>安装 metrics-server。</p><pre class="cmd">kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+kubectl -n kube-system patch deploy metrics-server --type=json -p &#x27;[{&quot;op&quot;:&quot;add&quot;,&quot;path&quot;:&quot;/spec/template/spec/containers/0/args/-&quot;,&quot;value&quot;:&quot;--kubelet-insecure-tls&quot;}]&#x27;
+kubectl -n kube-system rollout status deploy/metrics-server; sleep 30; kubectl top nodes</pre><pre class="out">NAME                  CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)
+learn-control-plane   142m         1%       712Mi           9%
+learn-worker          31m          0%       245Mi           3%</pre></div></div><div class="st"><span class="n">02</span><div><p>部署一个带 requests 的应用。</p><pre class="cmd">kubectl create deployment php --image=registry.k8s.io/hpa-example
+kubectl set resources deploy php --requests=cpu=200m
+kubectl expose deploy php --port 80</pre><pre class="out">deployment.apps/php created
+deployment.apps/php resource requirements updated
+service/php exposed</pre></div></div><div class="st"><span class="n">03</span><div><p>创建 HPA。</p><pre class="cmd">kubectl autoscale deploy php --cpu-percent=50 --min=1 --max=8
+kubectl get hpa php</pre><pre class="out">NAME   REFERENCE        TARGETS       MINPODS   MAXPODS   REPLICAS
+php    Deployment/php   cpu: 0%/50%   1         8         1</pre></div></div><div class="st"><span class="n">04</span><div><p>另开一个终端施加负载。</p><pre class="cmd">kubectl run load --image=busybox --restart=Never -- sh -c &quot;while true; do wget -q -O- http://php; done&quot;</pre><pre class="out">pod/load created</pre></div></div><div class="st"><span class="n">05</span><div><p>观察扩容（约 1 分钟后）。</p><pre class="cmd">kubectl get hpa php --watch</pre><pre class="out">php    Deployment/php   cpu: 248%/50%   1   8   1
+php    Deployment/php   cpu: 248%/50%   1   8   5
+php    Deployment/php   cpu: 62%/50%    1   8   5
+php    Deployment/php   cpu: 51%/50%    1   8   7</pre></div></div><div class="st"><span class="n">06</span><div><p>停止负载，5 分钟稳定窗口后才缩容。</p><pre class="cmd">kubectl delete pod load
+kubectl describe hpa php | tail -3</pre><pre class="out">  Normal  SuccessfulRescale  6m   horizontal-pod-autoscaler  New size: 7; reason: cpu resource utilization (percentage of request) above target
+  Normal  SuccessfulRescale  12s  horizontal-pod-autoscaler  New size: 1; reason: All metrics below target</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>更快扩容、更慢缩容</h3><p>流量突增时上面的 HPA 每次只能翻倍（默认每 15 秒最多 100% 或 4 个 Pod，取大者）。改写为 <code>autoscaling/v2</code>：扩容时每 15 秒最多增加 4 倍、无稳定窗口；缩容时 10 分钟稳定窗口，每分钟最多减少 1 个 Pod。并解释为什么副本数达到 max 后 CPU 仍然超标也不会继续扩。</p><details><summary>查看参考答案</summary><div><pre class="cmd">apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: php}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: php}
+  minReplicas: 1
+  maxReplicas: 8
+  metrics:
+  - type: Resource
+    resource: {name: cpu, target: {type: Utilization, averageUtilization: 50}}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies: [{type: Percent, value: 300, periodSeconds: 15}]
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies: [{type: Pods, value: 1, periodSeconds: 60}]</pre><pre class="out">kubectl describe hpa php | grep ScalingLimited
+  ScalingLimited  True  TooManyReplicas  the desired replica count is more than the maximum replica count</pre><p>增加 300% 即变为 4 倍。maxReplicas 是硬上限：条件 ScalingLimited 会显示 TooManyReplicas。这时要么提高上限，要么检查瓶颈是否根本不在这个服务（例如数据库），否则加副本也没用。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>HPA 公式：<code>期望副本 = ceil(当前副本 × 当前指标 / 目标指标)</code>。CPU 利用率是相对 <b>requests</b> 计算的，没有 requests 的 Pod 无法按 CPU 扩缩。</li><li>HPA 每 15 秒计算一次；比值在 ±10% 容差内不调整；缩容默认有 5 分钟稳定窗口，防止抖动。<code>behavior</code> 字段可以控制扩缩速度。</li><li>指标来源：metrics-server（CPU、内存）、custom metrics（如 Prometheus Adapter 提供的 QPS）、external metrics（如队列长度）。KEDA 基于事件扩缩，可以缩到 0。</li><li>VPA 根据历史用量推荐或自动修改 requests。不要让 VPA 和 HPA 同时基于 CPU 工作：一个改分母，一个改副本数，会互相干扰。</li><li>节点扩缩：Pod 因资源不足 Pending → Cluster Autoscaler / Karpenter 添加节点；节点长时间利用率低且 Pod 能挪走 → 删除节点。它们看的也是 <b>requests</b>，不是实际用量。</li><li>扩容链条有延迟：指标采集 + HPA 周期 + 调度 + 新节点启动（分钟级）+ 镜像拉取 + 应用启动。突发流量需要预留余量或提前扩容。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 19</div><a class="big" href="l19.html">CRD 与 Operator：扩展 Kubernetes API →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l18.js"></script>
+</body></html>

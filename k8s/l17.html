@@ -1,0 +1,115 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 17 课 · 有状态与批处理：StatefulSet、DaemonSet、Job、CronJob</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 17 课</span><span class="sp"></span><a href="l16.html">← 第 16 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 17 课</div><h1>有状态与批处理：StatefulSet、DaemonSet、Job、CronJob</h1>
+<p>Deployment 适合可以随意替换的无状态副本。本课讲另外四种工作负载控制器：给每个副本固定身份和存储的 StatefulSet、每个节点一份的 DaemonSet、运行到完成的 Job，以及定时运行的 CronJob。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">StatefulSet：固定的身份</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Job 与 CronJob</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：StatefulSet 的扩缩与重建</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>StatefulSet：固定的身份</h2><div class="goal">名字、网络和存储都跟着序号走。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Job 与 CronJob</h2><div class="goal">运行到完成的工作，以及定时触发。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：StatefulSet 的扩缩与重建</h2><div class="goal">一个 <code>replicas: 2</code> 的 StatefulSet <code>db</code>，带 volumeClaimTemplates。依次操作，看 Pod 和 PVC 的变化。</div></div></div>
+<div class="chal"><div class="cmds" id="so"></div><div id="sv"></div><div class="msg" id="sm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查看和控制这四种工作负载。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 kind 集群里分别创建四种工作负载。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建 headless Service 和 StatefulSet。</p><pre class="cmd">kubectl apply -f - &lt;&lt;EOT
+apiVersion: v1
+kind: Service
+metadata: {name: db}
+spec: {clusterIP: None, selector: {app: db}, ports: [{port: 80}]}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: db}
+spec:
+  serviceName: db
+  replicas: 3
+  selector: {matchLabels: {app: db}}
+  template:
+    metadata: {labels: {app: db}}
+    spec: {containers: [{name: n, image: nginx:alpine, volumeMounts: [{name: data, mountPath: /usr/share/nginx/html}]}]}
+  volumeClaimTemplates:
+  - metadata: {name: data}
+    spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 100Mi}}}
+EOT
+kubectl rollout status sts/db; kubectl get pods,pvc -l app=db -o name</pre><pre class="out">pod/db-0
+pod/db-1
+pod/db-2
+persistentvolumeclaim/data-db-0
+persistentvolumeclaim/data-db-1
+persistentvolumeclaim/data-db-2</pre></div></div><div class="st"><span class="n">02</span><div><p>每个副本有自己的 DNS 名。</p><pre class="cmd">kubectl run t --rm -it --image=busybox --restart=Never -- nslookup db-1.db</pre><pre class="out">Name:      db-1.db.default.svc.cluster.local
+Address:   10.244.2.11</pre></div></div><div class="st"><span class="n">03</span><div><p>写入数据，删掉 Pod，重建后挂回同一个 PVC。</p><pre class="cmd">kubectl exec db-1 -- sh -c &quot;echo db-1 &gt; /usr/share/nginx/html/index.html&quot;
+kubectl delete pod db-1; kubectl wait --for=condition=Ready pod/db-1
+kubectl exec db-1 -- cat /usr/share/nginx/html/index.html</pre><pre class="out">db-1</pre></div></div><div class="st"><span class="n">04</span><div><p>DaemonSet：每个 worker 一个（控制平面有污点）。</p><pre class="cmd">kubectl create -f - &lt;&lt;EOT
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: agent}
+spec:
+  selector: {matchLabels: {app: agent}}
+  template:
+    metadata: {labels: {app: agent}}
+    spec: {containers: [{name: a, image: busybox, command: [sleep, &quot;3600&quot;]}]}
+EOT
+kubectl get pods -l app=agent -o custom-columns=NODE:.spec.nodeName --no-headers</pre><pre class="out">learn-worker
+learn-worker2</pre></div></div><div class="st"><span class="n">05</span><div><p>Job：5 次完成，并发 2。</p><pre class="cmd">kubectl apply -f - &lt;&lt;EOT
+apiVersion: batch/v1
+kind: Job
+metadata: {name: batch}
+spec:
+  completions: 5
+  parallelism: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers: [{name: w, image: busybox, command: [sh, -c, &quot;sleep 3; echo done&quot;]}]
+EOT
+kubectl wait --for=condition=Complete job/batch --timeout=60s; kubectl get job batch</pre><pre class="out">job.batch/batch condition met
+NAME    STATUS     COMPLETIONS   DURATION   AGE
+batch   Complete   5/5           11s        12s</pre></div></div><div class="st"><span class="n">06</span><div><p>CronJob：每分钟一次，不允许并发。</p><pre class="cmd">kubectl create cronjob tick --image=busybox --schedule=&quot;*/1 * * * *&quot; -- date
+kubectl patch cronjob tick -p &#x27;{&quot;spec&quot;:{&quot;concurrencyPolicy&quot;:&quot;Forbid&quot;}}&#x27;
+sleep 70; kubectl get jobs -l batch.kubernetes.io/cronjob-name=tick 2&gt;/dev/null || kubectl get jobs</pre><pre class="out">NAME            STATUS     COMPLETIONS   DURATION   AGE
+tick-29351234   Complete   1/1           4s         12s</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>失败重试与超时</h3><p>写一个 Job：命令以 70% 概率失败（<code>[ $((RANDOM%10)) -lt 3 ]</code>），最多重试 4 次，总时长不超过 60 秒，完成 1 小时后自动删除。失败的 Pod 应该留下来方便查日志还是被替换？restartPolicy 选哪个，两种选择下 backoffLimit 计数有什么区别？</p><details><summary>查看参考答案</summary><div><pre class="cmd">apiVersion: batch/v1
+kind: Job
+metadata: {name: flaky}
+spec:
+  backoffLimit: 4
+  activeDeadlineSeconds: 60
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: w
+        image: bash
+        command: [bash, -c, "[ $((RANDOM%10)) -lt 3 ]"]</pre><pre class="out">kubectl get pods -l job-name=flaky
+flaky-4xk2p   0/1   Error       0   40s
+flaky-9tqzr   0/1   Error       0   30s
+flaky-c7m1d   0/1   Completed   0   10s</pre><p><code>Never</code>：每次失败都创建新 Pod，旧的失败 Pod 留下，可以逐个看日志；backoffLimit 按失败的 Pod 数计。<code>OnFailure</code>：在同一个 Pod 里重启容器，日志只剩最近一次，计数按容器重启次数；Pod 不会堆积。重试间隔指数增长（10s、20s、40s…），所以 activeDeadlineSeconds 可能先到，到期后 Job 失败，原因为 DeadlineExceeded。需要按退出码区分可重试和不可重试的错误时，用 <code>podFailurePolicy</code>。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>StatefulSet</b>：副本名固定为 <code>名字-0、-1、-2</code>，默认按序号依次创建、倒序删除；配合 headless Service 每个副本有稳定的 DNS 名（<code>web-0.web.ns.svc</code>）；<code>volumeClaimTemplates</code> 给每个副本一个自己的 PVC，Pod 重建后挂回同一个。</li><li>缩容不会删除 PVC（默认），再扩容时数据还在。<code>persistentVolumeClaimRetentionPolicy</code> 可以改变这个行为。StatefulSet 只给身份，不负责数据复制：主从、选主是应用或 Operator 的事。</li><li><b>DaemonSet</b>：每个（匹配的）节点运行一个 Pod，新节点加入自动补上。用于日志采集、监控代理、CNI、CSI node 插件。通常需要容忍各种污点。</li><li><b>Job</b>：运行 Pod 直到成功 <code>completions</code> 次，<code>parallelism</code> 控制并发，<code>backoffLimit</code> 限制失败重试，<code>activeDeadlineSeconds</code> 限制总时长。Pod 的 restartPolicy 只能是 OnFailure 或 Never。Indexed 模式给每个 Pod 一个序号。</li><li><b>CronJob</b>：按 cron 表达式创建 Job。<code>concurrencyPolicy</code>（Allow / Forbid / Replace）决定上一次没跑完时怎么办；<code>timeZone</code> 指定时区；<code>startingDeadlineSeconds</code> 处理错过的调度。</li><li><code>ttlSecondsAfterFinished</code> 自动清理已完成的 Job；CronJob 用 <code>successfulJobsHistoryLimit</code> 保留历史。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 18</div><a class="big" href="l18.html">自动扩缩容：HPA、VPA 与节点扩缩 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l17.js"></script>
+</body></html>
