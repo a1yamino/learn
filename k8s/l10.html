@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 10 课 · 命名空间、标签与 kubectl 进阶</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 10 课</span><span class="sp"></span><a href="l09.html">← 第 9 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 10 课</div><h1>命名空间、标签与 kubectl 进阶</h1>
+<p>组织和查询集群里的大量对象：用命名空间划分团队和环境，用 ResourceQuota 和 LimitRange 设置边界，用标签和选择器把对象串起来，以及高效使用 kubectl 的技巧。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">命名空间与配额</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">标签把对象串起来</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：标签选择器</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">kubectl 进阶</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>命名空间与配额</h2><div class="goal">一个集群，多个团队。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>标签把对象串起来</h2><div class="goal">Deployment、ReplicaSet、Pod、Service 之间靠什么关联？</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：标签选择器</h2><div class="goal">集群里有 8 个 Pod。写选择器，看哪些被选中。</div></div></div>
+<div class="chal"><div class="cmds" id="qs1"></div><div id="pods" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0"></div><div class="msg" id="lm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>kubectl 进阶</h2><div class="goal">让查询和排查更快。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">给团队建一个有边界的命名空间。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建命名空间，并把它设为当前 context 的默认值。</p><pre class="cmd">kubectl create namespace team-a
+kubectl config set-context --current --namespace=team-a
+kubectl config view --minify -o jsonpath=&quot;{..namespace}&quot;</pre><pre class="out">namespace/team-a created
+Context &quot;kind-learn&quot; modified.
+team-a</pre></div></div><div class="st"><span class="n">02</span><div><p>设置配额和默认值。</p><pre class="cmd">kubectl apply -f - &lt;&lt;&#x27;EOF&#x27;
+apiVersion: v1
+kind: ResourceQuota
+metadata: { name: quota }
+spec:
+  hard: { requests.cpu: &quot;1&quot;, requests.memory: 1Gi, limits.memory: 2Gi, pods: &quot;10&quot; }
+---
+apiVersion: v1
+kind: LimitRange
+metadata: { name: defaults }
+spec:
+  limits:
+  - type: Container
+    default: { cpu: 200m, memory: 256Mi }
+    defaultRequest: { cpu: 100m, memory: 128Mi }
+EOF
+kubectl create deployment web --image=nginx:alpine --replicas=3
+kubectl get pod -l app=web -o jsonpath=&quot;{.items[0].spec.containers[0].resources}&quot;</pre><pre class="out">{&quot;limits&quot;:{&quot;cpu&quot;:&quot;200m&quot;,&quot;memory&quot;:&quot;256Mi&quot;},&quot;requests&quot;:{&quot;cpu&quot;:&quot;100m&quot;,&quot;memory&quot;:&quot;128Mi&quot;}}</pre></div></div><div class="st"><span class="n">03</span><div><p>扩容超出配额。</p><pre class="cmd">kubectl scale deploy web --replicas=12
+sleep 3; kubectl get deploy web
+kubectl get events --field-selector reason=FailedCreate | tail -1</pre><pre class="out">NAME   READY   UP-TO-DATE   AVAILABLE
+web    8/12    8            8
+Warning  FailedCreate  replicaset/web-…  Error creating: pods &quot;web-…&quot; is forbidden: exceeded quota: quota, requested: requests.memory=128Mi, used: requests.memory=1Gi, limited: requests.memory=1Gi</pre></div></div><div class="st"><span class="n">04</span><div><p>查看配额使用情况。</p><pre class="cmd">kubectl describe quota quota</pre><pre class="out">Resource         Used   Hard
+--------         ----   ----
+limits.memory    2Gi    2Gi
+pods             8      10
+requests.cpu     800m   1
+requests.memory  1Gi    1Gi</pre></div></div><div class="st"><span class="n">05</span><div><p>自定义列和排序。</p><pre class="cmd">kubectl get pods -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,START:.status.startTime --sort-by=.status.startTime | head -3</pre><pre class="out">NAME                  NODE            START
+web-5d9c7f6b8-2bxkq   learn-worker    2026-10-21T11:56:01Z
+web-5d9c7f6b8-8jz4n   learn-worker2   2026-10-21T11:56:01Z</pre></div></div><div class="st"><span class="n">06</span><div><p>跨命名空间按字段筛选：所有不在 Running 的 Pod。</p><pre class="cmd">kubectl get pods -A --field-selector=status.phase!=Running</pre><pre class="out">No resources found</pre></div></div><div class="st"><span class="n">07</span><div><p>切回 default，删除命名空间（其中的一切都会被删除）。</p><pre class="cmd">kubectl config set-context --current --namespace=default
+kubectl delete namespace team-a</pre><pre class="out">namespace &quot;team-a&quot; deleted</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>一行命令的排查报告</h3><p>写一条（可以用管道的）命令：列出<b>所有命名空间</b>里重启次数大于 0 的容器，输出“命名空间/Pod/容器 重启次数”，按重启次数从大到小排序。提示：<code>-o jsonpath</code> 的 range。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{" "}{range .status.containerStatuses[*]}{.name}{"="}{.restartCount}{" "}{end}{"\n"}{end}' \
+ | awk '{for(i=2;i&lt;=NF;i++){split($i,a,"=");if(a[2]&gt;0)print a[2], $1"/"a[1]}}' | sort -rn</pre><pre class="out">3 kube-system/kindnet-x7k2p/kindnet-cni
+1 default/lv/lv</pre><p>jsonpath 的 range 可以嵌套，但内层无法引用外层字段，所以先把每个 Pod 输出成一行（Pod 名 + 所有容器的“名=次数”），再交给 awk 拆开过滤。也可以用 <code>-o json | jq</code>：<code>jq -r '.items[] | .metadata as $m | .status.containerStatuses[]? | select(.restartCount&gt;0) | "\(.restartCount) \($m.namespace)/\($m.name)/\(.name)"' | sort -rn</code>。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>命名空间划分名字和权限（RBAC、配额、网络策略都按命名空间配置）。它<b>不</b>隔离网络：不同命名空间的 Pod 默认可以互相访问（第 21 课）。</li><li>ResourceQuota 限制整个命名空间的总量（CPU、内存、Pod 数、PVC 数…）；LimitRange 给没写 requests/limits 的容器设置默认值和上下限。</li><li><b>标签</b>用来选择（Service、Deployment、查询），<b>注解</b>存放给工具看的元数据（变更原因、构建信息）。推荐标签：<code>app.kubernetes.io/name</code>、<code>/instance</code>、<code>/version</code>、<code>/component</code>、<code>/part-of</code>。</li><li>选择器：等值（<code>app=web</code>、<code>env!=prod</code>）和集合（<code>env in (dev,staging)</code>、<code>!canary</code>）。Deployment 的选择器创建后不能修改。</li><li>kubectl 技巧：<code>-o custom-columns</code>、<code>-o jsonpath</code>、<code>--field-selector</code>、<code>--sort-by</code>、<code>kubectl api-resources</code>、<code>kubectl auth can-i</code>、别名和自动补全。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 11</div><a class="big" href="l11.html">控制平面：API Server、etcd、调度器、控制器 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l10.js"></script>
+</body></html>

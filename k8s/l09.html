@@ -1,0 +1,66 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 9 课 · 健康检查、资源请求与限制</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 9 课</span><span class="sp"></span><a href="l08.html">← 第 8 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 9 课</div><h1>健康检查、资源请求与限制</h1>
+<p>让 Kubernetes 知道你的应用是否活着、是否能接收流量、需要多少资源。本课讲三种探针的区别和常见误用、优雅终止，以及 requests、limits 和 QoS 等级如何影响调度与驱逐。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">三种探针</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">requests 与 limits</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：配置探针</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>三种探针</h2><div class="goal">它们问的是不同的问题。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>requests 与 limits</h2><div class="goal">调度看 requests，运行时看 limits。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：配置探针</h2><div class="goal">一个 Java 服务启动需要约 45 秒，之后在 /healthz 响应。依赖的数据库偶尔会断开 1 分钟。选择探针配置，看 3 分钟内发生了什么。</div></div></div>
+<div class="chal"><div class="cmds" id="pa"></div><div class="cmds" id="pb"></div><div class="log" id="pt" style="height:auto;min-height:120px"></div><div class="msg" id="pm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">观察探针、资源、QoS、驱逐。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">亲手看到每种探针的效果。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>readiness 失败：Pod 不重启，但从端点消失。</p><pre class="cmd">kubectl create deployment rd --image=nginx:alpine --replicas=2
+kubectl patch deployment rd --type=json -p=&#x27;[{&quot;op&quot;:&quot;add&quot;,&quot;path&quot;:&quot;/spec/template/spec/containers/0/readinessProbe&quot;,&quot;value&quot;:{&quot;httpGet&quot;:{&quot;path&quot;:&quot;/ready&quot;,&quot;port&quot;:80},&quot;periodSeconds&quot;:2}}]&#x27;
+kubectl expose deployment rd --port 80
+sleep 15; kubectl get pods -l app=rd; kubectl get endpointslices -l kubernetes.io/service-name=rd -o jsonpath=&quot;{.items[0].endpoints[*].conditions.ready}&quot;</pre><pre class="out">rd-5c9f…   0/1   Running   0   12s
+rd-5c9f…   0/1   Running   0   12s
+false false</pre></div></div><div class="st"><span class="n">02</span><div><p>让其中一个 Pod 就绪（创建 /ready 文件）。</p><pre class="cmd">P=$(kubectl get pod -l app=rd -o name | head -1)
+kubectl exec $P -- sh -c &quot;echo ok &gt; /usr/share/nginx/html/ready&quot;
+sleep 4; kubectl get pods -l app=rd</pre><pre class="out">rd-5c9f…-a   1/1   Running   0   40s
+rd-5c9f…-b   0/1   Running   0   40s</pre></div></div><div class="st"><span class="n">03</span><div><p>liveness 失败：容器被重启。</p><pre class="cmd">kubectl run lv --image=busybox --overrides=&#x27;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;lv&quot;,&quot;image&quot;:&quot;busybox&quot;,&quot;command&quot;:[&quot;sh&quot;,&quot;-c&quot;,&quot;touch /tmp/ok; sleep 20; rm /tmp/ok; sleep 600&quot;],&quot;livenessProbe&quot;:{&quot;exec&quot;:{&quot;command&quot;:[&quot;cat&quot;,&quot;/tmp/ok&quot;]},&quot;periodSeconds&quot;:3,&quot;failureThreshold&quot;:2}}]}}&#x27;
+sleep 40; kubectl get pod lv; kubectl describe pod lv | grep -m1 Unhealthy</pre><pre class="out">lv   1/1   Running   1 (8s ago)   40s
+Warning  Unhealthy  … Liveness probe failed: cat: can&#x27;t open &#x27;/tmp/ok&#x27;: No such file or directory</pre></div></div><div class="st"><span class="n">04</span><div><p>QoS 等级。</p><pre class="cmd">kubectl run g --image=nginx:alpine --overrides=&#x27;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;g&quot;,&quot;image&quot;:&quot;nginx:alpine&quot;,&quot;resources&quot;:{&quot;requests&quot;:{&quot;cpu&quot;:&quot;100m&quot;,&quot;memory&quot;:&quot;64Mi&quot;},&quot;limits&quot;:{&quot;cpu&quot;:&quot;100m&quot;,&quot;memory&quot;:&quot;64Mi&quot;}}}]}}&#x27;
+kubectl get pod g lv -o custom-columns=NAME:.metadata.name,QOS:.status.qosClass</pre><pre class="out">NAME   QOS
+g      Guaranteed
+lv     BestEffort</pre></div></div><div class="st"><span class="n">05</span><div><p>节点上已经被预留了多少？</p><pre class="cmd">kubectl describe node learn-worker | grep -A6 &quot;Allocated resources&quot;</pre><pre class="out">Allocated resources:
+  Resource           Requests     Limits
+  --------           --------     ------
+  cpu                200m (2%)    100m (1%)
+  memory             64Mi (0%)    64Mi (0%)</pre></div></div><div class="st"><span class="n">06</span><div><p>requests 太大，无法调度。</p><pre class="cmd">kubectl run big --image=nginx:alpine --overrides=&#x27;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;b&quot;,&quot;image&quot;:&quot;nginx:alpine&quot;,&quot;resources&quot;:{&quot;requests&quot;:{&quot;cpu&quot;:&quot;500&quot;}}}]}}&#x27;
+sleep 3; kubectl get pod big; kubectl describe pod big | grep -m1 FailedScheduling</pre><pre class="out">big   0/1   Pending   0   3s
+Warning  FailedScheduling  0/3 nodes are available: 3 Insufficient cpu.</pre></div></div><div class="st"><span class="n">07</span><div><p>清理。</p><pre class="cmd">kubectl delete deploy rd; kubectl delete svc rd; kubectl delete pod lv g big</pre><pre class="out">pod &quot;big&quot; deleted</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>优雅终止</h3><p>部署 3 副本的 nginx + Service，用第 4 课挑战里的 probe Pod 持续请求。分别在<b>没有</b>和<b>有</b> <code>preStop: sleep 5</code> 的情况下执行 <code>kubectl rollout restart</code>，比较失败请求数，并解释原因。</p><details><summary>查看参考答案</summary><div><pre class="cmd">        lifecycle:
+          preStop:
+            exec: { command: ["sleep", "5"] }
+      terminationGracePeriodSeconds: 30</pre><pre class="out">没有 preStop：ok=503 bad=4
+有 preStop：  ok=511 bad=0</pre><p>删除 Pod 时，两件事<b>并行</b>开始：(1) 端点控制器把 Pod 从 EndpointSlice 删除，各节点 kube-proxy 再更新规则；(2) kubelet 向容器发送 SIGTERM。nginx 收到 SIGTERM 很快就退出了，而有些节点的转发规则还没更新，仍在把请求发给它 → 失败。preStop 先睡 5 秒，等规则传播完毕再让进程开始退出。preStop 的时间计入 terminationGracePeriodSeconds。（新版本 Kubernetes 也可以用 <code>sleep</code> 动作代替 exec。）</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>readinessProbe</b>：失败就从 Service 端点中摘除，不重启。<b>livenessProbe</b>：失败就重启容器。<b>startupProbe</b>：启动完成前暂停另外两个探针，保护慢启动的应用。</li><li>liveness 只检查进程自身是否卡死，<b>不要</b>检查数据库等外部依赖：依赖出问题时重启所有 Pod 只会让情况更糟。</li><li>优雅终止：Pod 删除时同时开始“从端点摘除”和“发 SIGTERM”。用 <code>preStop</code> 短暂等待，应用收到 SIGTERM 后处理完已有请求再退出，在 <code>terminationGracePeriodSeconds</code>（默认 30 秒）内完成。</li><li><b>requests</b> 用于调度：节点上 requests 之和不能超过可分配资源。<b>limits</b> 是运行时上限：CPU 超了被节流，内存超了被 OOMKill（Docker 第 21 课）。</li><li>QoS：requests = limits → Guaranteed；只设了部分 → Burstable；都没设 → BestEffort。节点内存紧张时，BestEffort 最先被驱逐。</li><li>常见做法：内存 requests = limits；CPU 设 requests，不设或放宽 limits，避免节流。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 10</div><a class="big" href="l10.html">命名空间、标签与 kubectl 进阶 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l09.js"></script>
+</body></html>
