@@ -1,0 +1,96 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 3 课 · Pod：最小的部署单元</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 3 课</span><span class="sp"></span><a href="l02.html">← 第 2 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 3 课</div><h1>Pod：最小的部署单元</h1>
+<p>Kubernetes 不直接调度容器，而是调度 Pod。本课讲 Pod 里的容器共享什么、什么时候把多个容器放进一个 Pod、init 容器和 sidecar、Pod 的生命周期与重启策略，以及如何用 YAML 写一个 Pod。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">Pod 里共享什么</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Pod 的一生</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：放进同一个 Pod 吗？</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>Pod 里共享什么</h2><div class="goal">两个容器，一个 IP。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Pod 的一生</h2><div class="goal">从创建到结束，以及崩溃时会发生什么。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：放进同一个 Pod 吗？</h2><div class="goal">对每一组，判断它们应该放在同一个 Pod，还是分成两个 Pod（各自由 Deployment 管理）。</div></div></div>
+<div class="chal"><div id="pairs"></div><div class="msg" id="pm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">创建、查看、调试 Pod。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">继续使用第 2 课的 kind 集群（<code>kind create cluster --name learn --config kind.yaml</code>）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>一个双容器 Pod：nginx 提供页面，另一个容器每 5 秒写入页面内容。两者共享一个 emptyDir 卷。</p><pre class="cmd">cat &gt; two.yaml &lt;&lt;&#x27;EOF&#x27;
+apiVersion: v1
+kind: Pod
+metadata:
+  name: two
+  labels: { app: two }
+spec:
+  volumes:
+  - name: html
+    emptyDir: {}
+  containers:
+  - name: web
+    image: nginx:alpine
+    volumeMounts: [{ name: html, mountPath: /usr/share/nginx/html }]
+  - name: writer
+    image: busybox
+    command: [&quot;sh&quot;,&quot;-c&quot;,&quot;while true; do date &gt; /out/index.html; sleep 5; done&quot;]
+    volumeMounts: [{ name: html, mountPath: /out }]
+EOF
+kubectl apply -f two.yaml &amp;&amp; kubectl wait --for=condition=Ready pod/two
+kubectl get pod two</pre><pre class="out">pod/two created
+pod/two condition met
+NAME   READY   STATUS    RESTARTS   AGE
+two    2/2     Running   0          9s</pre></div></div><div class="st"><span class="n">02</span><div><p>从 writer 容器访问 localhost:80：它和 nginx 共享网络。</p><pre class="cmd">kubectl exec two -c writer -- wget -qO- localhost</pre><pre class="out">Mon Oct 21 11:31:05 UTC 2026</pre></div></div><div class="st"><span class="n">03</span><div><p>两个容器看到同一个 IP。</p><pre class="cmd">kubectl exec two -c web -- hostname -i; kubectl exec two -c writer -- hostname -i</pre><pre class="out">10.244.1.5
+10.244.1.5</pre></div></div><div class="st"><span class="n">04</span><div><p>制造一个崩溃的 Pod。</p><pre class="cmd">kubectl run crash --image=busybox -- sh -c &quot;echo starting; exit 1&quot;
+sleep 40; kubectl get pod crash</pre><pre class="out">NAME    READY   STATUS             RESTARTS      AGE
+crash   0/1     CrashLoopBackOff   3 (15s ago)   41s</pre></div></div><div class="st"><span class="n">05</span><div><p>看上一次崩溃的日志和退出码。</p><pre class="cmd">kubectl logs crash --previous
+kubectl get pod crash -o jsonpath=&quot;{.status.containerStatuses[0].lastState.terminated.exitCode}&quot;</pre><pre class="out">starting
+1</pre></div></div><div class="st"><span class="n">06</span><div><p>init 容器：等待一个条件后才启动主容器。</p><pre class="cmd">kubectl run waiter --image=nginx:alpine --dry-run=client -o yaml &gt; w.yaml
+# 在 spec 下加入：
+#  initContainers:
+#  - name: wait
+#    image: busybox
+#    command: [&quot;sh&quot;,&quot;-c&quot;,&quot;sleep 10&quot;]
+kubectl apply -f w.yaml; kubectl get pod waiter</pre><pre class="out">NAME     READY   STATUS     RESTARTS   AGE
+waiter   0/1     Init:0/1   0          3s</pre></div></div><div class="st"><span class="n">07</span><div><p>清理。</p><pre class="cmd">kubectl delete pod two crash waiter</pre><pre class="out">pod &quot;two&quot; deleted
+pod &quot;crash&quot; deleted
+pod &quot;waiter&quot; deleted</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>原生 sidecar 与日志</h3><p>写一个 Pod：主容器 <code>busybox</code> 每秒往 <code>/logs/app.log</code> 追加一行；一个<b>原生 sidecar</b>（initContainers 里 <code>restartPolicy: Always</code>）用 <code>tail -F</code> 把它输出到标准输出。用 <code>kubectl logs</code> 从 sidecar 读到日志。再说明：为什么 sidecar 要写在 initContainers 里？</p><details><summary>查看参考答案</summary><div><pre class="cmd">apiVersion: v1
+kind: Pod
+metadata: { name: logdemo }
+spec:
+  volumes: [{ name: logs, emptyDir: {} }]
+  initContainers:
+  - name: shipper
+    image: busybox
+    restartPolicy: Always
+    command: ["sh","-c","touch /logs/app.log; tail -F /logs/app.log"]
+    volumeMounts: [{ name: logs, mountPath: /logs }]
+  containers:
+  - name: app
+    image: busybox
+    command: ["sh","-c","i=0; while true; do echo line $i >> /logs/app.log; i=$((i+1)); sleep 1; done"]
+    volumeMounts: [{ name: logs, mountPath: /logs }]</pre><pre class="cmd">kubectl apply -f logdemo.yaml; sleep 5; kubectl logs logdemo -c shipper --tail 2</pre><pre class="out">line 3
+line 4</pre><p>写在 initContainers 里并设 <code>restartPolicy: Always</code>（Kubernetes 1.29 起默认开启）：它<b>先于</b>主容器启动，主容器启动时它已就绪，不会丢掉最早的日志；Pod 结束时它<b>最后</b>停止；对 Job 来说，主容器完成后 sidecar 不会阻止 Pod 结束。普通的第二个容器做不到这些顺序保证。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>Pod 是一组共享<b>网络命名空间</b>（同一个 IP、同一个 localhost）和<b>卷</b>的容器，总是被调度到同一个节点。</li><li>一个 Pod 通常只有一个主容器。只有<b>必须</b>共享网络或文件、必须一起扩缩容的辅助进程才放进同一个 Pod（sidecar：日志收集、代理）。</li><li>init 容器按顺序运行并成功退出后，主容器才启动。原生 sidecar 是 <code>restartPolicy: Always</code> 的 init 容器，会和主容器一起运行。</li><li>阶段：Pending → Running → Succeeded / Failed。容器崩溃后按 <code>restartPolicy</code> 重启，间隔指数增长，表现为 <b>CrashLoopBackOff</b>。</li><li>Pod 是一次性的：被删除或节点故障后不会自己回来，IP 也会变。生产中几乎不直接创建 Pod，而是用 Deployment 等控制器（第 4 课）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 04</div><a class="big" href="l04.html">Deployment：滚动更新与回滚 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l03.js"></script>
+</body></html>

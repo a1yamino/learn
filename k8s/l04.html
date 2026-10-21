@@ -1,0 +1,80 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 4 课 · Deployment：滚动更新与回滚</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 4 课</span><span class="sp"></span><a href="l03.html">← 第 3 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 4 课</div><h1>Deployment：滚动更新与回滚</h1>
+<p>Deployment 是运行无状态服务的标准方式。本课讲 Deployment、ReplicaSet、Pod 三层关系，滚动更新如何在不停机的情况下替换所有 Pod，maxSurge 和 maxUnavailable 怎么取值，以及回滚和暂停。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">三层对象</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">滚动更新</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：调整滚动参数</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>三层对象</h2><div class="goal">你创建 Deployment，它创建其余的一切。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>滚动更新</h2><div class="goal">从 v1 到 v2，服务一直在线。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：调整滚动参数</h2><div class="goal">4 个副本，从 v1 更新到 v2。设置 maxSurge 和 maxUnavailable，然后一步一步执行，看每一步有几个 Pod 在服务。</div></div></div>
+<div class="chal"><div class="cmds" id="ms"></div><div class="cmds" id="mu"></div><div class="cmds"><button class="btn pri" id="step">下一步</button><button class="btn" id="rst">重新开始</button></div><div id="rs" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-height:40px;margin:12px 0"></div><div class="msg" id="rm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">更新、观察、回滚、暂停。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">完整走一遍：部署、更新、坏版本、回滚。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>部署 v1。--record 已弃用，用注解记录变更原因。</p><pre class="cmd">kubectl create deployment web --image=nginx:1.26-alpine --replicas=4
+kubectl annotate deployment web kubernetes.io/change-cause=&quot;v1 nginx 1.26&quot;
+kubectl rollout status deployment web</pre><pre class="out">deployment &quot;web&quot; successfully rolled out</pre></div></div><div class="st"><span class="n">02</span><div><p>更新到 v2，同时观察 ReplicaSet。</p><pre class="cmd">kubectl set image deployment web nginx=nginx:1.27-alpine
+kubectl annotate deployment web kubernetes.io/change-cause=&quot;v2 nginx 1.27&quot; --overwrite
+kubectl rollout status deployment web
+kubectl get rs</pre><pre class="out">Waiting for deployment &quot;web&quot; rollout to finish: 2 out of 4 new replicas have been updated...
+deployment &quot;web&quot; successfully rolled out
+NAME             DESIRED   CURRENT   READY   AGE
+web-6b7f9c8d5d   4         4         4       20s
+web-7c5b8d6f9b   0         0         0       2m</pre></div></div><div class="st"><span class="n">03</span><div><p>部署一个不存在的镜像。</p><pre class="cmd">kubectl set image deployment web nginx=nginx:9.9-doesnotexist
+kubectl rollout status deployment web --timeout=30s; echo exit=$?
+kubectl get pods</pre><pre class="out">error: timed out waiting for the condition
+exit=1
+web-6b7f9c8d5d-…   1/1   Running        (×3)
+web-85d4c7b9f-…    0/1   ErrImagePull   (×2)</pre></div></div><div class="st"><span class="n">04</span><div><p>注意：旧版本仍有 3 个在服务（maxUnavailable 默认 25% = 1）。查看历史并回滚。</p><pre class="cmd">kubectl rollout history deployment web
+kubectl rollout undo deployment web
+kubectl rollout status deployment web</pre><pre class="out">REVISION  CHANGE-CAUSE
+1         v1 nginx 1.26
+2         v2 nginx 1.27
+3         v2 nginx 1.27
+deployment.apps/web rolled back
+deployment &quot;web&quot; successfully rolled out</pre></div></div><div class="st"><span class="n">05</span><div><p>回滚到指定版本。</p><pre class="cmd">kubectl rollout undo deployment web --to-revision=1
+kubectl get deploy web -o jsonpath=&quot;{.spec.template.spec.containers[0].image}&quot;</pre><pre class="out">deployment.apps/web rolled back
+nginx:1.26-alpine</pre></div></div><div class="st"><span class="n">06</span><div><p>改副本数不产生新 ReplicaSet。</p><pre class="cmd">kubectl scale deployment web --replicas=6 &amp;&amp; kubectl get rs --no-headers | wc -l</pre><pre class="out">3</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>零中断更新</h3><p>用 YAML 管理 web：4 副本，<code>maxUnavailable: 0</code>、<code>maxSurge: 1</code>，nginx 带一个 readinessProbe（HTTP GET /）。在另一个终端用 <code>kubectl port-forward</code> 不可行（只连一个 Pod），改为在集群里运行一个循环请求的 Pod，持续请求 Service（先 <code>kubectl expose deployment web --port 80</code>）。更新镜像，统计失败请求数。</p><details><summary>查看参考答案</summary><div><pre class="cmd">spec:
+  replicas: 4
+  strategy:
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  template:
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.26-alpine
+        readinessProbe:
+          httpGet: { path: /, port: 80 }
+          periodSeconds: 2</pre><pre class="cmd">kubectl apply -f web.yaml &amp;&amp; kubectl expose deployment web --port 80
+kubectl run probe --image=busybox -- sh -c 'ok=0; bad=0; while true; do if wget -qO- -T1 web >/dev/null; then ok=$((ok+1)); else bad=$((bad+1)); fi; echo "ok=$ok bad=$bad"; sleep 0.2; done'
+kubectl set image deployment web nginx=nginx:1.27-alpine &amp;&amp; kubectl rollout status deployment web
+kubectl logs probe --tail 1</pre><pre class="out">ok=412 bad=0</pre><p><code>maxUnavailable: 0</code> 保证任何时刻至少 4 个就绪 Pod；新 Pod 只有通过 readinessProbe 才会接收流量。真实应用还要处理关闭：收到 SIGTERM 后停止接收新请求、处理完已有请求再退出（第 9 课会讲 preStop 和优雅终止）。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>Deployment 管理 ReplicaSet，ReplicaSet 管理 Pod。修改 Pod 模板（镜像、环境变量…）会创建一个<b>新的 ReplicaSet</b>；只改副本数不会。</li><li>滚动更新：逐步扩大新 ReplicaSet、缩小旧 ReplicaSet。<code>maxSurge</code> 是允许多出的 Pod 数，<code>maxUnavailable</code> 是允许不可用的 Pod 数。</li><li>新 Pod 只有<b>就绪</b>（readiness，第 9 课）后才算可用，滚动才继续。新版本起不来，滚动会卡住，旧 Pod 仍在服务。</li><li>旧 ReplicaSet 保留（<code>revisionHistoryLimit</code>，默认 10），所以 <code>kubectl rollout undo</code> 能快速回滚。</li><li><code>strategy: Recreate</code> 先删光旧 Pod 再建新的，会中断服务，只用于不能同时运行两个版本的应用。</li><li><code>progressDeadlineSeconds</code>：超时未完成，Deployment 标记为失败，<code>rollout status</code> 返回非 0，CI 据此判断。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 05</div><a class="big" href="l05.html">Service：服务发现与负载均衡 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l04.js"></script>
+</body></html>
