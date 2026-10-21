@@ -1,9 +1,8 @@
-# Learn · 互动技术课程
+# 学习
 
-> 按顺序推进的互动技术课程。每节课包含可操作的图解、模拟终端、常见错误和自测题。
-> *Interactive tech courses in Chinese.*
+互动技术课程，中文。 / Interactive tech courses in Chinese.
 
-🌐 **在线访问 / Live site：https://a1yamino.github.io/learn/**
+网址 / Site：https://a1yamino.github.io/learn/
 
 ## 课程 / Courses
 

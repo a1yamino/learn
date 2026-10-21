@@ -1,15 +1,22 @@
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Docker 第 1 课 · 为什么需要 Docker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/stage.css"></head><body>
-<div class="app">
-<div class="top"><a href="../index.html"><span class="dot"></span>Learn</a><a href="index.html">Docker</a><span>第 1 课 · 为什么需要 Docker</span><span class="sp"></span><a href="l02.html">第 2 课 →</a></div>
-<main class="stage" aria-live="polite"><div class="board"></div></main>
-<aside class="panel"><div class="swap"><div class="ch"></div><h1></h1><div class="body"></div><div class="act"></div></div><div class="sp"></div></aside>
-<div class="foot"><button class="nb" id="prev">← 上一步</button><div class="ticks"></div><span class="count"></span><button class="nb pri" id="next">下一步 →</button></div>
-</div>
-<script src="../assets/stage.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/stage.css"><link rel="stylesheet" href="../assets/scroll.css"></head><body class="scroll">
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a href="index.html">Docker</a><span>第 1 课</span><span class="sp"></span><a href="l02.html">第 2 课 →</a></div><div class="prog"></div>
+<section class="lede"><div class="k">Docker · 第 1 课</div>
+<h1>为什么需要 Docker</h1>
+<div class="row"><p>内容：Docker 解决什么问题；镜像和容器是什么、怎样配合。约 15 分钟。</p>
+<ol><li>问题：环境不一致</li><li>虚拟机与容器</li><li>镜像与容器</li><li>前三条命令</li><li>自测与小结</li></ol></div></section>
+<section class="story"><div class="stage"><div class="board"></div></div><div class="steps">
+<div class="chap"><div class="no">01</div><h2>代码一样，环境不一样。</h2></div><div class="st"><h3>本地一切正常</h3><p>你在自己电脑上写了一个 Python 后端。环境是 Python 3.12、OpenSSL 3.0、requests 2.31。测试全部通过。</p></div><div class="st"><h3>服务器上跑不起来</h3><p>服务器是几年前装的，三个版本都更旧。同样的代码在这里报 <b>ImportError</b> 和 SSL 错误。</p><p>代码没变，变的是<b>环境</b>。</p></div><div class="st"><h3>把环境和代码一起打包</h3><p>Docker 把应用连同运行时、依赖库、配置打包成一个<b>镜像</b>。镜像里固定了这三个版本。</p></div><div class="st"><h3>在服务器上运行同一个镜像</h3><p>服务器只需要安装 Docker，然后运行这个镜像。镜像里的版本和你本地完全一样，服务器原来装了什么版本不再重要。</p></div><div class="chap"><div class="no">02</div><h2>虚拟机带着整个系统，容器只带应用。</h2></div><div class="st"><h3>虚拟机：每个应用一套系统</h3><p>以前的做法是虚拟机。Hypervisor 模拟出多台“电脑”，每台都要装自己的操作系统（<b>Guest OS</b>）。</p><p>三个应用 = 三套操作系统，每套占用 GB 级的磁盘和内存。</p></div><div class="st"><h3>容器：共享宿主机内核</h3><p>容器去掉了 Guest OS，只保留应用和它的依赖，所有容器共用宿主机的 Linux 内核。</p><p>隔离靠内核功能：<code>namespace</code> 让容器看不到彼此的进程和网络，<code>cgroups</code> 限制 CPU 和内存。所以，<b>容器就是一个被隔离起来的普通进程</b>。</p></div><div class="st"><h3>结果：更快、更小</h3><p>不用启动操作系统，容器通常不到一秒就能启动；镜像通常只有几十到几百 MB。</p><p>代价：隔离不如虚拟机彻底，而且容器必须使用宿主机的内核。在 Mac 和 Windows 上，Docker Desktop 会先启动一个小型 Linux 虚拟机。</p></div><div class="chap"><div class="no">03</div><h2>镜像是只读的层，容器在上面加一层可写层。</h2></div><div class="st"><h3>镜像由只读层组成</h3><p>镜像是一叠<b>只读层</b>。每一层记录一次文件变化：基础系统、安装的依赖、你的代码。层生成之后就不再改变。</p></div><div class="st"><h3>docker run：加一层可写层</h3><p>执行 <code>docker run</code> 时，Docker 不复制镜像，而是在只读层上面加一层<b>可写层</b>，然后启动进程。</p><p>只读层 + 可写层 + 运行中的进程 = <b>容器</b>。</p></div><div class="st"><h3>多个容器共享同一份镜像</h3><p>再运行两次，得到三个容器。只读层在磁盘上仍然<b>只有一份</b>，每个容器只多出自己的可写层。这就是容器启动快、占用小的原因。</p></div><div class="st"><h3>写入只影响自己</h3><p>容器 1 写入了 <code>/tmp/log.txt</code>。文件进入容器 1 自己的可写层，镜像和另外两个容器都看不到它。这叫<b>写时复制</b>（Copy-on-Write）。</p></div><div class="st"><h3>删除容器，镜像不变</h3><p><code>docker rm</code> 删除容器 3，它的可写层和里面的数据一起被删除。镜像不受影响，随时可以再启动新容器。</p><p>需要长期保存的数据（比如数据库）要放在 <b>Volume</b> 里，第 6 课会讲。</p></div><div style="height:30vh"></div></div></section>
+<section class="sec"><div class="hd"><div class="no">04</div><h2>前三条命令</h2><p>先安装 Docker Desktop（Mac / Windows）或 Docker Engine（Linux），然后在终端依次执行。点击标签切换命令。</p></div>
+<div class="term" id="term"><div class="tabs" role="tablist"></div><pre></pre><div class="ex"></div></div></section>
+<section class="sec"><div class="hd"><div class="no">05</div><h2>自测</h2><p>三道题，选完立即显示对错和解释。</p></div><div class="qs qz" id="qs"></div></section>
+<section class="sec"><div class="hd"><div class="no">小结</div><h2>记住这五点</h2></div><ol class="sum">
+<li>Docker 把应用和运行环境一起打包成镜像，解决环境不一致。</li><li>容器共享宿主机内核，比虚拟机启动快、占用小。隔离靠 namespace 和 cgroups。</li><li>镜像由只读层组成。容器 = 镜像 + 一层可写层 + 运行中的进程。</li><li>多个容器共享同一个镜像的只读层；写入只进入各自的可写层。</li><li>删除容器会删除它的可写层。需要保存的数据放在 Volume 里。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 02</div><a class="big" href="l02.html">容器生命周期<br>与核心命令 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+<script src="../assets/scrollstage.js"></script>
 <script>
 const kv=(rows)=>rows.map(([k,v,x])=>`<div class="kv${x?' x':''}"><span>${k}</span><span>${v}</span></div>`).join('');
 const LAP=`<h6>你的电脑</h6>`+kv([['python','3.12'],['openssl','3.0'],['requests','2.31']]);
@@ -41,24 +48,13 @@ const CT={hw:[300,500],os:[300,452,{html:'宿主机操作系统 · 共享内核'
 const IMG={L1:[290,470],L2:[290,418],L3:[290,366],imgLab:[290,530]};
 const W={1:[290,318],2:[434,318],3:[578,318]};
 const scenes=[
-{ch:'开始',t:'为什么需要 Docker',b:'<p>这一课回答两个问题：</p><p><b>1.</b> Docker 解决什么问题。<br><b>2.</b> 镜像和容器分别是什么，怎样配合。</p><p>用 <code>←</code> <code>→</code> 键或下方按钮翻页。大约 15 分钟。</p>',set:{title:[90,190]}},
-{ch:'01 问题',t:'本地一切正常',b:'<p>你在自己电脑上写了一个 Python 后端。环境是 Python 3.12、OpenSSL 3.0、requests 2.31。测试全部通过。</p>',set:{lap:[110,150],okL:[110,370]}},
-{ch:'01 问题',t:'服务器上跑不起来',b:'<p>服务器是几年前装的，三个版本都更旧。同样的代码在这里报 <b>ImportError</b> 和 SSL 错误。</p><p>代码没变，变的是<b>环境</b>。</p>',set:{lap:[110,150],okL:[110,370],arrow:[430,220],srv:[610,150],stS:[610,370]}},
-{ch:'01 问题',t:'把环境和代码一起打包',b:'<p>Docker 把应用连同运行时、依赖库、配置打包成一个<b>镜像</b>。镜像里写死了这三个版本。</p>',set:{lap:[110,150],okL:[110,370],pkg:[95,128],arrow:[430,220],srv:[610,150],stS:[610,370]}},
-{ch:'01 问题',t:'在服务器上运行同一个镜像',b:'<p>服务器只需要安装 Docker，然后运行这个镜像。镜像里的版本和你本地完全一样，服务器原来装的是什么版本不再重要。</p>',set:{lap:[110,150],okL:[110,370],arrow:[430,220],pkg:[595,128],srv:[610,150,{html:SRV_NEW}],stS:[610,370,{html:'运行正常',cls:'pill ok'}]}},
-{ch:'02 隔离',t:'虚拟机：每个应用一套系统',b:'<p>以前的做法是虚拟机。Hypervisor 模拟出多台“电脑”，每台都要装自己的操作系统（<b>Guest OS</b>）。</p><p>三个应用 = 三套操作系统，每套占用 GB 级的磁盘和内存。</p>',set:VM},
-{ch:'02 隔离',t:'容器：共享宿主机内核',b:'<p>容器去掉了 Guest OS。容器里只有应用和它的依赖，所有容器共用宿主机的 Linux 内核。</p><p>隔离靠内核功能实现：<code>namespace</code> 让容器看不到彼此的进程和网络，<code>cgroups</code> 限制 CPU 和内存。</p><p>所以，<b>容器就是一个被隔离起来的普通进程</b>。</p>',set:CT},
-{ch:'02 隔离',t:'结果：更快、更小',b:'<p>不用启动操作系统，容器通常不到一秒就能启动；镜像通常只有几十到几百 MB。</p><p>代价：隔离不如虚拟机彻底，而且容器必须使用宿主机的内核。在 Mac 和 Windows 上，Docker Desktop 会先启动一个小型 Linux 虚拟机。</p>',set:{...CT,m1:[740,250],m2:[740,370]}},
-{ch:'03 镜像与容器',t:'镜像由只读层组成',b:'<p>镜像是一叠<b>只读层</b>。每一层记录一次文件变化：基础系统、安装的依赖、你的代码。</p><p>层生成之后就不再改变。下一课会讲这些层是怎么从 Dockerfile 来的。</p>',set:IMG},
-{ch:'03 镜像与容器',t:'docker run：加一层可写层',b:'<p>执行 <code>docker run</code> 时，Docker 不会复制镜像，而是在只读层上面加一层<b>可写层</b>，然后启动进程。</p><p>只读层 + 可写层 + 运行中的进程 = <b>容器</b>。</p>',set:{...IMG,W1:W[1]}},
-{ch:'03 镜像与容器',t:'多个容器共享同一份镜像',b:'<p>再运行两次，得到三个容器。只读层在磁盘上仍然<b>只有一份</b>，每个容器只多出自己的可写层。</p><p>这就是容器启动快、占用小的原因。</p>',set:{...IMG,W1:W[1],W2:W[2],W3:W[3]}},
-{ch:'03 镜像与容器',t:'写入只影响自己',b:'<p>容器 1 写入了 <code>/tmp/log.txt</code>。文件写进容器 1 自己的可写层。</p><p>镜像和另外两个容器都看不到它。这种机制叫<b>写时复制</b>（Copy-on-Write）。</p>',set:{...IMG,W1:W[1],W2:W[2],W3:W[3],f1:[308,280]}},
-{ch:'03 镜像与容器',t:'删除容器，镜像不变',b:'<p><code>docker rm</code> 删除容器 3，它的可写层一起被删除，里面写过的数据也没了。</p><p>镜像不受影响，随时可以再启动新容器。需要长期保存的数据（比如数据库）要放在 <b>Volume</b> 里，第 6 课会讲。</p>',set:{...IMG,W1:W[1],W2:W[2],f1:[308,280]}},
-{ch:'04 动手',t:'前三条命令',b:'<p>先安装 Docker Desktop（Mac / Windows）或 Docker Engine（Linux）。</p><p>然后在终端依次执行左边的三条命令。点击标签切换，查看输出和解释。</p><div id="tex" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)"></div>',set:{term:[90,90]},on:()=>termInit()},
-{ch:'05 自测',t:'三道题',b:'<p>在左侧作答，选完立即显示对错和解释。</p><p>如果有题答错，可以点下方的进度条回到对应的幕重看。</p>',set:{quiz:[150,70]},on:()=>quizInit()},
-{ch:'小结',t:'这一课的五个要点',b:'<p>下一课：容器从创建到删除的完整生命周期，以及最常用的命令。</p>',set:{sum:[120,80]},on:()=>{document.querySelector('[data-id=sum]').innerHTML='<h6>小结</h6>'+[
-'Docker 把应用和运行环境一起打包成镜像，解决环境不一致。','容器共享宿主机内核，比虚拟机启动快、占用小。隔离靠 namespace 和 cgroups。','镜像由只读层组成。容器 = 镜像 + 一层可写层 + 运行中的进程。','多个容器共享同一个镜像的只读层；写入只进入各自的可写层。','删除容器会删除它的可写层。需要保存的数据放在 Volume 里。'].map((t,i)=>`<div class="kv" style="font-family:var(--f);font-size:17px;padding:14px 0;justify-content:flex-start;gap:20px"><span style="font-family:var(--m);color:var(--sig)">0${i+1}</span><span>${t}</span></div>`).join('')}}
-];
+{set:{lap:[110,150],okL:[110,370]}},
+{set:{lap:[110,150],okL:[110,370],arrow:[430,220],srv:[610,150],stS:[610,370]}},
+{set:{lap:[110,150],okL:[110,370],pkg:[95,128],arrow:[430,220],srv:[610,150],stS:[610,370]}},
+{set:{lap:[110,150],okL:[110,370],arrow:[430,220],pkg:[595,128],srv:[610,150,{html:SRV_NEW}],stS:[610,370,{html:'运行正常',cls:'pill ok'}]}},
+{set:VM},{set:CT},{set:{...CT,m1:[740,250],m2:[740,370]}},
+{set:IMG},{set:{...IMG,W1:W[1]}},{set:{...IMG,W1:W[1],W2:W[2],W3:W[3]}},{set:{...IMG,W1:W[1],W2:W[2],W3:W[3],f1:[308,280]}},{set:{...IMG,W1:W[1],W2:W[2],f1:[308,280]}}];
+ScrollStage({els,scenes});
 const T=[['docker run hello-world',`Unable to find image 'hello-world:latest' locally
 latest: Pulling from library/hello-world
 c1ec31eb5944: Pull complete
@@ -70,17 +66,15 @@ This message shows that your installation appears to be working correctly.`,'<b>
 3f2a9c1b7d4e   hello-world   "/hello"   Exited (0) 1 minute ago   happy_turing`,'<code>docker ps</code> 只列出运行中的容器，加 <code>-a</code> 才显示已退出的。<b>Exited (0)</b> 表示正常结束。没有指定名字时，Docker 随机生成一个。'],
 ['docker images',`REPOSITORY    TAG       IMAGE ID       SIZE
 hello-world   latest    d2c94e258dcb   13.3kB`,'列出本地镜像。<b>REPOSITORY:TAG</b> 是名字和版本，默认标签是 latest。只有 13KB，因为里面只有一个小程序，没有操作系统。']];
-function termInit(){const el=document.querySelector('[data-id=term]'),tabs=el.querySelector('.tabs'),pre=el.querySelector('pre');if(tabs.children.length)return;let tm;
- T.forEach(([c,o,x])=>{const b=document.createElement('button');b.setAttribute('role','tab');b.textContent=c;b.onclick=()=>{tabs.querySelectorAll('button').forEach(z=>z.setAttribute('aria-selected',z===b));clearInterval(tm);let k=0;const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const draw=()=>pre.innerHTML=`<b>$ ${c}</b>\n<span>${esc(o.slice(0,k))}</span>`;const tex=document.getElementById('tex');if(tex)tex.innerHTML=x;
-  if(matchMedia('(prefers-reduced-motion: reduce)').matches){k=o.length;draw();return}tm=setInterval(()=>{k+=6;draw();if(k>=o.length)clearInterval(tm)},14)};tabs.appendChild(b)});tabs.firstChild.click()}
 const Q=[['镜像和容器的关系，哪一项最准确？',['镜像是运行中的进程，容器是文件','镜像是只读的层；容器是镜像加一层可写层，并作为进程运行','两者是同一个东西的不同叫法'],1,'容器在镜像的只读层上加了自己的可写层。'],
 ['用同一个镜像启动 3 个容器，镜像的只读层在磁盘上有几份？',['1 份，被共享','3 份','4 份'],0,'只读层共享，每个容器只多一层可写层。'],
 ['容器比虚拟机轻量的主要原因是？',['容器用的编程语言更快','容器共享宿主机内核，不需要各自运行操作系统','容器不能联网'],1,'没有 Guest OS，所以启动快、体积小。']];
-let qi=0,score=0;function quizInit(){qi=0;score=0;drawQ()}
-function drawQ(){const el=document.querySelector('[data-id=quiz]');if(qi>=Q.length){el.innerHTML=`<div class="qn">${Q.map(()=>'<span class="on"></span>').join('')}</div><h3>${score} / ${Q.length}</h3><p style="color:var(--ink2);font-size:17px">${score===Q.length?'全部正确，可以进入下一课。':'有题答错了。点下方进度条回到对应章节，再重做一次。'}</p><button class="nb" onclick="quizInit()">重做</button>`;return}
- const q=Q[qi];el.innerHTML=`<div class="qn">${Q.map((_,i)=>`<span class="${i<=qi?'on':''}"></span>`).join('')}</div><h3>${qi+1}. ${q[0]}</h3>`+q[1].map((o,i)=>`<button class="op" data-i="${i}"><i>${'ABC'[i]}</i><span>${o}</span></button>`).join('')+'<div class="fb"></div>';
- el.querySelectorAll('.op').forEach(b=>b.onclick=()=>{if(el.dataset.lock==='1')return;el.dataset.lock='1';const i=+b.dataset.i,ok=i===q[2];if(ok)score++;b.classList.add(ok?'r':'w');if(!ok)el.querySelectorAll('.op')[q[2]].classList.add('r');
-  el.querySelector('.fb').innerHTML=(ok?'<b style="color:var(--ok)">正确。</b>':'<b style="color:var(--bad)">不对。</b>')+q[3]+` <button class="nb" style="height:32px;margin-left:8px" id="qn">${qi<Q.length-1?'下一题':'看结果'}</button>`;document.getElementById('qn').onclick=()=>{el.dataset.lock='0';qi++;drawQ()}})}
-Stage({els,scenes,nextHref:'l02.html',nextLabel:'进入第 2 课 →'});
+(()=>{const el=document.getElementById('term'),tabs=el.querySelector('.tabs'),pre=el.querySelector('pre'),ex=el.querySelector('.ex');let tm;const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+T.forEach(([c,o,x])=>{const b=document.createElement('button');b.setAttribute('role','tab');b.textContent=c;b.onclick=()=>{tabs.querySelectorAll('button').forEach(z=>z.setAttribute('aria-selected',z===b));clearInterval(tm);let k=0;ex.innerHTML=x;
+ const draw=()=>pre.innerHTML=`<b>$ ${c}</b>\n<span>${esc(o.slice(0,k))}</span>`;if(matchMedia('(prefers-reduced-motion: reduce)').matches){k=o.length;draw();return}tm=setInterval(()=>{k+=6;draw();if(k>=o.length)clearInterval(tm)},14)};tabs.appendChild(b)});
+const io=new IntersectionObserver(([e])=>{if(e.isIntersecting){tabs.firstChild.click();io.disconnect()}},{threshold:.4});io.observe(el)})();
+(()=>{const el=document.getElementById('qs');let sc=0,dn=0;const res=document.createElement('div');res.className='res';res.hidden=true;
+Q.forEach((q,qi)=>{const d=document.createElement('div');d.className='q';d.innerHTML=`<h4>${qi+1}. ${q[0]}</h4>`+q[1].map((o,i)=>`<button class="op" data-i="${i}"><i>${'ABC'[i]}</i><span>${o}</span></button>`).join('')+'<div class="fb"></div>';
+ d.querySelectorAll('.op').forEach(b=>b.onclick=()=>{if(d.dataset.a)return;d.dataset.a=1;dn++;const i=+b.dataset.i,ok=i===q[2];if(ok)sc++;b.classList.add(ok?'r':'w');if(!ok)d.querySelectorAll('.op')[q[2]].classList.add('r');
+  d.querySelector('.fb').innerHTML=(ok?'<b style="color:var(--ok)">正确。</b>':'<b style="color:var(--bad)">不对。</b>')+q[3];if(dn===Q.length){res.hidden=false;res.textContent=sc===Q.length?`${sc} / ${Q.length}，全部正确。可以进入下一课。`:`${sc} / ${Q.length}。回到上面对应的章节再看一遍。`}});el.appendChild(d)});el.appendChild(res)})();
 </script></body></html>

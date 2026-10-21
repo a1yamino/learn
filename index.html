@@ -1,25 +1,12 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Learn · 互动技术课程</title>
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>学习</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/stage.css"></head><body class="hub">
-<div class="top"><a href="index.html"><span class="dot"></span>Learn</a><span class="sp"></span><a href="#list">课程</a><a href="https://github.com/a1yamino/learn">GitHub</a></div>
-<section class="hero"><div class="hl"><div class="tag">互动技术课程 · 中文 · 免费开源</div><div><h1>一幕<br>一个概念<span>.</span></h1><p>每节课是一组连续的画面。翻到下一幕，图里的元素会移动、拆开、重新组合，把概念演示出来。课末有终端练习和自测题。</p></div>
-<div><a class="nb pri" href="docker/l01.html">从 Docker 第 1 课开始 →</a></div></div>
-<div class="hr"><div class="board" id="demo" style="width:600px;height:600px"></div></div></section>
-<section class="list" id="list">
-<a href="docker/index.html"><span class="n">01</span><span><div class="t">Docker</div><div class="d">12 节课 · 适合初级后端工程师 · 镜像与容器、Dockerfile、Compose、网络、数据卷、部署</div></span><span class="s">更新中</span><span class="ar">→</span></a>
-<a class="off"><span class="n">02</span><span><div class="t">Kubernetes</div><div class="d">Docker 课程完成后开始</div></span><span class="s">计划中</span><span class="ar">→</span></a>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/stage.css"><link rel="stylesheet" href="assets/scroll.css"></head><body class="scroll hub">
+<div class="top"><a href="index.html"><span class="dot"></span>学习</a><span class="sp"></span><a href="https://github.com/a1yamino/learn">GitHub</a></div>
+<section class="lede" style="padding-bottom:8vh"><h1>学习</h1><div class="row"><p>互动技术课程，中文。</p><span></span></div></section>
+<section class="list" style="border-top:1px solid var(--line)">
+<a href="docker/index.html"><span class="n">01</span><span><div class="t">Docker</div><div class="d">12 节课，适合初级后端工程师。</div></span><span class="s">更新中</span><span class="ar">→</span></a>
+<a class="off"><span class="n">02</span><span><div class="t">Kubernetes</div><div class="d">计划中。</div></span><span class="s">计划中</span><span class="ar">→</span></a>
 </section>
-<footer><span>代码 MIT · 内容 CC BY 4.0</span><a href="https://github.com/a1yamino/learn">github.com/a1yamino/learn</a></footer>
-<script>
-/* hub demo: one image's layers, then containers stacking on top — loops slowly, pauses when hidden */
-(()=>{const b=document.getElementById('demo'),hr=b.parentNode,RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const fit=()=>{const r=hr.getBoundingClientRect(),k=Math.min(r.width/600,r.height/600)*.9;b.style.transform=`translate(-50%,-50%) scale(${k})`};b.style.position='absolute';b.style.left='50%';b.style.top='50%';b.style.transformOrigin='center';addEventListener('resize',fit);fit();
-const mk=(t,c,w,x,y)=>{const n=document.createElement('div');n.className='el blk '+c;n.style.width=w+'px';n.style.height='44px';n.textContent=t;n.dataset.x=x;n.dataset.y=y;n.style.transform=`translate(${x}px,${y+14}px)`;n.style.opacity=0;b.appendChild(n);return n};
-const L=[mk('FROM python:3.12-slim','dim',420,90,420),mk('RUN pip install','dim',420,90,370),mk('COPY app.py','dim',420,90,320)],W=[mk('容器 1','hatch',132,90,270),mk('容器 2','hatch',132,234,270),mk('容器 3','hatch',132,378,270)],all=[...L,...W];
-const cap=document.createElement('div');cap.className='el tag';cap.style.width='420px';cap.style.transform='translate(90px,490px)';cap.innerHTML='<b>镜像</b> 3 个只读层 · <b>容器</b> 各加 1 层可写层';b.appendChild(cap);
-const show=(n,on)=>{n.style.opacity=on?1:0;n.style.transform=`translate(${n.dataset.x}px,${+n.dataset.y+(on?0:-10)}px)`};
-if(RM){all.forEach(n=>show(n,1));return}
-let t=0,on=true;new IntersectionObserver(([e])=>on=e.isIntersecting).observe(hr);
-setInterval(()=>{if(!on||document.hidden)return;t=(t+1)%10;all.forEach((n,i)=>show(n,i<t-0));if(t===0)all.forEach(n=>show(n,0))},900)})();
-</script></body></html>
+<footer><span>代码 MIT · 内容 CC BY 4.0</span><a href="https://github.com/a1yamino/learn">GitHub</a></footer>
+</body></html>

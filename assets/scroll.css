@@ -1,0 +1,46 @@
+/* scroll-driven lesson layout (uses stage.css element styles) */
+body.scroll{overflow:auto;height:auto}
+.scroll .top{position:sticky;top:0;z-index:20;height:52px;background:rgba(246,245,241,.86);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.scroll .prog{position:fixed;top:51px;left:0;height:2px;width:100%;background:var(--sig);transform-origin:left;transform:scaleX(var(--p,0));z-index:21}
+.lede{padding:18vh 6vw 14vh;max-width:1400px;margin:0 auto}
+.lede .k{font:500 13px/1 var(--m);color:var(--ink2);letter-spacing:.08em}
+.lede h1{font:900 clamp(48px,8.4vw,132px)/1.02 var(--f);letter-spacing:-.045em;margin:28px 0 0}
+.lede h1 i{font-style:normal;color:var(--sig)}
+.lede .row{display:grid;grid-template-columns:1fr 1fr;gap:6vw;margin-top:9vh;padding-top:28px;border-top:1px solid var(--line)}
+.lede .row p{margin:0;font-size:19px;color:var(--ink2);max-width:560px}
+.lede ol{margin:0;padding:0;list-style:none;counter-reset:c;font:500 15px/2 var(--f)}
+.lede ol li{counter-increment:c;display:flex;gap:16px}.lede ol li:before{content:"0" counter(c);font:500 12px/2.5 var(--m);color:var(--sig)}
+.story{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(320px,1fr);border-top:1px solid var(--line)}
+.story .stage{position:sticky;top:52px;height:calc(100svh - 52px);border-right:1px solid var(--line)}
+.story .steps{padding:0 4vw 0 4vw}
+.chap{padding:22vh 0 6vh}
+.chap .no{font:500 12px/1 var(--m);color:var(--sig);letter-spacing:.1em}
+.chap h2{font:900 clamp(34px,3.6vw,56px)/1.08 var(--f);letter-spacing:-.035em;margin:16px 0 0}
+.st{min-height:88vh;display:flex;flex-direction:column;justify-content:center;opacity:.25;transition:opacity 400ms var(--e-out)}
+.st.on{opacity:1}
+.st h3{font:800 26px/1.3 var(--f);letter-spacing:-.02em;margin:0 0 14px}
+.st p{margin:0 0 .8em;color:var(--ink2);font-size:17px}.st b{color:var(--ink);font-weight:600}
+.st code,.sec code{font:500 .9em var(--m);background:var(--soft);padding:1px 5px;border-radius:3px;color:var(--ink)}
+.sec{max-width:1400px;margin:0 auto;padding:20vh 6vw 6vh;display:grid;grid-template-columns:1fr 2fr;gap:6vw}
+.sec .hd .no{font:500 12px/1 var(--m);color:var(--sig);letter-spacing:.1em}
+.sec .hd h2{font:900 clamp(34px,4vw,60px)/1.06 var(--f);letter-spacing:-.035em;margin:16px 0 18px}
+.sec .hd p{color:var(--ink2)}
+.sec .term{min-height:440px}
+.sec .term .ex{border-top:1px solid #2b2b2b;padding:16px 20px;color:#c9c6bf;font-size:15px}.sec .term .ex b{color:#fff}.sec .term .ex code{background:#262626;color:#fff}
+.qs .q{padding:32px 0;border-top:1px solid var(--line)}
+.qs h4{font:700 22px/1.45 var(--f);margin:0 0 18px;letter-spacing:-.01em}
+.qs .res{font:800 30px/1.3 var(--f);padding-top:28px;border-top:1px solid var(--line)}
+.sum{list-style:none;margin:0;padding:0;counter-reset:s}
+.sum li{counter-increment:s;display:grid;grid-template-columns:56px 1fr;padding:22px 0;border-top:1px solid var(--line);font-size:19px}
+.sum li:before{content:"0" counter(s);font:500 13px/2.2 var(--m);color:var(--sig)}
+.endnav{background:var(--ink);color:var(--bg);padding:16vh 6vw 8vh;margin-top:16vh}
+.endnav .k{font:500 12px/1 var(--m);color:#8c8a84;letter-spacing:.1em}
+.endnav a.big{display:block;text-decoration:none;font:900 clamp(40px,6.4vw,104px)/1.02 var(--f);letter-spacing:-.045em;margin-top:22px;transition:color 200ms ease}
+.endnav .meta{display:flex;justify-content:space-between;margin-top:12vh;padding-top:22px;border-top:1px solid #333;font:500 13px/1 var(--m);color:#8c8a84}.endnav .meta a{text-decoration:none}
+@media (hover:hover) and (pointer:fine){.endnav a.big:hover{color:var(--sig)}}
+@media (max-width:900px){
+ .lede{padding:12vh 22px 10vh}.lede .row{grid-template-columns:1fr;gap:28px}
+ .story{grid-template-columns:1fr}.story .stage{top:52px;height:44svh;z-index:5;background-color:var(--bg);border-right:0;border-bottom:1px solid var(--line)}
+ .story .steps{padding:0 22px}.st{min-height:70vh}.chap{padding:14vh 0 4vh}
+ .sec{grid-template-columns:1fr;padding:14vh 22px 4vh}.endnav{padding:12vh 22px 6vh}}
+@media (prefers-reduced-motion:reduce){.st{transition:none}}
