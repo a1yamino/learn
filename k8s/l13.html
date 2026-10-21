@@ -1,0 +1,64 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 13 课 · kubelet、CRI 与 Pod 的一生</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 13 课</span><span class="sp"></span><a href="l12.html">← 第 12 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 13 课</div><h1>kubelet、CRI 与 Pod 的一生</h1>
+<p>调度器只写了一个节点名，之后的一切都由节点上的 kubelet 完成。本课追踪 kubelet 如何通过 CRI 让 containerd 创建沙箱和容器、如何调用 CNI 配置网络、挂载卷、执行探针，以及 Pod 被删除时的终止过程。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">从 nodeName 到运行中</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">终止的顺序</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：哪一步出了问题</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>从 nodeName 到运行中</h2><div class="goal">kubelet 一步步做了什么。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>终止的顺序</h2><div class="goal">删除一个 Pod 时，哪些事按什么顺序发生。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：哪一步出了问题</h2><div class="goal">根据 Pod 的状态和事件，判断 kubelet 卡在哪一步，以及该查什么。</div></div></div>
+<div class="chal"><div id="cases"></div><div class="msg" id="km"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">从节点上直接看运行时。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">kind 节点里有 containerd 和 crictl，可以直接观察 CRI 层。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>节点上的运行时和 kubelet 版本。</p><pre class="cmd">kubectl get nodes -o custom-columns=NAME:.metadata.name,RUNTIME:.status.nodeInfo.containerRuntimeVersion,KUBELET:.status.nodeInfo.kubeletVersion</pre><pre class="out">NAME                  RUNTIME                  KUBELET
+learn-control-plane   containerd://1.7.18      v1.31.0
+learn-worker          containerd://1.7.18      v1.31.0</pre></div></div><div class="st"><span class="n">02</span><div><p>创建一个 Pod，找到它所在的节点。</p><pre class="cmd">kubectl run life --image=nginx:alpine
+kubectl wait --for=condition=Ready pod/life
+N=$(kubectl get pod life -o jsonpath=&quot;{.spec.nodeName}&quot;); echo $N</pre><pre class="out">learn-worker</pre></div></div><div class="st"><span class="n">03</span><div><p>在节点上用 crictl 看沙箱（pause）和容器。</p><pre class="cmd">docker exec $N crictl pods --name life
+docker exec $N crictl ps --name life</pre><pre class="out">POD ID         CREATED     STATE   NAME   NAMESPACE   ATTEMPT   RUNTIME
+5a1c…          20s ago     Ready   life   default     0         (default)
+CONTAINER      IMAGE       CREATED   STATE     NAME   ATTEMPT   POD ID
+9e2f…          a5d7…       19s ago   Running   life   0         5a1c…</pre></div></div><div class="st"><span class="n">04</span><div><p>沙箱的网络命名空间和 IP。</p><pre class="cmd">S=$(docker exec $N crictl pods --name life -q)
+docker exec $N crictl inspectp $S | grep -E &#x27;&quot;ip&quot;|netns&#x27; | head -2</pre><pre class="out">        &quot;ip&quot;: &quot;10.244.1.12&quot;,
+          &quot;path&quot;: &quot;/var/run/netns/cni-7d1e…&quot;</pre></div></div><div class="st"><span class="n">05</span><div><p>kubelet 的日志：对这个 Pod 做了什么。</p><pre class="cmd">docker exec $N journalctl -u kubelet --no-pager | grep life | tail -3</pre><pre class="out">&quot;SyncLoop ADD&quot; source=&quot;api&quot; pods=[&quot;default/life&quot;]
+&quot;RunPodSandbox from runtime service succeeded&quot; podSandboxID=&quot;5a1c…&quot;
+&quot;Container started&quot; pod=&quot;default/life&quot; containerName=&quot;life&quot;</pre></div></div><div class="st"><span class="n">06</span><div><p>删除，观察终止事件。</p><pre class="cmd">kubectl delete pod life &amp;&amp; kubectl get events --field-selector involvedObject.name=life --sort-by=.lastTimestamp -o custom-columns=REASON:.reason | tail -4</pre><pre class="out">REASON
+Pulled
+Created
+Started
+Killing</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>静态 Pod</h3><p>在一个 worker 节点的 <code>/etc/kubernetes/manifests/</code> 下放一个 nginx Pod 的 YAML（kind 的 worker 节点已配置该路径）。在 API Server 里能看到它吗？名字是什么？用 kubectl 删除它会发生什么？删除文件又会怎样？</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl run static-web --image=nginx:alpine --dry-run=client -o yaml | docker exec -i learn-worker tee /etc/kubernetes/manifests/static-web.yaml &gt;/dev/null
+sleep 15; kubectl get pods -o wide | grep static
+kubectl delete pod static-web-learn-worker; sleep 5; kubectl get pods | grep static
+docker exec learn-worker rm /etc/kubernetes/manifests/static-web.yaml; sleep 15; kubectl get pods | grep static</pre><pre class="out">static-web-learn-worker   1/1   Running   0   12s   learn-worker
+static-web-learn-worker   1/1   Running   0   3s
+（无输出）</pre><p>kubelet 直接读取文件运行 Pod，不经过 API Server 和调度器。为了让人能看到，它在 API Server 里创建一个只读的“镜像 Pod”，名字加上节点名后缀。用 kubectl 删除的只是镜像，kubelet 马上重建；只有删除文件才能真正停掉它。控制平面组件就是这样自举的：API Server 自己也是一个静态 Pod。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>kubelet 是节点代理：watch 分配给本节点的 Pod，不断让节点上的实际状态（容器、卷、网络）符合 Pod spec，并把状态写回。它也是一个控制循环。</li><li>CRI（容器运行时接口）是 kubelet 和运行时之间的 gRPC 接口。Kubernetes 1.24 起移除了 dockershim，常用运行时是 containerd 和 CRI-O，底层仍是 runc（Docker 第 14 课）。</li><li>创建顺序：挂载卷 → <code>RunPodSandbox</code>（pause 容器 + 调用 <b>CNI</b> 分配 IP）→ 拉镜像 → init 容器依次运行 → 创建并启动应用容器 → 探针。</li><li>每一步失败都对应一种状态：卷挂不上 → ContainerCreating；镜像拉不下 → ErrImagePull / ImagePullBackOff；配置引用缺失 → CreateContainerConfigError；启动后退出 → CrashLoopBackOff。</li><li>终止：标记删除 → 从端点摘除 &amp; preStop → SIGTERM → 等待 grace period → SIGKILL → 清理沙箱和网络。</li><li>kubelet 还负责：节点资源压力时驱逐 Pod、镜像和容器的垃圾回收、运行静态 Pod、为容器配置 cgroup。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 14</div><a class="big" href="l14.html">集群网络：CNI、kube-proxy 与 DNS →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l13.js"></script>
+</body></html>
