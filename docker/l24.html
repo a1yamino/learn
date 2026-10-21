@@ -1,0 +1,77 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Docker 第 24 课 · 跨主机网络：overlay 与 Swarm 简介</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 24 课</span><span class="sp"></span><a href="l23.html">← 第 23 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Docker · 第 24 课</div><h1>跨主机网络：overlay 与 Swarm 简介</h1>
+<p>一台机器装不下时：多台主机上的容器怎么互相访问、服务怎么分布和扩缩容、滚动更新怎么做。Swarm 是 Docker 内置的编排，也是理解 Kubernetes 的铺垫。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">overlay：跨主机的同一个网络</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Swarm：期望状态</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：节点故障</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>overlay：跨主机的同一个网络</h2><div class="goal">两台主机上的容器，怎么像在同一台交换机上一样通信？</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Swarm：期望状态</h2><div class="goal">你声明“要 3 个副本”，剩下的交给集群。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：节点故障</h2><div class="goal">一个 4 节点的集群，web 服务 4 个副本。让节点宕机，看 Swarm 怎么做。</div></div></div>
+<div class="chal"><div class="cmds" id="nb"></div><div id="cl" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0"></div><div class="msg" id="nm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">集群、服务、更新、stack。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">单机也能初始化 Swarm，体验服务、扩缩容和滚动更新。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>初始化单节点 Swarm。</p><pre class="cmd">docker swarm init 2&gt;&amp;1 | head -1
+docker node ls --format &quot;{{.Hostname}} {{.ManagerStatus}}&quot;</pre><pre class="out">Swarm initialized: current node (k3x…) is now a manager.
+myhost Leader</pre></div></div><div class="st"><span class="n">02</span><div><p>创建 overlay 网络和服务。</p><pre class="cmd">docker network create -d overlay --attachable appnet
+docker service create --name web --replicas 3 --network appnet -p 8080:80 nginx:alpine</pre><pre class="out">overall progress: 3 out of 3 tasks
+verify: Service web converged</pre></div></div><div class="st"><span class="n">03</span><div><p>查看任务分布。</p><pre class="cmd">docker service ps web --format &quot;{{.Name}} {{.CurrentState}}&quot;</pre><pre class="out">web.1 Running 10 seconds ago
+web.2 Running 10 seconds ago
+web.3 Running 10 seconds ago</pre></div></div><div class="st"><span class="n">04</span><div><p>手动杀掉一个容器，Swarm 会补上。</p><pre class="cmd">docker rm -f $(docker ps -q -f name=web.1)
+sleep 5; docker service ps web --format &quot;{{.Name}} {{.CurrentState}}&quot; | head -2</pre><pre class="out">web.1 Running 3 seconds ago
+ \_ web.1 Failed 5 seconds ago</pre></div></div><div class="st"><span class="n">05</span><div><p>滚动更新：每次一个，间隔 5 秒。</p><pre class="cmd">docker service update --image nginx:1.27-alpine --update-parallelism 1 --update-delay 5s web</pre><pre class="out">1/3: running   [==================================================&gt;]
+…
+verify: Service web converged</pre></div></div><div class="st"><span class="n">06</span><div><p>服务名的 VIP 和 DNS。</p><pre class="cmd">docker run --rm --network appnet alpine nslookup web | tail -2
+docker run --rm --network appnet alpine nslookup tasks.web | grep -c Address</pre><pre class="out">Name:	web
+Address: 10.0.1.2
+4</pre></div></div><div class="st"><span class="n">07</span><div><p>清理。</p><pre class="cmd">docker service rm web; docker network rm appnet; docker swarm leave --force</pre><pre class="out">Node left the swarm.</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用 stack 部署并自动回滚</h3><p>写一个 Compose 文件：web（nginx:alpine，3 副本，健康检查用 <code>wget -qO- localhost</code>），更新策略为每次 1 个、失败自动回滚。部署后把镜像改成一个启动就退出的版本（如 <code>command: ["sh","-c","exit 1"]</code>）再部署，观察自动回滚。</p><details><summary>查看参考答案</summary><div><pre class="cmd">docker swarm init
+cat > stack.yaml <<'EOF'
+services:
+  web:
+    image: nginx:alpine
+    ports: ["8080:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "localhost"]
+      interval: 3s
+      retries: 2
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 3s
+        failure_action: rollback
+        monitor: 10s
+EOF
+docker stack deploy -c stack.yaml demo
+# 在 web 下加一行 command: ["sh","-c","exit 1"]，再部署
+docker stack deploy -c stack.yaml demo
+sleep 40; docker service inspect demo_web -f "{{.UpdateStatus.State}}"</pre><pre class="out">rollback_completed</pre><p>新任务启动失败，在 <code>monitor</code> 时间内被判定为失败，Swarm 按 <code>failure_action: rollback</code> 恢复到上一版本。期间另外两个旧副本一直在服务，网站没有中断。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>bridge 网络只在一台主机内。<b>overlay</b> 网络用 VXLAN 把容器的二层帧封装进主机之间的 UDP 包（端口 4789），让不同主机上的容器在同一个虚拟网络里。</li><li>Swarm：<code>docker swarm init</code> 成为 manager，其他机器 <code>join</code>。manager 用 Raft 保存集群状态，奇数个（3 或 5）才能容忍故障。</li><li><b>service</b> 是期望状态（镜像、副本数、网络），Swarm 把它拆成 <b>task</b> 调度到节点上，并持续把实际状态拉回期望状态。</li><li>服务名解析到一个虚拟 IP（VIP），负载均衡到所有副本。<b>routing mesh</b>：发布的端口在每个节点上都能访问。</li><li>滚动更新：<code>--update-parallelism</code>、<code>--update-delay</code>、<code>--update-failure-action rollback</code>。</li><li><code>docker stack deploy -c compose.yaml</code> 用 Compose 文件部署到 Swarm。更大规模、更丰富的生态请看 Kubernetes 课程。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 25</div><a class="big" href="l25.html">综合项目：从零到生产 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l24.js"></script>
+</body></html>
