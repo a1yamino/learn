@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Docker 第 23 课 · CI/CD：自动构建、测试与发布</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 23 课</span><span class="sp"></span><a href="l22.html">← 第 22 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Docker · 第 23 课</div><h1>CI/CD：自动构建、测试与发布</h1>
+<p>每次推送代码，自动构建镜像、跑测试、扫描、推送到仓库、部署。用 GitHub Actions 搭一条完整的流水线：缓存、标签策略、多平台、签名和按 digest 部署。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条流水线</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">标签与 digest</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：排查一条流水线</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">一个完整的 workflow</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一条流水线</h2><div class="goal">从 git push 到线上。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>标签与 digest</h2><div class="goal">同一个镜像，几个名字，各自什么用途？</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：排查一条流水线</h2><div class="goal">下面的流水线有问题。开关各个设置，看每次推送会发生什么。</div></div></div>
+<div class="chal"><div class="cmds" id="pc"></div><div class="log" id="pl"></div><div class="msg" id="pm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>一个完整的 workflow</h2><div class="goal">GitHub Actions，逐段解释。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在自己的 GitHub 仓库里跑通一条流水线。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>准备一个仓库，放入第 4 课的 API（或任何带 Dockerfile 的项目），Dockerfile 里有 <code>test</code> 阶段。</p><pre class="cmd">git init cicd &amp;&amp; cd cicd
+# 复制项目文件，确认本地可以构建
+docker build --target test .</pre><pre class="out">=&gt; [test 2/2] RUN pytest -q
+4 passed in 0.31s</pre></div></div><div class="st"><span class="n">02</span><div><p>添加 workflow 文件（内容见上一节，可以复制）。</p><pre class="cmd">mkdir -p .github/workflows
+$EDITOR .github/workflows/docker.yml
+git add . &amp;&amp; git commit -m &quot;ci&quot; &amp;&amp; git push -u origin main</pre><pre class="out">（在 GitHub 的 Actions 页面看到任务开始运行）</pre></div></div><div class="st"><span class="n">03</span><div><p>看第一次构建的耗时，再随便改一个 README，推送第二次。</p><pre class="cmd">git commit --allow-empty -m &quot;rerun&quot; &amp;&amp; git push</pre><pre class="out">第一次：build-push 约 1m40s
+第二次：约 25s（#8 CACHED …）</pre></div></div><div class="st"><span class="n">04</span><div><p>确认镜像和标签。</p><pre class="cmd">docker buildx imagetools inspect ghcr.io/&lt;你的用户名&gt;/cicd:main</pre><pre class="out">Name:      ghcr.io/&lt;你的用户名&gt;/cicd:main
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:…</pre></div></div><div class="st"><span class="n">05</span><div><p>打一个版本标签，触发发布。</p><pre class="cmd">git tag v1.0.0 &amp;&amp; git push --tags</pre><pre class="out">新增标签：1.0.0、1.0、sha-xxxxxxx</pre></div></div><div class="st"><span class="n">06</span><div><p>故意让测试失败，确认不会推送。</p><pre class="cmd"># 修改代码让一个测试失败
+git commit -am &quot;break&quot; &amp;&amp; git push</pre><pre class="out">test 步骤失败：1 failed
+build-push 步骤：skipped</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>加上扫描和按 digest 部署</h3><p>在 workflow 里：(1) 推送后对刚推送的镜像运行 Trivy，有可修复的 CRITICAL 时失败；(2) 增加一个 deploy 任务，只在 main 分支运行，拿到上一步输出的 digest，打印出要部署的完整引用。</p><details><summary>查看参考答案</summary><div><pre class="cmd">      - id: build
+        uses: docker/build-push-action@v6
+        with: { push: true, tags: ${{ steps.meta.outputs.tags }}, cache-from: type=gha, cache-to: type=gha,mode=max }
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: echo "deploy ghcr.io/${{ github.repository }}@${{ needs.build.outputs.digest }}"</pre><pre class="out">deploy ghcr.io/alice/cicd@sha256:4b1e…</pre><p><code>build-push-action</code> 的 <code>digest</code> 输出通过 job outputs 传给 deploy。真实部署时把这个引用交给 <code>docker compose</code>（用变量）、Kubernetes 或其他平台。<code>environment: production</code> 可以在 GitHub 设置里配置人工审批。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>流水线顺序：检查 → 构建 → 测试 → 扫描 → 推送 → 签名 → 部署。前面的步骤失败，后面的不执行。</li><li>CI 机器每次都是新的：用 <code>cache-to/cache-from type=gha</code>（或 registry）保留构建缓存（第 17 课）。</li><li>标签策略：每个提交打 <code>sha-xxxxxxx</code>（不可变），发布时打 <code>1.4.2</code>、<code>1.4</code>；<code>latest</code> 只作方便用途，部署不要依赖它。</li><li>测试用构建出来的同一个镜像跑（<code>--target test</code> 或 <code>docker run</code>），保证测的就是要发布的。</li><li>推送凭证用 CI 平台的密钥或 <code>GITHUB_TOKEN</code>，权限最小化。不要写进仓库。</li><li>部署按 <b>digest</b>：构建步骤输出 digest，部署步骤用 <code>image@sha256:…</code>，保证部署的就是刚测试过、签过名的那个镜像。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 24</div><a class="big" href="l24.html">跨主机网络：overlay 与 Swarm 简介 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l23.js"></script>
+</body></html>
