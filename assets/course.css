@@ -162,3 +162,7 @@ footer{color:var(--mu)}
   .layer,.layer:hover{transform:none}#herofx{display:none}
 }
 @media (prefers-reduced-transparency:reduce){section,nav,.topbar,.toc a.card{background:var(--card-solid);backdrop-filter:none;-webkit-backdrop-filter:none}}
+
+.emo{color:initial;-webkit-text-fill-color:initial;background:none}
+.meter i{transform-origin:left;transition:transform 900ms var(--ease-out)}
+.grow{transform-origin:left;animation:grow 700ms var(--ease-out) both}@keyframes grow{from{transform:scaleX(0)}}

@@ -138,7 +138,7 @@ const CN={code:'改了 server.js',deps:'加了依赖',none:'没改动',base:'升
 async function change(k){const L=ORD[od];let broken=false,t=0,first=-1;tl.innerHTML='';
 for(let i=0;i<L.length;i++){const e=document.getElementById('lab_'+i);if(!broken&&k!=='none'&&L[i][2].split(' ').includes(k)){broken=true;first=i}
 const sec=broken?L[i][3]:0;t+=sec;e.className='ln '+(broken?'build':'cached');e.querySelector('.badge').textContent=broken?('重建 '+(sec||'')+(sec?'s':'')):'CACHED';
-const bar=document.createElement('i');bar.style.width='0';bar.style.background=broken?'#d29922':'#3fb950';bar.title=L[i][0];tl.appendChild(bar);await sl(160);bar.style.width=Math.max(sec,0.6)/45*100+'%'}
+const bar=document.createElement('i');bar.style.width=Math.max(sec,0.6)/45*100+'%';bar.className='grow';bar.style.background=broken?'#d29922':'#3fb950';bar.title=L[i][0];tl.appendChild(bar);await sl(160)}
 const fast=t<5;labres.innerHTML=`<b>写法 ${od?'B':'A'} · ${CN[k]}</b>：总耗时 <span class="big ${fast?'good':'bad'}">${t.toFixed(1)}s</span><br>`+(first<0?'所有层都命中缓存，几乎瞬间完成。':`第 ${first+1} 层（${L[first][0]} ${L[first][1]}）的输入变了 → 它和之后的层全部重建。`)+(k==='code'&&!od?'<br>😱 只改了一行代码，却重装了全部依赖！因为 COPY . . 在 npm ci 之前。':'')+(k==='code'&&od?'<br>🎉 依赖层被缓存了，只重新复制代码。这就是“先 COPY 依赖清单”的威力。':'');
 hs.push(`写法 ${od?'B':'A'} · ${CN[k]} → ${t.toFixed(1)}s`);hist.innerHTML=hs.slice(-6).map(x=>'• '+x).join('<br>')}
 // entrypoint

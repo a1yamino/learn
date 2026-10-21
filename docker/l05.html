@@ -66,7 +66,7 @@ EXPOSE 8080
 ENTRYPOINT ["/api"]
 # 结果：~14MB`]);
 function bars(){const D=[['golang:1.23 单阶段',900,'#f85149'],['多阶段 + debian-slim',90,'#d29922'],['多阶段 + alpine',22,'#2496ed'],['多阶段 + distroless',14,'#3fb950'],['多阶段 + scratch',12,'#3fb950']];
-document.getElementById('bars').innerHTML=D.map(([n,s,c])=>`<div style="display:flex;align-items:center;gap:8px;margin:5px 0"><span style="width:190px;font-size:13px">${n}</span><div class="meter" style="flex:1;height:18px"><i style="width:0;background:${c}" data-w="${s/9}"></i></div><b style="width:60px">${s}MB</b></div>`).join('');setTimeout(()=>document.querySelectorAll('#bars i').forEach(i=>i.style.width=i.dataset.w+'%'),50)}
+document.getElementById('bars').innerHTML=D.map(([n,s,c])=>`<div style="display:flex;align-items:center;gap:8px;margin:5px 0"><span style="width:190px;font-size:13px">${n}</span><div class="meter" style="flex:1;height:18px"><i class="grow" style="width:${s/9}%;background:${c}"></i></div><b style="width:60px">${s}MB</b></div>`).join('');}
 DC.tabs('nt','np',[`FROM node:20 AS builder
 WORKDIR /app
 COPY package*.json ./

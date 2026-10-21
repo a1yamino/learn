@@ -56,4 +56,4 @@ el.addEventListener('pointermove',e=>{const r=el.getBoundingClientRect(),px=(e.c
 el.addEventListener('pointerleave',()=>{X.set(0);Y.set(0)})})}
 function quizFx(){const s=document.getElementById('score');if(!s)return;new MutationObserver(()=>{if(s.textContent.includes('🎉')&&!s.dataset.c){s.dataset.c=1;DC.confetti()}}).observe(s,{childList:true,subtree:true,characterData:true})}
 function progress(){const rp=document.getElementById('rp');if(!rp)return;const u=()=>{const h=document.documentElement;rp.style.setProperty('--p',h.scrollTop/Math.max(1,h.scrollHeight-h.clientHeight))};addEventListener('scroll',u,{passive:true});u()}
-addEventListener('DOMContentLoaded',()=>{hero();reveal();cards();quizFx();progress()})})();
+addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('header h1,.toc .num,h2 span').forEach(h=>h.innerHTML=h.innerHTML.replace(/(\p{Extended_Pictographic}\uFE0F?)/gu,'<span class="emo">$1</span>'));hero();reveal();cards();quizFx();progress()})})();
