@@ -1,0 +1,88 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 5 课 · 事务基础：ACID 与 BEGIN / COMMIT</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 5 课</span><span class="sp"></span><a href="l04.html">← 第 4 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 5 课</div><h1>事务基础：ACID 与 BEGIN / COMMIT</h1>
+<p>事务把多条语句变成一个不可分割的整体：要么全部生效，要么全部不生效。本课讲 ACID 四个性质各自由什么机制保证、BEGIN / COMMIT / ROLLBACK 和保存点、出错后事务进入的 aborted 状态，以及长事务为什么危险。隔离级别和 MVCC 的细节留到第 14、15 课。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">转账：为什么需要事务</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">出错后的事务状态</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：这个事务最后提交了什么</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>转账：为什么需要事务</h2><div class="goal">两条 UPDATE 之间出了故障会怎样。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>出错后的事务状态</h2><div class="goal">aborted 状态与保存点。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：这个事务最后提交了什么</h2><div class="goal">accounts 表中 A、B 各有 100 元。选择一段事务脚本，看每条语句的结果和最终余额。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">控制事务、观察事务状态。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 shop 库中建一张 accounts 表。打开两个 psql 窗口（窗口 1、窗口 2）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>准备数据。</p><pre class="cmd">CREATE TABLE accounts (name text PRIMARY KEY, balance int NOT NULL CHECK (balance &gt;= 0));
+INSERT INTO accounts VALUES (&#x27;A&#x27;,100),(&#x27;B&#x27;,100);</pre><pre class="out">CREATE TABLE
+INSERT 0 2</pre></div></div><div class="st"><span class="n">02</span><div><p>窗口 1：开启事务但不提交。注意提示符变成 *。</p><pre class="cmd">BEGIN;
+UPDATE accounts SET balance = balance - 30 WHERE name = &#x27;A&#x27;;</pre><pre class="out">BEGIN
+UPDATE 1
+shop=*#</pre></div></div><div class="st"><span class="n">03</span><div><p>窗口 2：看不到未提交的修改。</p><pre class="cmd">SELECT * FROM accounts;</pre><pre class="out"> name | balance
+------+---------
+ A    |     100
+ B    |     100</pre></div></div><div class="st"><span class="n">04</span><div><p>窗口 1：回滚，修改消失。</p><pre class="cmd">ROLLBACK;
+SELECT * FROM accounts WHERE name = &#x27;A&#x27;;</pre><pre class="out">ROLLBACK
+ name | balance
+------+---------
+ A    |     100</pre></div></div><div class="st"><span class="n">05</span><div><p>违反 CHECK 约束后，事务进入 aborted 状态。</p><pre class="cmd">BEGIN;
+UPDATE accounts SET balance = balance - 500 WHERE name = &#x27;A&#x27;;
+SELECT 1;
+COMMIT;</pre><pre class="out">BEGIN
+ERROR:  new row for relation &quot;accounts&quot; violates check constraint &quot;accounts_balance_check&quot;
+ERROR:  current transaction is aborted, commands ignored until end of transaction block
+ROLLBACK</pre></div></div><div class="st"><span class="n">06</span><div><p>用保存点只撤销一部分。</p><pre class="cmd">BEGIN;
+UPDATE accounts SET balance = balance + 10 WHERE name = &#x27;B&#x27;;
+SAVEPOINT s1;
+UPDATE accounts SET balance = balance - 500 WHERE name = &#x27;A&#x27;;
+ROLLBACK TO SAVEPOINT s1;
+COMMIT;
+SELECT * FROM accounts ORDER BY name;</pre><pre class="out">BEGIN
+UPDATE 1
+SAVEPOINT
+ERROR:  new row for relation &quot;accounts&quot; violates check constraint &quot;accounts_balance_check&quot;
+ROLLBACK
+COMMIT
+ name | balance
+------+---------
+ A    |     100
+ B    |     110</pre></div></div><div class="st"><span class="n">07</span><div><p>窗口 1 开着事务不动，窗口 2 查看。</p><pre class="cmd">-- 窗口 1
+BEGIN; SELECT * FROM accounts;
+-- 窗口 2
+SELECT pid, state, now() - xact_start AS age FROM pg_stat_activity WHERE state LIKE &#x27;idle in%&#x27;;</pre><pre class="out">  pid  |        state        |       age
+-------+---------------------+-----------------
+  1873 | idle in transaction | 00:00:41.20391</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一个安全的转账</h3><p>写一段转账脚本：从 A 转 30 给 B。要求：任何一步失败都整体回滚；余额不足时不能出现负数；并发执行两次也不会多扣。说明每一点由什么保证。</p><details><summary>查看参考答案</summary><div><pre class="cmd">BEGIN;
+UPDATE accounts SET balance = balance - 30 WHERE name = 'A' AND balance &gt;= 30;
+-- 应用检查受影响行数：为 0 则 ROLLBACK，提示余额不足
+UPDATE accounts SET balance = balance + 30 WHERE name = 'B';
+COMMIT;</pre><pre class="out">BEGIN
+UPDATE 1
+UPDATE 1
+COMMIT</pre><p>整体回滚由事务的原子性保证：中途任何错误都会让事务进入 aborted，最终只能回滚。不出现负数有两层：<code>WHERE balance &gt;= 30</code> 让余额不足时更新 0 行，CHECK 约束兜底。并发安全来自行锁：两个事务同时更新 A 的那一行，第二个会等待第一个提交，然后在 READ COMMITTED 下重新读取最新的行再判断条件，所以不会基于旧余额扣两次（第 14、17 课详细讲）。不要先 SELECT 余额、在应用里判断、再 UPDATE 写回计算值，那样两个并发请求会读到同一个旧值。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>事务是一组要么全部提交、要么全部回滚的语句。没有显式 <code>BEGIN</code> 时，PostgreSQL 把每条语句当作一个单独的事务自动提交（autocommit）。</li><li><b>A</b>tomicity 原子性：靠回滚和 WAL 保证；<b>C</b>onsistency 一致性：约束、外键和触发器在提交前必须成立；<b>I</b>solation 隔离性：MVCC 与锁，默认级别 READ COMMITTED；<b>D</b>urability 持久性：COMMIT 返回前 WAL 已刷到磁盘（<code>synchronous_commit = on</code>）。</li><li>事务中任何一条语句出错，整个事务进入 <b>aborted</b> 状态：之后的语句都会报 <code>current transaction is aborted, commands ignored until end of transaction block</code>，只能 ROLLBACK。COMMIT 也只会变成回滚。</li><li><code>SAVEPOINT s</code> / <code>ROLLBACK TO SAVEPOINT s</code> 只撤销保存点之后的部分，事务可以继续。psql 的 <code>\set ON_ERROR_ROLLBACK interactive</code> 就是给每条语句自动加保存点。</li><li>事务尽量短：长事务持有锁、阻止 VACUUM 清理旧版本（表膨胀），空闲的 <code>idle in transaction</code> 连接还占着连接槽。用 <code>idle_in_transaction_session_timeout</code> 和 <code>pg_stat_activity</code> 防范。</li><li>事务里不要做网络调用、等待用户输入或发邮件这类外部副作用；外部动作无法随 ROLLBACK 撤销。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 06</div><a class="big" href="l06.html">从应用连接：驱动、参数化查询与连接池 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l05.js"></script>
+</body></html>
