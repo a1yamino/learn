@@ -1,0 +1,23 @@
+TITLE='事务隔离级别';DESC='多个事务同时读写同一份数据时会出现哪些异常，SQL 标准用四个隔离级别描述能防止哪些异常。本课讲 PostgreSQL 实际提供的三个级别——READ COMMITTED、REPEATABLE READ、SERIALIZABLE——各自看到的数据是什么样、写冲突怎样处理、需要应用做什么，以及丢失更新和写偏斜这两个最常见的并发 bug。';NEXT='MVCC：元组版本与快照可见性';MIN=65
+SUM=['<b>READ COMMITTED</b>（默认）：<b>每条语句</b>开始时取一个快照，只看到在此之前已提交的数据。同一事务内两次 SELECT 可能看到不同结果（不可重复读、幻读）。',
+'READ COMMITTED 下 UPDATE/DELETE 遇到被并发事务修改的行，会等待对方结束；对方提交后，<b>重新读取该行最新版本并重新检查 WHERE</b>，满足就基于新版本修改。所以 <code>SET x = x + 1</code> 不会丢失更新，但“先 SELECT 到应用、计算后再 UPDATE 写回值”会。',
+'<b>REPEATABLE READ</b>：<b>整个事务</b>使用第一条语句时取的快照，读到的数据不会变（PostgreSQL 的实现也防住了幻读）。如果要修改的行已被并发事务修改并提交，报 <code>40001 could not serialize access due to concurrent update</code>，应用需要重试整个事务。',
+'<b>SERIALIZABLE</b>：在 REPEATABLE READ 的基础上用 SSI（可串行化快照隔离）跟踪读写依赖，保证结果等价于某种串行执行顺序，能检测<b>写偏斜</b>（两个事务各自读到对方会修改的数据、各写各的行）。有冲突时其中一个事务报 40001。',
+'READ UNCOMMITTED 在 PostgreSQL 中等同于 READ COMMITTED，不存在脏读。',
+'选择建议：大部分 OLTP 用 READ COMMITTED，配合原子 UPDATE、<code>SELECT … FOR UPDATE</code>（第 17 课）或约束；需要一致的多语句读（报表、导出）用 REPEATABLE READ；业务规则跨多行且难以用锁表达时用 SERIALIZABLE，并在应用层实现重试。']
+def secs(prac,E):
+    return [
+('丢失更新','两个事务读同一个值、各自计算后写回。','<div id="p1"></div>'),
+('写偏斜','两个事务都检查了条件，都成功了，条件却被破坏。','<div id="p2"></div>'),
+('动手：在这个隔离级别下会怎样','两个会话按同样的时间顺序执行。选择场景和隔离级别，看每一步的结果。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('相关命令','设置与查看隔离级别。','<div id="t4"></div>'),
+('在你的电脑上练习','打开两个 psql 窗口，使用第 5 课的 accounts 表（A=100、B=100）。',prac([
+ ('READ COMMITTED：窗口 1 开启事务读一次。','-- 窗口 1\nBEGIN;\nSELECT balance FROM accounts WHERE name = \'A\';',' balance\n---------\n     100'),
+ ('窗口 2 修改并提交，窗口 1 再读：看到了新值。','-- 窗口 2\nUPDATE accounts SET balance = 50 WHERE name = \'A\';\n-- 窗口 1\nSELECT balance FROM accounts WHERE name = \'A\';\nCOMMIT;',' balance\n---------\n      50'),
+ ('REPEATABLE READ：窗口 1 的两次读取一致。','-- 窗口 1\nBEGIN ISOLATION LEVEL REPEATABLE READ;\nSELECT balance FROM accounts WHERE name = \'A\';\n-- 窗口 2\nUPDATE accounts SET balance = 80 WHERE name = \'A\';\n-- 窗口 1\nSELECT balance FROM accounts WHERE name = \'A\';',' balance\n---------\n      50\n balance\n---------\n      50'),
+ ('窗口 1 再修改同一行：序列化失败。','-- 窗口 1\nUPDATE accounts SET balance = balance - 10 WHERE name = \'A\';\nROLLBACK;','ERROR:  could not serialize access due to concurrent update\nROLLBACK'),
+ ('写偏斜：值班表要求至少一人在班。两个窗口用 SERIALIZABLE。','CREATE TABLE oncall (doctor text PRIMARY KEY, on_duty bool);\nINSERT INTO oncall VALUES (\'alice\', true), (\'bob\', true);\n-- 窗口 1 和 窗口 2 都执行：\nBEGIN ISOLATION LEVEL SERIALIZABLE;\nSELECT count(*) FROM oncall WHERE on_duty;   -- 2，可以请假\n-- 窗口 1\nUPDATE oncall SET on_duty = false WHERE doctor = \'alice\';\n-- 窗口 2\nUPDATE oncall SET on_duty = false WHERE doctor = \'bob\';\n-- 窗口 1\nCOMMIT;\n-- 窗口 2\nCOMMIT;','COMMIT\nERROR:  could not serialize access due to read/write dependencies among transactions\nDETAIL:  Reason code: Canceled on identification as a pivot, during commit attempt.\nHINT:  The transaction might succeed if retried.'),
+ ('同样的步骤用 REPEATABLE READ：两个都提交，没有人值班了。','SELECT * FROM oncall;',' doctor | on_duty\n--------+---------\n alice  | f\n bob    | f')],
+ ('修复库存扣减','库存扣减代码：<code>SELECT stock FROM items WHERE id = $1</code>，应用里判断 <code>stock &gt;= qty</code>，然后 <code>UPDATE items SET stock = $new WHERE id = $1</code>，<code>$new = stock - qty</code>。高峰期出现超卖。说明在 READ COMMITTED 下为什么会超卖，给出至少两种正确写法并比较。',
+ '<p>两个请求同时 SELECT 到 stock = 1，都判断通过，都写回 0：卖出 2 件，只扣了 1 件（丢失更新）。第二个 UPDATE 虽然等了第一个，但写回的是应用算好的常量 0，而不是基于最新值计算。</p><pre class="cmd">-- 写法 1：原子条件更新（推荐）\nUPDATE items SET stock = stock - $2 WHERE id = $1 AND stock &gt;= $2;\n-- 受影响行数为 0 表示库存不足\n\n-- 写法 2：先锁行再判断\nBEGIN;\nSELECT stock FROM items WHERE id = $1 FOR UPDATE;\n-- 应用判断后\nUPDATE items SET stock = stock - $2 WHERE id = $1;\nCOMMIT;\n\n-- 写法 3：REPEATABLE READ / SERIALIZABLE + 重试 40001</pre><p>写法 1 一条语句完成，行锁只持有一瞬间，并发最好；配合 <code>CHECK (stock &gt;= 0)</code> 兜底。写法 2 适合判断逻辑复杂、要在应用里做的情况，代价是锁持有时间更长，热门商品会排队。写法 3 不需要显式锁，但冲突时要重试，热点行上重试率很高，不适合这里。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
