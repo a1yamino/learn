@@ -1,0 +1,87 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 2 课 · 本地集群与 kubectl</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 2 课</span><span class="sp"></span><a href="l01.html">← 第 1 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 2 课</div><h1>本地集群与 kubectl</h1>
+<p>本课把工具用熟：用 kind 搭多节点集群，理解 kubeconfig 和 context，掌握 kubectl 的 get、describe、explain、apply、logs、exec，以及用 YAML 描述资源。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">kubectl 发出一个请求</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">资源的结构</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：切换 context</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">kubectl 常用命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>kubectl 发出一个请求</h2><div class="goal">kubectl get pods 背后发生了什么？</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>资源的结构</h2><div class="goal">一个 YAML 文件的四个部分。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：切换 context</h2><div class="goal">你的 kubeconfig 里有三个 context。选择当前 context，再看同一条命令会作用到哪里。</div></div></div>
+<div class="chal"><div class="cmds" id="cx"></div><div class="log" id="cl"></div><div class="msg" id="cm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>kubectl 常用命令</h2><div class="goal">查看、详情、文档、应用、日志、进入。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">一个三节点集群，和一个完全用 YAML 管理的应用。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>删掉第 1 课的集群，用配置文件创建 1 个控制平面 + 2 个工作节点。</p><pre class="cmd">kind delete cluster --name learn
+cat &gt; kind.yaml &lt;&lt;&#x27;EOF&#x27;
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+EOF
+kind create cluster --name learn --config kind.yaml
+kubectl get nodes</pre><pre class="out">NAME                  STATUS   ROLES           AGE   VERSION
+learn-control-plane   Ready    control-plane   50s   v1.31.0
+learn-worker          Ready    &lt;none&gt;          30s   v1.31.0
+learn-worker2         Ready    &lt;none&gt;          30s   v1.31.0</pre></div></div><div class="st"><span class="n">02</span><div><p>查看 context。</p><pre class="cmd">kubectl config get-contexts</pre><pre class="out">CURRENT   NAME         CLUSTER      AUTHINFO     NAMESPACE
+*         kind-learn   kind-learn   kind-learn</pre></div></div><div class="st"><span class="n">03</span><div><p>看 kubectl 发出的 HTTP 请求。</p><pre class="cmd">kubectl get pods -A -v=6 2&gt;&amp;1 | grep GET</pre><pre class="out">GET https://127.0.0.1:41235/api/v1/pods?limit=500 200 OK in 9 milliseconds</pre></div></div><div class="st"><span class="n">04</span><div><p>生成 YAML 模板，而不是直接创建。</p><pre class="cmd">kubectl create deployment web --image=nginx:alpine --replicas=2 --dry-run=client -o yaml &gt; web.yaml
+grep -E &quot;^kind|replicas|image:&quot; web.yaml</pre><pre class="out">kind: Deployment
+  replicas: 2
+      - image: nginx:alpine</pre></div></div><div class="st"><span class="n">05</span><div><p>应用，修改，看差异，再应用。</p><pre class="cmd">kubectl apply -f web.yaml
+sed -i.bak &quot;s/replicas: 2/replicas: 4/&quot; web.yaml
+kubectl diff -f web.yaml | grep replicas
+kubectl apply -f web.yaml</pre><pre class="out">deployment.apps/web created
+-  replicas: 2
++  replicas: 4
+deployment.apps/web configured</pre></div></div><div class="st"><span class="n">06</span><div><p>Pod 分布在哪些节点上？</p><pre class="cmd">kubectl get pods -o wide --no-headers | awk &#x27;{print $1, $7}&#x27;</pre><pre class="out">web-5d9c7f6b8-2bxkq learn-worker
+web-5d9c7f6b8-8jz4n learn-worker2
+web-5d9c7f6b8-mm7wl learn-worker
+web-5d9c7f6b8-t6vfr learn-worker2</pre></div></div><div class="st"><span class="n">07</span><div><p>查字段文档。</p><pre class="cmd">kubectl explain deployment.spec.strategy.rollingUpdate.maxSurge | head -6</pre><pre class="out">GROUP:      apps
+KIND:       Deployment
+VERSION:    v1
+
+FIELD: maxSurge &lt;IntOrString&gt;</pre></div></div><div class="st"><span class="n">08</span><div><p>日志与进入容器。</p><pre class="cmd">P=$(kubectl get pod -l app=web -o name | head -1)
+kubectl exec $P -- nginx -v
+kubectl logs $P --tail 2</pre><pre class="out">nginx version: nginx/1.27.2
+2024/10/21 11:20:01 [notice] 1#1: start worker process 30
+2024/10/21 11:20:01 [notice] 1#1: start worker process 31</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>不用 kubectl 访问 API</h3><p>用 <code>kubectl proxy</code> 在本地开一个已认证的代理，然后只用 curl 列出 default 命名空间里所有 Pod 的名字，并把 web 的副本数改成 1。说明为什么“kubectl 只是一个 API 客户端”。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl proxy --port 8001 &amp;
+curl -s localhost:8001/api/v1/namespaces/default/pods | python3 -c "import json,sys;[print(i['metadata']['name']) for i in json.load(sys.stdin)['items']]"
+curl -s -X PATCH -H "Content-Type: application/merge-patch+json" \
+  -d '{"spec":{"replicas":1}}' \
+  localhost:8001/apis/apps/v1/namespaces/default/deployments/web/scale | grep '"replicas"'
+kubectl get deploy web
+kill %1</pre><pre class="out">web-5d9c7f6b8-2bxkq
+…
+    "replicas": 1
+NAME   READY   UP-TO-DATE   AVAILABLE   AGE
+web    1/1     1            1           6m</pre><p>Pod 在 <code>/api/v1</code>（核心组），Deployment 在 <code>/apis/apps/v1</code>。proxy 用 kubeconfig 里的证书完成认证，所以 curl 不需要凭证。kubectl、Dashboard、CI 工具、控制器，全都是在调用同一组 REST API。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>kind 用 Docker 容器模拟节点，适合学习和 CI。其他选择：minikube、k3d、Docker Desktop 自带的 Kubernetes。</li><li>kubeconfig（<code>~/.kube/config</code>）包含 clusters、users、contexts。<b>context = 集群 + 用户 + 默认命名空间</b>。执行命令前确认当前 context。</li><li>kubectl 的每条命令都是对 API Server 的 HTTP 请求。<code>-v=6</code> 可以看到请求的 URL。</li><li>每个资源都有 <code>apiVersion</code>、<code>kind</code>、<code>metadata</code>、<code>spec</code>，系统写回 <code>status</code>。<code>kubectl explain</code> 查字段含义。</li><li>命令式（<code>create</code>、<code>scale</code>）适合试验；声明式（YAML + <code>apply</code>）适合正式使用，文件放进 git。</li><li><code>--dry-run=client -o yaml</code> 生成 YAML 模板；<code>kubectl diff</code> 在 apply 前看差异。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 03</div><a class="big" href="l03.html">Pod：最小的部署单元 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l02.js"></script>
+</body></html>
