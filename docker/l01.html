@@ -1,0 +1,127 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker 第 1 课：为什么需要 Docker · 镜像与容器</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/common.js"></script></head><body><div id="rp"></div><div class="topbar"><a href="index.html">🏠 目录</a><a class="dis">← 上一课</a><span class="ttl">第 1/12 课 · 为什么需要 Docker · 镜像与容器</span><div class="dots"><i class="on"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><a href="l02.html">下一课 →</a></div><header><span class="tag">Docker 从入门到生产 · 第 1 课</span><h1>🐳 为什么需要 Docker？<br>镜像与容器</h1><p>面向初级后端工程师 · 约 20 分钟 · 边看边点</p></header>
+<nav><a href="#s1">1 痛点</a><a href="#s2">2 VM vs 容器</a><a href="#s3">3 镜像与容器</a><a href="#s4">4 动手</a><a href="#s5">5 自测</a><a href="#s7">坑</a><a href="#s8">小结</a><a href="#s6">预告</a></nav>
+<main>
+<section id="s1"><h2><span>01</span> “在我电脑上明明能跑！”</h2>
+<p>你写了个 Python/Node/Java 后端，本地一切正常，部署到服务器就挂了。点下面按钮看看发生了什么：</p>
+<div class="pain">
+<div class="pc"><b>💻 你的电脑</b><br>Python 3.12<br>OpenSSL 3.0<br>依赖 requests==2.31<br><span class="good">✅ 正常运行</span></div>
+<div style="font-size:28px">➡️</div>
+<div class="pc" id="srv"><b>🖥️ 生产服务器</b><br>Python 3.8<br>OpenSSL 1.1<br>依赖 requests==2.20<br><span id="srvst" class="mu">等待部署…</span></div></div>
+<p style="text-align:center"><button onclick="deploy(0)">不用 Docker 部署</button><button onclick="deploy(1)">用 Docker 部署</button></p>
+<div class="grid">
+<div class="box">🔀 <b>版本冲突</b><br><span class="mu">项目 A 要 Python 3.8，项目 B 要 3.12，同一台机器打架。</span></div>
+<div class="box">📦 <b>依赖地狱</b><br><span class="mu">系统库、环境变量、配置文件……部署文档越写越长。</span></div>
+<div class="box">🧑‍🤝‍🧑 <b>新人上手慢</b><br><span class="mu">装环境装一天。Docker：<code>docker compose up</code> 一条命令。</span></div>
+</div>
+<p>👉 Docker 的核心思路：<b>把应用和它需要的一切（运行时、库、配置）一起打包</b>，在任何装了 Docker 的机器上表现一致。</p>
+</section>
+
+<section id="s2"><h2><span>02</span> 虚拟机 vs 容器</h2>
+<p>以前隔离环境靠虚拟机（VM）。容器也能隔离，但轻得多——关键在于<b>容器共享宿主机的内核</b>，不需要每个都带一个完整操作系统。</p>
+<p><button onclick="buildStacks()">▶ 播放堆叠动画</button></p>
+<div class="cmp">
+<div class="box"><b>虚拟机</b><div id="vm" class="stack" style="min-height:260px"></div>
+<div class="mu">启动时间</div><div class="meter"><i id="m1" style="width:0"></i></div><div class="mu" style="font-size:13px">分钟级 · 每个 GB 级</div></div>
+<div class="box"><b>容器</b><div id="ct" class="stack" style="min-height:260px"></div>
+<div class="mu">启动时间</div><div class="meter"><i id="m2" style="width:0"></i></div><div class="mu" style="font-size:13px">秒级 · 通常 MB 级</div></div>
+</div>
+<p class="mu">注意：容器隔离靠 Linux 的 <b>namespace</b>（看不到别人的进程/网络）和 <b>cgroups</b>（限制 CPU/内存）。容器本质上就是一个“被隔离起来的普通进程”。</p>
+</section>
+
+<section id="s3"><h2><span>03</span> 镜像（Image）vs 容器（Container）</h2>
+<div class="grid">
+<div class="box">🧱 <b>镜像</b> ≈ 类（Class）<br><span class="mu">只读的模板，由多层<b>只读层</b>叠成。每层是文件系统的一次变更。</span></div>
+<div class="box">🏃 <b>容器</b> ≈ 实例（Object）<br><span class="mu">镜像 + 顶上一层<b>可写层</b>，然后作为进程跑起来。</span></div>
+</div>
+<p>机制：多个容器<b>共享同一个镜像的只读层</b>（不复制，所以省空间、启动快）；每个容器写文件时，写进自己的可写层（写时复制 Copy-on-Write）。删掉容器，可写层也就没了——镜像不受影响。</p>
+<p><button onclick="run()">$ docker run myapp</button><button class="sec" onclick="writeFile()">✏️ 在容器里写文件</button><button class="sec" onclick="rmC()">🗑 docker rm 最后一个</button></p>
+<div id="stage">
+<div class="img box"><b>镜像 myapp:1.0</b> <span class="mu" style="font-size:12px">🔒只读</span>
+<div class="stack" style="margin-top:8px"><div class="layer os ro">① FROM python:3.12-slim</div><div class="layer lib ro">② pip install -r req.txt</div><div class="layer app ro">③ COPY app.py</div></div></div>
+</div>
+<p id="cinfo" class="mu">点击 docker run 看看容器从同一个镜像“生出来”。</p>
+</section>
+
+<section id="s4"><h2><span>04</span> 动手：你的前三条命令</h2>
+<p class="mu">先安装 <a href="https://docs.docker.com/get-docker/" style="color:var(--ac)">Docker Desktop</a>（Mac/Windows）或 Docker Engine（Linux）。然后点下面的命令，看模拟输出与解释：</p>
+<p><button onclick="term(0)">docker run hello-world</button><button onclick="term(1)">docker ps -a</button><button onclick="term(2)">docker images</button></p>
+<pre class="term" id="term">点击上面的命令 ↑</pre>
+<div id="explain" class="box">解释会出现在这里。</div>
+</section>
+
+<section id="s5"><h2><span>05</span> 自测 3 题</h2><div id="quiz"></div><p id="score" class="mu"></p></section>
+
+<section id="s7"><h2><span>⚠️</span> 新手常见坑</h2>
+<div class="pit"><b>“容器停了，我的数据呢？”</b> 写在可写层里的数据，<code>docker rm</code> 后就没了。数据库数据要用 Volume（第 6 课）。</div>
+<div class="pit"><b>每次 docker run 都是新容器。</b> 想重新启动旧容器用 <code>docker start</code>，否则 <code>docker ps -a</code> 里会堆满已退出的容器（第 2 课）。</div>
+<div class="pit"><b>容器 ≠ 轻量虚拟机。</b> 它没有自己的内核，Linux 镜像在 Mac/Windows 上其实跑在 Docker Desktop 的一个小 Linux VM 里。</div>
+<div class="pit"><b>latest 不等于“最新版”。</b> 它只是一个默认标签名，生产环境请写明确版本（第 10 课）。</div></section>
+<section id="s8"><h2><span>📝</span> 本课小结</h2><ul class="recap">
+<li>Docker 把<b>应用 + 运行环境</b>打包，解决“在我电脑上能跑”。</li>
+<li>容器共享宿主机内核 → 比虚拟机<b>轻、快</b>；隔离靠 namespace + cgroups。</li>
+<li><b>镜像</b> = 多个只读层；<b>容器</b> = 镜像 + 可写层 + 运行中的进程。</li>
+<li>多个容器共享同一镜像层，写入走 Copy-on-Write。</li>
+<li>命令：<code>docker run</code>、<code>docker ps -a</code>、<code>docker images</code>。</li></ul></section>
+<section id="s6"><h2><span>06</span> 后续预告：容器生命周期 & Dockerfile 🛠️</h2>
+<p>今天的镜像是别人做好的。下一课你将<b>自己写 Dockerfile</b>，把一个后端服务打包成镜像：</p>
+<pre><span class="cmd">FROM</span> python:3.12-slim
+<span class="cmd">WORKDIR</span> /app
+<span class="cmd">COPY</span> requirements.txt .
+<span class="cmd">RUN</span> pip install -r requirements.txt
+<span class="cmd">COPY</span> . .
+<span class="cmd">CMD</span> ["python", "app.py"]</pre>
+<p class="mu">（课程顺序：第 2 课先讲容器生命周期，第 3 课正式写 Dockerfile。）提示：每条指令≈一层。你会看到为什么<b>先 COPY requirements 再 COPY 代码</b>能让构建快 10 倍（层缓存）。</p>
+</section>
+
+<div class="pn"><a class="dis">← 上一课</a><a href="index.html">🏠 课程目录</a><a href="l02.html">下一课 →</a></div></main><footer>Docker 渐进式课程 · 第 1 课</footer>
+<script>
+
+function deploy(d){const s=document.getElementById('srvst');s.className=d?'good':'bad';
+s.innerHTML=d?'✅ 容器里自带 Python 3.12 + 依赖，正常运行':'❌ ImportError / SSL 错误 —— 崩了';}
+function L(c,t){const e=document.createElement('div');e.className='layer '+c;e.textContent=t;return e}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+async function buildStacks(){const vm=document.getElementById('vm'),ct=document.getElementById('ct');vm.innerHTML=ct.innerHTML='';
+m1.style.width=m2.style.width='0';
+for(const[e,c,t] of [[vm,'hw','硬件'],[ct,'hw','硬件'],[vm,'os','宿主 OS'],[ct,'os','宿主 OS（共享内核）'],[vm,'hv','Hypervisor'],[ct,'rt','Docker Engine']]){e.appendChild(L(c,t));await sleep(350)}
+const r1=document.createElement('div');r1.className='row';vm.appendChild(r1);
+for(let i=1;i<=3;i++){const c=document.createElement('div');c.className='vmcol';c.append(L('os','Guest OS'),L('lib','库'),L('app','App'+i));r1.appendChild(c);await sleep(300)}
+const r2=document.createElement('div');r2.className='row';ct.appendChild(r2);
+for(let i=1;i<=3;i++){const c=document.createElement('div');c.className='vmcol';c.append(L('lib','库'),L('app','App'+i));r2.appendChild(c);await sleep(200)}
+m1.style.width='90%';m2.style.width='12%';}
+let n=0;const ctrs=[];
+function run(){if(ctrs.length>=4){cinfo.textContent='演示最多 4 个容器，先删一个吧';return}n++;
+const b=document.createElement('div');b.className='ctr box';b.innerHTML=`<b>容器 #${n}</b><div class="mu" style="font-size:12px">状态: 🟢 running</div><div class="stack" style="margin-top:8px"><div class="layer os ro">① 共享</div><div class="layer lib ro">② 共享</div><div class="layer app ro">③ 共享</div><div class="layer w">✏️ 可写层 (空)</div></div>`;
+stage.appendChild(b);ctrs.push(b);cinfo.innerHTML=`镜像只有 <b>1</b> 份，容器有 <b>${ctrs.length}</b> 个。只读层被共享，每个容器只多了一层薄薄的可写层。`}
+function writeFile(){const c=ctrs[ctrs.length-1];if(!c){cinfo.textContent='先 docker run 一个容器';return}
+c.querySelector('.w').textContent='✏️ /tmp/log.txt';cinfo.innerHTML='文件写进了<b>这个容器自己的可写层</b>，镜像和其他容器完全看不到。'}
+function rmC(){const c=ctrs.pop();if(!c){cinfo.textContent='没有容器可删';return}c.remove();cinfo.innerHTML='容器和它的可写层一起消失了，<b>镜像毫发无损</b>——所以重要数据要放 Volume（后面会讲）。'}
+const T=[[`$ docker run hello-world
+Unable to find image 'hello-world:latest' locally
+latest: Pulling from library/hello-world
+c1ec31eb5944: Pull complete
+Status: Downloaded newer image for hello-world:latest
+
+Hello from Docker!
+This message shows that your installation appears to be working correctly.`,
+'<b>发生了 4 件事：</b>① 本地找不到镜像 → ② 从 Docker Hub <b>拉取（pull）</b>，c1ec31eb5944 就是一层 → ③ 用镜像<b>创建容器</b> → ④ 容器运行程序、打印信息后<b>退出</b>。第二次运行就不用下载了。'],
+[`$ docker ps -a
+CONTAINER ID   IMAGE         COMMAND    CREATED         STATUS                     NAMES
+3f2a9c1b7d4e   hello-world   "/hello"   1 minute ago    Exited (0) 1 minute ago    happy_turing`,
+'<code>docker ps</code> 只列<b>正在运行</b>的容器；加 <code>-a</code> 才能看到已退出的。<b>Exited (0)</b> = 正常结束（退出码 0）。NAMES 没指定时 Docker 会随机起名。每次 run 都会新建一个容器！'],
+[`$ docker images
+REPOSITORY    TAG       IMAGE ID       CREATED        SIZE
+hello-world   latest    d2c94e258dcb   1 year ago     13.3kB`,
+'列出本地<b>镜像</b>。<b>REPOSITORY:TAG</b> 是名字和版本（默认 latest）；IMAGE ID 是内容哈希；SIZE 才 13KB——因为它只含一个小程序，不含完整操作系统。']];
+function term(i){const t=document.getElementById('term');t.textContent='';const s=T[i][0];let k=0;explain.innerHTML='…';
+clearInterval(window._ti);window._ti=setInterval(()=>{t.textContent=s.slice(0,k+=4);if(k>=s.length){clearInterval(window._ti);explain.innerHTML=T[i][1]}},12)}
+const Q=[['镜像和容器的关系，最准确的是？',['镜像是运行中的进程，容器是文件','镜像是只读模板；容器 = 镜像 + 可写层，并作为进程运行','两者是同一个东西的不同叫法'],1,'对！容器在镜像只读层之上加了自己的可写层。'],
+['从同一个镜像启动 3 个容器，镜像的只读层在磁盘上有几份？',['1 份，被共享','3 份','4 份'],0,'对！只读层共享，每个容器只多一个可写层。'],
+['容器比虚拟机轻量的主要原因是？',['容器用的语言更快','容器共享宿主机内核，不需要各自带完整操作系统','容器不能联网'],1,'对！不用 Guest OS，所以秒级启动、MB 级体积。']];
+let sc=0,done=0;Q.forEach((q,qi)=>{const d=document.createElement('div');d.className='q';d.innerHTML=`<b>Q${qi+1}. ${q[0]}</b>`;
+q[1].forEach((o,oi)=>{const l=document.createElement('label');l.textContent=o;l.onclick=()=>{if(d.dataset.a)return;d.dataset.a=1;done++;
+if(oi==q[2]){l.className='right';sc++;fb.innerHTML='<span class="good">✅ '+q[3]+'</span>'}else{l.className='wrong';d.querySelectorAll('label')[q[2]].className='right';fb.innerHTML='<span class="bad">❌ 再想想：</span>'+q[3].replace('对！','')}
+if(done==3)score.innerHTML=`得分 <b>${sc}/3</b> ${sc==3?'🎉 完美，可以进入第 2 课！':'— 回看第 3 节的动画再试试（刷新页面重做）'}`};d.appendChild(l)});
+const fb=document.createElement('div');fb.className='fb';d.appendChild(fb);quiz.appendChild(d)});
+</script>
+
+<script>addEventListener('scroll',()=>{const h=document.documentElement;document.getElementById('rp').style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%'})</script></body></html>

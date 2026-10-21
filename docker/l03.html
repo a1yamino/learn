@@ -1,0 +1,172 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker 第 3 课：Dockerfile 入门与层缓存</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/common.js"></script></head><body><div id="rp"></div><div class="topbar"><a href="index.html">🏠 目录</a><a href="l02.html">← 上一课</a><span class="ttl">第 3/12 课 · Dockerfile 入门与层缓存</span><div class="dots"><i class="done"></i><i class="done"></i><i class="on"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><a href="l04.html">下一课 →</a></div><style>
+.df{font:13px/1.6 ui-monospace,Menlo,monospace;background:#010409;color:#e6edf3;border-radius:10px;padding:10px}
+.df .ln{display:flex;gap:10px;align-items:center;padding:4px 8px;border-radius:6px;transition:.3s;border:1px solid transparent}
+.df .ln .k{color:#ff7b72;font-weight:700;min-width:70px}.df .ln .badge{margin-left:auto;font-size:11px;padding:1px 8px;border-radius:10px}
+.ln.cached{background:#3fb95018}.ln.cached .badge{background:#3fb95040;color:#7ee787}
+.ln.build{background:#d2992225;border-color:#d29922}.ln.build .badge{background:#d2992250;color:#f2cc60}
+.ln.wait{opacity:.5}
+.tl{display:flex;height:26px;border-radius:6px;overflow:hidden;margin:8px 0;background:var(--bd)}.tl i{display:block;height:100%;transition:width .4s}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
+.kv .box code{color:var(--ac)}
+.tabs button{background:transparent;color:var(--tx);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.ctx{display:flex;flex-wrap:wrap;gap:6px}.ctx span{font:12px ui-monospace,monospace;padding:4px 8px;border-radius:6px;border:1px solid var(--bd);transition:.3s}
+.ctx span.ign{opacity:.3;text-decoration:line-through}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid var(--bd);padding:7px 9px;text-align:left}th{background:#2496ed1a}
+.big{font-size:28px;font-weight:800}
+</style>
+<header><span class="tag">Docker 从入门到生产 · 第 3 课</span><h1>🛠️ Dockerfile 入门<br>与层缓存</h1><p>写出你的第一个镜像配方，并搞懂“为什么改一行代码，有时构建 2 秒，有时 2 分钟” · 约 30 分钟</p></header>
+<nav><a href="#s1">1 是什么</a><a href="#s2">2 指令</a><a href="#s3">3 构建过程</a><a href="#s4">4 缓存实验室</a><a href="#s5">5 CMD vs ENTRYPOINT</a><a href="#s6">6 .dockerignore</a><a href="#s7">坑</a><a href="#s8">自测</a><a href="#s9">小结</a></nav>
+<main>
+<section><h2><span>🎯</span> 本课目标</h2><ul class="recap"><li>读懂并写出一个 Node/Python 后端的 Dockerfile</li><li>理解 <b>每条指令 → 一层</b>，以及缓存何时命中、何时失效</li><li>学会调整指令顺序让构建快 10 倍</li><li>分清 CMD / ENTRYPOINT、shell 形式 / exec 形式</li></ul></section>
+
+<section id="s1"><h2><span>01</span> Dockerfile = 镜像的“菜谱”</h2>
+<p>第 1 课说过，镜像由多个只读层叠成。那这些层从哪来？答案：<b>Dockerfile 里的每条（会改文件系统的）指令，就生成一层。</b>它就像一份可重复执行的部署文档——不再是“README 第 7 步：手动装 libpq”。</p>
+<div class="grid"><div class="box">📄 <b>Dockerfile</b><br><span class="mu">文本配方，进 Git 管理</span></div><div class="box">⚙️ <b>docker build</b><br><span class="mu">按配方一步步执行，每步产出一层</span></div><div class="box">🧱 <b>镜像</b><br><span class="mu">层的堆叠 + 元数据（启动命令、端口…）</span></div></div>
+<p>一个典型的 Node API：</p>
+<pre><span class="cmd">FROM</span> node:20-slim                 <span class="mu"># 基础镜像：别人做好的层</span>
+<span class="cmd">WORKDIR</span> /app                      <span class="mu"># 之后的命令都在 /app 下执行</span>
+<span class="cmd">COPY</span> package*.json ./             <span class="mu"># 先只复制依赖清单</span>
+<span class="cmd">RUN</span> npm ci --omit=dev             <span class="mu"># 安装依赖（慢！）</span>
+<span class="cmd">COPY</span> . .                          <span class="mu"># 再复制源代码</span>
+<span class="cmd">ENV</span> NODE_ENV=production
+<span class="cmd">EXPOSE</span> 3000                       <span class="mu"># 文档性质：声明端口</span>
+<span class="cmd">CMD</span> ["node", "server.js"]         <span class="mu"># 容器启动时运行的主进程</span></pre>
+<p class="tabs"><button class="on" onclick="setLang(0,this)">Node</button><button onclick="setLang(1,this)">Python (FastAPI)</button><button onclick="setLang(2,this)">Go</button></p>
+<pre id="langpre"></pre></section>
+
+<section id="s2"><h2><span>02</span> 核心指令卡片</h2><div class="kv">
+<div class="box"><code>FROM image:tag</code><br>选基础镜像，必须是第一条。尽量写明确版本，别用 latest。</div>
+<div class="box"><code>WORKDIR /app</code><br>设置工作目录（不存在会自动创建）。别用 <code>RUN cd</code>——每条 RUN 是独立的 shell。</div>
+<div class="box"><code>COPY src dest</code><br>把构建上下文里的文件复制进镜像。<b>文件内容变了，这层缓存就失效。</b></div>
+<div class="box"><code>RUN 命令</code><br>构建时执行命令（装依赖、编译），结果固化成一层。</div>
+<div class="box"><code>ENV K=V</code><br>环境变量，构建和运行时都可见。</div>
+<div class="box"><code>ARG K</code><br>仅构建时的变量，<code>--build-arg</code> 传入（第 9 课细讲）。</div>
+<div class="box"><code>EXPOSE 3000</code><br>只是“声明”，不会真的开放端口——真正映射要 <code>-p</code>（第 7 课）。</div>
+<div class="box"><code>CMD / ENTRYPOINT</code><br>容器启动时的默认命令，见第 5 节。</div>
+<div class="box"><code>USER node</code><br>以非 root 用户运行（安全，第 12 课）。</div></div>
+<p class="mu">只有 <code>RUN</code>、<code>COPY</code>、<code>ADD</code> 会产生有内容的文件系统层；<code>ENV</code>、<code>CMD</code>、<code>EXPOSE</code> 等只改元数据。</p></section>
+
+<section id="s3"><h2><span>03</span> 看 docker build 一步步执行</h2>
+<p>点“开始构建”，看每条指令变成一层，旁边就是真实 <code>docker build</code> 的输出：</p>
+<div class="grid"><div><div class="df" id="bd1"></div></div><pre id="bo1" style="min-height:260px;margin:0"></pre></div>
+<p><button onclick="build1()">▶ docker build -t my-api:1.0 .</button></p>
+<div class="box mu" id="bx1">每个 <code>RUN/COPY</code> 结束时，Docker 会把文件变化打包成一层，并用“<b>指令 + 输入内容</b>”算出一个缓存键。</div></section>
+
+<section id="s4"><h2><span>04</span> 🧪 层缓存实验室（本课核心）</h2>
+<p><b>缓存规则只有一条：</b>从上往下逐层检查，如果“指令相同且输入文件没变”就复用（CACHED）；<b>一旦某层失效，它下面所有层都必须重建。</b></p>
+<p>选一个 Dockerfile 写法，再模拟一次改动，看看重建了哪些层、花了多久：</p>
+<p class="tabs" id="ordtabs"><button class="on" onclick="setOrd(0,this)">❌ 写法 A：先 COPY . .</button><button onclick="setOrd(1,this)">✅ 写法 B：先 COPY package.json</button></p>
+<div class="df" id="lab"></div>
+<p><button onclick="change('code')">✏️ 改了 server.js（日常最频繁）</button><button onclick="change('deps')">📦 加了一个 npm 依赖</button><button class="sec" onclick="change('none')">🔁 什么都没改，再 build</button><button class="sec" onclick="change('base')">⬆️ 升级基础镜像版本</button></p>
+<div class="tl" id="tl"></div>
+<p id="labres" class="box">👆 点一个改动试试。建议先在写法 A 点“改了 server.js”，再切到写法 B 点同一个按钮对比。</p>
+<p>📊 你的实验记录：</p><div id="hist" class="mu">（暂无）</div></section>
+
+<section id="s5"><h2><span>05</span> CMD vs ENTRYPOINT，shell vs exec 形式</h2>
+<table><tr><th></th><th>CMD</th><th>ENTRYPOINT</th></tr>
+<tr><td>作用</td><td>默认命令/参数</td><td>固定的可执行程序</td></tr>
+<tr><td><code>docker run img xxx</code></td><td>xxx <b>替换</b>整个 CMD</td><td>xxx 作为<b>参数追加</b></td></tr>
+<tr><td>典型用途</td><td>后端服务：<code>CMD ["node","server.js"]</code></td><td>CLI 工具镜像：<code>ENTRYPOINT ["curl"]</code></td></tr></table>
+<p>试一试：镜像里写了下面的配置，你运行不同命令，实际执行的是什么？</p>
+<p class="tabs"><button class="on" onclick="ep(0,this)">只有 CMD</button><button onclick="ep(1,this)">ENTRYPOINT + CMD</button></p>
+<div class="anim box" id="epan" style="font:13px ui-monospace,monospace;white-space:pre-wrap"></div>
+<div class="pit"><b>务必用 exec 形式（JSON 数组）：</b><code>CMD ["node","server.js"]</code>。shell 形式 <code>CMD node server.js</code> 会变成 <code>/bin/sh -c "node server.js"</code>，PID 1 是 sh，<b>docker stop 发的 SIGTERM 传不到 Node</b> → 等满 10 秒被强杀（还记得第 2 课的坑吗？）。</div></section>
+
+<section id="s6"><h2><span>06</span> 构建上下文与 .dockerignore</h2>
+<p><code>docker build .</code> 末尾的 <b>.</b> 是“构建上下文”：这个目录下的所有文件会先打包发给 Docker 引擎。<code>COPY . .</code> 也会把它们全拷进去——包括 <code>node_modules</code>、<code>.git</code>、甚至 <code>.env</code> 里的密码！</p>
+<div class="ctx" id="ctx"></div>
+<p><button onclick="ign()">➕ 添加 .dockerignore</button></p>
+<pre id="ignf" style="display:none">node_modules
+.git
+.env
+*.log
+dist
+Dockerfile</pre>
+<p id="ctxs" class="box">上下文大小：<span class="big" id="ctxn">412 MB</span></p></section>
+
+<section id="s7"><h2><span>⚠️</span> 新手常见坑</h2>
+<div class="pit"><b><code>COPY . .</code> 放在 <code>npm install</code> 前面</b>：每改一行代码都重装依赖。依赖清单先 COPY，代码后 COPY。</div>
+<div class="pit"><b><code>RUN apt-get update</code> 和 <code>apt-get install</code> 分两行</b>：update 那层被缓存后，install 可能用到过期的索引。写在一条 RUN 里：<code>RUN apt-get update && apt-get install -y libpq5 && rm -rf /var/lib/apt/lists/*</code></div>
+<div class="pit"><b>以为后面的 RUN rm 能让镜像变小</b>：上一层的文件已经固化，后面删只是“遮住”，体积不变。要在<b>同一条 RUN</b>里装完就清（第 5 课多阶段构建更彻底）。</div>
+<div class="pit"><b>把本地 node_modules 拷进镜像</b>：可能含 macOS 编译的二进制，在 Linux 容器里直接崩。用 .dockerignore 排除。</div>
+<div class="pit"><b>RUN cd /app</b>：不会影响下一条指令，用 WORKDIR。</div></section>
+
+<section id="s8"><h2><span>✅</span> 自测 4 题</h2><div id="quiz"></div><p id="score" class="mu"></p></section>
+
+<section id="s9"><h2><span>📝</span> 本课小结</h2><ul class="recap">
+<li>Dockerfile 每条 RUN/COPY/ADD → 一层只读层；<code>docker build -t 名:标签 .</code> 构建。</li>
+<li>缓存：逐层比对“指令 + 输入”，<b>某层失效 → 之后全部重建</b>。</li>
+<li>黄金顺序：<b>变化少的放上面</b>（基础镜像 → 系统依赖 → 依赖清单 + 安装 → 源代码）。</li>
+<li>用 exec 形式的 CMD；CMD 可被覆盖，ENTRYPOINT 是固定程序。</li>
+<li>.dockerignore 排除 node_modules、.git、.env，减小上下文、避免泄密。</li></ul></section>
+<section><h2><span>➡️</span> 下一课预告：实战打包后端 API</h2><p>下一课我们把一个真实的 API（带健康检查、配置、端口）从零容器化，跑起来用 curl 访问它，并学会在构建失败时如何排查。</p></section>
+<div class="pn"><a href="l02.html">← 上一课</a><a href="index.html">🏠 课程目录</a><a href="l04.html">下一课 →</a></div></main>
+<script>
+const LG=[`FROM node:20-slim
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY . .
+EXPOSE 3000
+CMD ["node", "server.js"]`,`FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]`,`FROM golang:1.23
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -o /bin/api ./cmd/api
+EXPOSE 8080
+CMD ["/bin/api"]
+# 第 5 课会用多阶段构建把它从 ~900MB 瘦到 ~15MB`];
+function setLang(i,b){b.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');langpre.textContent=LG[i]}langpre.textContent=LG[0];
+function render(el,L){el.innerHTML=L.map((l,i)=>`<div class="ln wait" id="${el.id}_${i}"><span class="k">${l[0]}</span><span>${l[1]}</span><span class="badge"></span></div>`).join('')}
+const B1=[['FROM','node:20-slim',3.1,'[1/5] FROM docker.io/library/node:20-slim'],['WORKDIR','/app',.1,'[2/5] WORKDIR /app'],['COPY','package*.json ./',.1,'[3/5] COPY package*.json ./'],['RUN','npm ci --omit=dev',38,'[4/5] RUN npm ci --omit=dev\n      added 142 packages in 37s'],['COPY','. .',.3,'[5/5] COPY . .'],['CMD','["node","server.js"]',0,'exporting to image\nnaming to docker.io/library/my-api:1.0 ✅']];
+render(bd1,B1);const sl=ms=>new Promise(r=>setTimeout(r,ms));
+async function build1(){render(bd1,B1);bo1.textContent='$ docker build -t my-api:1.0 .\n';for(let i=0;i<B1.length;i++){const e=document.getElementById('bd1_'+i);e.className='ln build';e.querySelector('.badge').textContent='构建中…';await sl(250+B1[i][2]*25);e.className='ln cached';e.querySelector('.badge').textContent=B1[i][2]?B1[i][2]+'s':'元数据';bo1.textContent+=' => '+B1[i][3]+(B1[i][2]?'   '+B1[i][2]+'s':'')+'\n'}
+bx1.innerHTML='✅ 构建完成：一个镜像 = 5 个文件系统层 + 元数据（CMD、EXPOSE）。用 <code>docker history my-api:1.0</code> 可以查看每一层及大小。'}
+// lab
+const ORD=[[['FROM','node:20-slim','base',2],['WORKDIR','/app','',.1],['COPY','. .  (全部代码)','code deps',.4],['RUN','npm ci','',38],['CMD','["node","server.js"]','',0]],
+[['FROM','node:20-slim','base',2],['WORKDIR','/app','',.1],['COPY','package*.json ./','deps',.1],['RUN','npm ci','',38],['COPY','. .  (全部代码)','code deps',.4],['CMD','["node","server.js"]','',0]]];
+let od=0;const hs=[];function setOrd(i,b){od=i;document.querySelectorAll('#ordtabs button').forEach(x=>x.classList.remove('on'));b.classList.add('on');render(lab,ORD[od]);tl.innerHTML=''}
+render(lab,ORD[0]);
+const CN={code:'改了 server.js',deps:'加了依赖',none:'没改动',base:'升级基础镜像'};
+async function change(k){const L=ORD[od];let broken=false,t=0,first=-1;tl.innerHTML='';
+for(let i=0;i<L.length;i++){const e=document.getElementById('lab_'+i);if(!broken&&k!=='none'&&L[i][2].split(' ').includes(k)){broken=true;first=i}
+const sec=broken?L[i][3]:0;t+=sec;e.className='ln '+(broken?'build':'cached');e.querySelector('.badge').textContent=broken?('重建 '+(sec||'')+(sec?'s':'')):'CACHED';
+const bar=document.createElement('i');bar.style.width='0';bar.style.background=broken?'#d29922':'#3fb950';bar.title=L[i][0];tl.appendChild(bar);await sl(160);bar.style.width=Math.max(sec,0.6)/45*100+'%'}
+const fast=t<5;labres.innerHTML=`<b>写法 ${od?'B':'A'} · ${CN[k]}</b>：总耗时 <span class="big ${fast?'good':'bad'}">${t.toFixed(1)}s</span><br>`+(first<0?'所有层都命中缓存，几乎瞬间完成。':`第 ${first+1} 层（${L[first][0]} ${L[first][1]}）的输入变了 → 它和之后的层全部重建。`)+(k==='code'&&!od?'<br>😱 只改了一行代码，却重装了全部依赖！因为 COPY . . 在 npm ci 之前。':'')+(k==='code'&&od?'<br>🎉 依赖层被缓存了，只重新复制代码。这就是“先 COPY 依赖清单”的威力。':'');
+hs.push(`写法 ${od?'B':'A'} · ${CN[k]} → ${t.toFixed(1)}s`);hist.innerHTML=hs.slice(-6).map(x=>'• '+x).join('<br>')}
+// entrypoint
+const EP=[`Dockerfile: CMD ["node","server.js"]
+
+$ docker run my-api            → 执行 node server.js
+$ docker run my-api node -v    → 执行 node -v        (CMD 被整体替换)
+$ docker run my-api sh         → 执行 sh             (调试时很方便)`,`Dockerfile: ENTRYPOINT ["python","manage.py"]
+            CMD ["runserver"]
+
+$ docker run my-app            → python manage.py runserver
+$ docker run my-app migrate    → python manage.py migrate   (只替换 CMD 部分)
+$ docker run --entrypoint sh my-app → 执行 sh       (要覆盖 ENTRYPOINT 得显式指定)`];
+function ep(i,b){b.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');epan.textContent=EP[i]}epan.textContent=EP[0];
+// context
+const F=[['src/',1,0],['server.js',.1,0],['package.json',.01,0],['package-lock.json',.3,0],['node_modules/',380,1],['.git/',28,1],['.env 🔑',.01,1],['debug.log',3.5,1],['README.md',.02,0]];
+ctx.innerHTML=F.map(f=>`<span>${f[0]} <span class="mu">${f[1]>=1?f[1]+'MB':Math.round(f[1]*1000)+'KB'}</span></span>`).join('');
+function ign(){ignf.style.display='block';[...ctx.children].forEach((s,i)=>F[i][2]&&s.classList.add('ign'));ctxn.textContent='1.4 MB';ctxs.innerHTML+=' <span class="good">✅ 从 412MB 降到 1.4MB，.env 不会再被打进镜像</span>'}
+// quiz
+const Q=[['下面哪种顺序在“只改业务代码”时构建最快？',['COPY . . → RUN npm ci','COPY package*.json → RUN npm ci → COPY . .','RUN npm ci → COPY . .（不复制 package.json）'],1,'对！依赖层只在 package.json 变化时才失效。'],
+['第 3 层缓存失效了，第 4、5 层会怎样？',['如果它们自身没变，仍然命中缓存','一定全部重建','只有 RUN 会重建'],1,'对！层是叠加的，下层变了，上面的层都要基于新内容重建。'],
+['Dockerfile 写 CMD ["node","server.js"]，执行 docker run my-api node -v 实际运行？',['node server.js node -v','node -v','报错'],1,'对！run 后的参数会整体替换 CMD。'],
+['为什么推荐 CMD ["node","server.js"] 而不是 CMD node server.js？',['JSON 更好看','shell 形式下 PID 1 是 sh，SIGTERM 传不到应用，无法优雅停止','shell 形式不能运行 node'],1,'对！exec 形式让应用直接成为 PID 1。']];
+let sc=0,done=0;Q.forEach((q,qi)=>{const d=document.createElement('div');d.className='q';d.innerHTML=`<b>Q${qi+1}. ${q[0]}</b>`;
+q[1].forEach((o,oi)=>{const l=document.createElement('label');l.textContent=o;l.onclick=()=>{if(d.dataset.a)return;d.dataset.a=1;done++;
+if(oi==q[2]){l.className='right';sc++;fb.innerHTML='<span class="good">✅ '+q[3]+'</span>'}else{l.className='wrong';d.querySelectorAll('label')[q[2]].className='right';fb.innerHTML='<span class="bad">❌ 正确答案已标绿：</span>'+q[3].replace('对！','')}
+if(done==Q.length)score.innerHTML=`得分 <b>${sc}/${Q.length}</b> ${sc==Q.length?'🎉 完美，进入第 4 课！':'— 回看对应章节再试（刷新重做）'}`};d.appendChild(l)});
+const fb=document.createElement('div');fb.className='fb';d.appendChild(fb);quiz.appendChild(d)});
+</script>
+
+<script>addEventListener('scroll',()=>{const h=document.documentElement;document.getElementById('rp').style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%'})</script></body></html>

@@ -1,0 +1,111 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker 第 4 课：实战：把后端 API 打包成镜像</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/common.js"></script></head><body><div id="rp"></div><div class="topbar"><a href="index.html">🏠 目录</a><a href="l03.html">← 上一课</a><span class="ttl">第 4/12 课 · 实战：把后端 API 打包成镜像</span><div class="dots"><i class="done"></i><i class="done"></i><i class="done"></i><i class="on"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><a href="l05.html">下一课 →</a></div><header><span class="tag">Docker 从入门到生产 · 第 4 课</span><h1>🚀 实战：把后端 API<br>打包成镜像</h1><p>从一个真实的 Node/Python API 出发，一步步容器化、跑起来、访问它、排查失败 · 约 35 分钟</p></header>
+<nav><a href="#s1">1 项目</a><a href="#s2">2 逐步写 Dockerfile</a><a href="#s3">3 构建 & 运行</a><a href="#s4">4 0.0.0.0 之谜</a><a href="#s5">5 健康检查</a><a href="#s6">6 排查构建失败</a><a href="#s7">坑</a><a href="#s8">自测</a><a href="#s9">小结</a></nav>
+<main>
+<section><h2><span>🎯</span> 本课目标</h2><ul class="recap"><li>把一个带 <code>/health</code> 和 <code>/users</code> 接口的 API 完整容器化</li><li>理解 <b>为什么服务必须监听 0.0.0.0</b>（新手第一大坑）</li><li>加上 HEALTHCHECK，学会读懂 build 报错</li></ul></section>
+<section id="s1"><h2><span>01</span> 我们的项目</h2>
+<p>一个最小但“像样”的后端：读取 <code>PORT</code> 环境变量、有健康检查接口、优雅处理 SIGTERM。选你熟悉的语言：</p>
+<div id="lt"><button class="on">Node (Express)</button><button>Python (FastAPI)</button></div><pre id="lp"></pre>
+<pre id="tree">my-api/
+├── server.js / main.py
+├── package.json / requirements.txt
+├── package-lock.json
+├── .dockerignore      ← 第 3 课学的
+└── Dockerfile         ← 本课要写的</pre></section>
+<section id="s2"><h2><span>02</span> 一步步写出 Dockerfile</h2><p>每一步都解释“为什么”。点“下一步”：</p><div id="ds"></div></section>
+<section id="s3"><h2><span>03</span> 构建、运行、访问</h2><div id="t1"></div>
+<div class="viz" id="flow"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span class="node" id="n1">💻 curl<br>localhost:8080</span><span>➡</span><span class="node" id="n2">🖥 宿主机<br>端口 8080</span><span>➡</span><span class="node" id="n3">📦 容器 api<br>:3000</span><span>➡</span><span class="node" id="n4">🟢 Node 进程<br>listen 0.0.0.0:3000</span></div></div>
+<p><button onclick="flowGo()">▶ 动画：一个请求怎么到达容器</button></p></section>
+<section id="s4"><h2><span>04</span> 🕵️ 0.0.0.0 之谜：容器跑着，却访问不了？</h2>
+<p>容器有自己的网络命名空间，里面的 <code>127.0.0.1</code> 是<b>容器自己的回环地址</b>，不是你电脑的。端口转发进来的流量从容器的“外部网卡”（如 172.17.0.2）进入。切换监听地址看看：</p>
+<div id="bt"><button class="on">app.listen(3000, '127.0.0.1')</button><button>app.listen(3000, '0.0.0.0')</button></div>
+<div class="viz" id="bind"></div>
+<div class="pit">很多框架默认只监听 localhost：Flask <code>app.run()</code>、<code>uvicorn main:app</code>、Vite dev server、Rails 等。容器里一定要显式写 <code>--host 0.0.0.0</code>。</div></section>
+<section id="s5"><h2><span>05</span> HEALTHCHECK：让 Docker 知道服务“真的活着”</h2>
+<p>进程在跑 ≠ 服务可用（可能卡死、数据库连不上）。HEALTHCHECK 让 Docker 定期探测：</p>
+<pre><span class="cmd">HEALTHCHECK</span> --interval=10s --timeout=3s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"</pre>
+<div class="viz"><div id="hcs" style="font-size:20px;letter-spacing:4px">⬜⬜⬜⬜⬜⬜⬜⬜</div><p>状态：<b id="hct">starting</b></p>
+<button onclick="hc(1)">模拟健康运行</button><button class="sec" onclick="hc(0)">模拟数据库断开</button></div>
+<p class="mu">连续失败 retries 次 → <code>unhealthy</code>。<code>docker ps</code> 的 STATUS 会显示 <code>(healthy)</code>/<code>(unhealthy)</code>；Compose（第 8 课）可以“等数据库 healthy 再启动 API”。slim 镜像里没有 curl，所以这里用 node 自己发请求。</p></section>
+<section id="s6"><h2><span>06</span> 读懂构建失败</h2><div id="t2"></div></section>
+<section id="s7"><h2><span>⚠️</span> 新手常见坑</h2>
+<div class="pit"><b>监听 127.0.0.1</b>：容器 Up，但 curl 返回 <code>Connection reset / Empty reply</code>。改成 0.0.0.0。</div>
+<div class="pit"><b>-p 写反</b>：<code>-p 宿主机端口:容器端口</code>。<code>-p 3000:8080</code> 和 <code>-p 8080:3000</code> 完全不同。</div>
+<div class="pit"><b>用 npm start 作为 CMD</b>：npm 会成为 PID 1，可能不转发 SIGTERM。直接 <code>CMD ["node","server.js"]</code>。</div>
+<div class="pit"><b>改了代码但容器里还是旧的</b>：镜像是构建那一刻的快照。改代码 → 重新 build → 删旧容器 → run 新容器。（开发时热重载用 bind mount，第 6 课。）</div>
+<div class="pit"><b>Apple Silicon 构建的镜像在服务器上报 <code>exec format error</code></b>：架构不同（arm64 vs amd64）。用 <code>docker build --platform linux/amd64</code>（第 10 课讲 buildx 多架构）。</div></section>
+<section id="s8"><h2><span>✅</span> 自测 4 题</h2><div id="quiz"></div><p id="score" class="mu"></p></section>
+<section id="s9"><h2><span>📝</span> 本课小结</h2><ul class="recap"><li>流程：写代码 → Dockerfile → <code>docker build -t</code> → <code>docker run -d -p</code> → curl 验证。</li><li>服务在容器里必须监听 <b>0.0.0.0</b>，端口用环境变量配置。</li><li>HEALTHCHECK 区分“进程在跑”和“服务可用”。</li><li>构建报错看 <b>哪一步 [n/m]</b> 失败 + 最后几行错误。</li><li>代码改了要重新 build + 重新 run。</li></ul></section>
+<section><h2><span>➡️</span> 下一课预告：多阶段构建与镜像瘦身</h2><p>你的镜像可能有 1GB 多，其中编译器、源码、测试工具在生产根本用不上。下一课用多阶段构建把 Go API 从 900MB 瘦到 15MB。</p></section>
+<div class="pn"><a href="l03.html">← 上一课</a><a href="index.html">🏠 课程目录</a><a href="l05.html">下一课 →</a></div></main>
+<script>
+DC.tabs('lt','lp',[`// server.js
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;          // 端口可配置
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/users', (req, res) => res.json([{ id: 1, name: 'Alice' }]));
+
+const server = app.listen(PORT, '0.0.0.0', () =>  // ⚠️ 0.0.0.0，见第 4 节
+  console.log(\`API listening on :\${PORT}\`));     // 日志打到 stdout
+
+process.on('SIGTERM', () => {                   // 优雅关闭（第 2 课）
+  console.log('SIGTERM received, closing...');
+  server.close(() => process.exit(0));
+});`,`# main.py
+from fastapi import FastAPI
+app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.get("/users")
+def users():
+    return [{"id": 1, "name": "Alice"}]
+
+# 启动：uvicorn main:app --host 0.0.0.0 --port 8000
+# uvicorn 自带 SIGTERM 优雅关闭`]);
+DC.steps('ds',[
+'<b>① 选基础镜像</b><pre>FROM node:20-slim</pre><span class="mu">slim = Debian 精简版（~200MB），兼容性好。alpine 更小但用 musl libc，某些原生模块会出问题。<b>固定大版本</b>，别用 latest。</span>',
+'<b>② 工作目录</b><pre>WORKDIR /app</pre>',
+'<b>③ 先装依赖（利用缓存，第 3 课）</b><pre>COPY package*.json ./\nRUN npm ci --omit=dev</pre><span class="mu"><code>npm ci</code> 严格按 lock 文件安装，可重复；<code>--omit=dev</code> 不装测试/构建工具。</span>',
+'<b>④ 复制代码</b><pre>COPY . .</pre><span class="mu">.dockerignore 已排除 node_modules、.git、.env。</span>',
+'<b>⑤ 运行时配置</b><pre>ENV NODE_ENV=production PORT=3000\nEXPOSE 3000</pre><span class="mu">NODE_ENV=production 让 Express 等库关闭调试特性、提升性能。</span>',
+'<b>⑥ 不用 root 运行</b><pre>USER node</pre><span class="mu">官方 node 镜像自带 node 用户。容器被攻破时权限更小（第 12 课）。</span>',
+'<b>⑦ 启动命令（exec 形式）</b><pre>CMD ["node", "server.js"]</pre>',
+'🎉 <b>完整 Dockerfile</b><pre>FROM node:20-slim\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci --omit=dev\nCOPY . .\nENV NODE_ENV=production PORT=3000\nEXPOSE 3000\nUSER node\nHEALTHCHECK --interval=10s CMD node -e "fetch(\'http://localhost:3000/health\').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"\nCMD ["node", "server.js"]</pre>']);
+DC.term('t1',[['build','docker build -t my-api:1.0 .',` => [1/5] FROM docker.io/library/node:20-slim       2.1s
+ => [2/5] WORKDIR /app                                0.1s
+ => [3/5] COPY package*.json ./                       0.0s
+ => [4/5] RUN npm ci --omit=dev                      14.2s
+ => [5/5] COPY . .                                    0.1s
+ => exporting to image                                0.3s
+ => => naming to docker.io/library/my-api:1.0`,'<b>-t my-api:1.0</b> 给镜像起名和标签。最后的 <b>.</b> 是构建上下文。'],
+['run','docker run -d --name api -p 8080:3000 my-api:1.0','9b1e4c7f2a3d...','<b>-p 8080:3000</b>：宿主机 8080 → 容器 3000。现在可以从电脑访问 localhost:8080。'],
+['curl','curl localhost:8080/users','[{"id":1,"name":"Alice"}]','🎉 成功！请求经过端口映射进入容器里的 Node 进程。'],
+['logs','docker logs api','API listening on :3000','日志来自 console.log → stdout。'],
+['ps','docker ps','CONTAINER ID  IMAGE        STATUS                    PORTS                    NAMES\n9b1e4c7f2a3d  my-api:1.0   Up 30 seconds (healthy)   0.0.0.0:8080->3000/tcp   api','注意 <b>(healthy)</b>（来自 HEALTHCHECK）和 <b>PORTS</b> 列的映射。'],
+['重新部署','docker build -t my-api:1.1 . && docker rm -f api && docker run -d --name api -p 8080:3000 my-api:1.1','...\n4c2d8a1e9f0b...','改代码后的标准流程：新镜像 → 删旧容器 → 起新容器。Compose（第 8 课）会把它简化成一条命令。']]);
+async function flowGo(){for(const id of['n1','n2','n3','n4']){document.querySelectorAll('#flow .node').forEach(n=>n.classList.remove('hl'));document.getElementById(id).classList.add('hl');await DC.sl(600)}document.getElementById('n4').classList.add('on')}
+const BV=[`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><span class="node">💻 curl localhost:8080</span>➡<span class="node">🖥 8080→</span>➡<span class="node off">📦 容器网卡 eth0 172.17.0.2:3000<br>❌ 没有进程在这个地址监听</span><span class="node">🔁 lo 127.0.0.1:3000 ✔ Node 在这里</span></div><p class="bad">curl: (52) Empty reply from server —— 流量到了 eth0，可 Node 只在容器内部的 lo 上等着。</p>`,
+`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><span class="node">💻 curl localhost:8080</span>➡<span class="node">🖥 8080→</span>➡<span class="node on">📦 0.0.0.0:3000 = 所有网卡（eth0 + lo）✔</span></div><p class="good">[{"id":1,"name":"Alice"}] —— 0.0.0.0 表示“监听所有网卡”。</p>`];
+DC.tabs('bt','bind',BV,true);
+let hcT;function hc(ok){clearInterval(hcT);let a=[],fail=0;hcT=setInterval(()=>{const g=ok||a.length<3;a.push(g?'🟩':'🟥');fail=g?0:fail+1;if(a.length>8)a.shift();hcs.textContent=a.join('');hct.textContent=fail>=3?'unhealthy ❌':(g?'healthy ✅':'healthy（失败 '+fail+'/3）');hct.className=fail>=3?'bad':'good';if(a.length>=8&&(ok||fail>=3))clearInterval(hcT)},400)}
+DC.term('t2',[['依赖安装失败','docker build -t my-api .',` => [4/5] RUN npm ci --omit=dev
+ => ERROR [4/5] RUN npm ci --omit=dev
+npm ERR! The \`npm ci\` command can only install with an existing package-lock.json
+ERROR: failed to solve: process "/bin/sh -c npm ci --omit=dev" did exit with code 1`,'看 <b>ERROR [4/5]</b> 定位到第 4 步，再看上面 npm 的报错：缺 lock 文件。可能是 .dockerignore 误排除了它，或没提交。'],
+['找不到文件','docker build -t my-api .',` => ERROR [3/5] COPY package*.json ./
+ERROR: failed to solve: failed to compute cache key: "/package.json": not found`,'COPY 的路径是相对<b>构建上下文</b>的。检查你是否在项目根目录执行 build，或者文件被 .dockerignore 排除了。'],
+['看完整日志','docker build --progress=plain --no-cache -t my-api .','#7 [4/5] RUN npm ci --omit=dev\n#7 3.214 added 64 packages in 3s\n...','<b>--progress=plain</b> 显示每步完整输出；<b>--no-cache</b> 强制全部重建（怀疑缓存脏了时用）。'],
+['运行就崩','docker run my-api:1.0',`node:internal/modules/cjs/loader:1080
+Error: Cannot find module 'express'`,'构建成功但运行失败：依赖没装进去（比如 express 写在 devDependencies 里被 --omit=dev 排除了）。用 <code>docker run -it --rm my-api:1.0 sh</code> 进去看看 /app/node_modules。']]);
+DC.quiz([['容器 Up 了，但 curl localhost:8080 返回 Empty reply，最可能原因？',['镜像太大','应用只监听了容器内的 127.0.0.1','忘了 EXPOSE'],1,'对！要监听 0.0.0.0。EXPOSE 只是文档，不影响访问。'],
+['-p 8080:3000 的含义是？',['容器 8080 → 宿主机 3000','宿主机 8080 → 容器 3000','两个端口都开放给公网'],1,'对！左边宿主机，右边容器。'],
+['修改了 server.js，怎样让运行中的服务生效？',['docker restart api','重新 build 镜像，删除旧容器，用新镜像 run','docker exec 进去改'],1,'对！restart 还是旧镜像的快照。'],
+['HEALTHCHECK 解决什么问题？',['让镜像更小','区分“进程在跑”和“服务真正可用”','自动重启宿主机'],1,'对！它能发现卡死、依赖断开等进程仍存活的故障。']],'进入第 5 课！');
+</script>
+
+<script>addEventListener('scroll',()=>{const h=document.documentElement;document.getElementById('rp').style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%'})</script></body></html>

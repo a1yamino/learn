@@ -1,0 +1,110 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker 第 5 课：多阶段构建与镜像瘦身</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/common.js"></script></head><body><div id="rp"></div><div class="topbar"><a href="index.html">🏠 目录</a><a href="l04.html">← 上一课</a><span class="ttl">第 5/12 课 · 多阶段构建与镜像瘦身</span><div class="dots"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="on"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><a class="dis">下一课 →</a></div><header><span class="tag">Docker 从入门到生产 · 第 5 课</span><h1>🪶 多阶段构建<br>与镜像瘦身</h1><p>把编译环境留在“工厂”，只把成品运出去 · 约 30 分钟</p></header>
+<nav><a href="#s1">1 为什么胖</a><a href="#s2">2 多阶段原理</a><a href="#s3">3 Go 实战</a><a href="#s4">4 Node/Python</a><a href="#s5">5 基础镜像选择</a><a href="#s6">6 分析工具</a><a href="#s7">坑</a><a href="#s8">自测</a><a href="#s9">小结</a></nav>
+<main>
+<section><h2><span>🎯</span> 本课目标</h2><ul class="recap"><li>知道镜像为什么会变胖，以及“删文件不减肥”的原理</li><li>用多阶段构建把 Go API 从 ~900MB 瘦到 ~15MB</li><li>为 Node/Python 选择合适基础镜像（slim / alpine / distroless）</li></ul></section>
+<section id="s1"><h2><span>01</span> 镜像为什么这么胖？</h2>
+<p>镜像大 = 拉取慢、部署慢、存储贵、<b>攻击面大</b>（里面的每个工具都可能有漏洞）。看看一个单阶段 Go 镜像里都装了什么：</p>
+<div class="viz" id="fat"></div>
+<p>回忆第 3 课：<b>层只能叠加</b>。在后面的 RUN 里 <code>rm</code> 前面层的文件，只是加一层“删除标记”把它遮住，原文件仍在镜像里：</p>
+<div class="viz"><div id="wh" class="stack" style="max-width:420px"></div><p id="whs" class="mu"></p><button onclick="whDemo()">▶ 演示：RUN rm 能减肥吗？</button></div></section>
+<section id="s2"><h2><span>02</span> 多阶段构建：工厂 🏭 vs 包裹 📦</h2>
+<p>一个 Dockerfile 里写多个 <code>FROM</code>。前面的阶段负责编译，最后一个阶段从干净的小镜像开始，只用 <code>COPY --from=</code> 拿走编译产物。<b>最终镜像只包含最后一个阶段的层。</b></p>
+<div class="viz" id="ms" style="min-height:220px"><div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+<div class="box" style="flex:1;min-width:220px"><b>🏭 阶段 1：builder</b> <span class="mu">FROM golang:1.23</span><div style="margin-top:8px"><span class="node">Go 编译器 500MB</span><span class="node">源码</span><span class="node">模块缓存 300MB</span><span class="node" id="bin">⚙️ api 二进制 12MB</span></div></div>
+<div class="box" style="flex:1;min-width:220px" id="fin"><b>📦 阶段 2：最终镜像</b> <span class="mu">FROM gcr.io/distroless/static</span><div id="fin2" style="margin-top:8px"><span class="node">distroless 2MB</span></div></div></div>
+<p id="mss" class="mu"></p></div><button onclick="msGo()">▶ COPY --from=builder</button></section>
+<section id="s3"><h2><span>03</span> Go API 实战：单阶段 vs 多阶段</h2>
+<div id="gt"><button class="on">❌ 单阶段</button><button>✅ 多阶段</button></div><pre id="gp"></pre>
+<p>镜像大小对比：</p><div id="bars"></div><button onclick="bars()">▶ 对比体积</button></section>
+<section id="s4"><h2><span>04</span> Node / Python 也能用</h2>
+<div id="nt"><button class="on">Node (TypeScript)</button><button>Python</button></div><pre id="np"></pre></section>
+<section id="s5"><h2><span>05</span> 基础镜像怎么选？</h2>
+<table><tr><th>基础镜像</th><th>大小（约）</th><th>有 shell/包管理器</th><th>适合</th></tr>
+<tr><td><code>node:20</code> / <code>python:3.12</code></td><td>1GB</td><td>✅ 很全</td><td>构建阶段</td></tr>
+<tr><td><code>*-slim</code>（Debian 精简）</td><td>150–200MB</td><td>✅ apt</td><td><b>Node/Python 运行阶段首选</b>，兼容性好</td></tr>
+<tr><td><code>*-alpine</code></td><td>50–130MB</td><td>✅ apk</td><td>小，但 musl libc 可能与原生依赖（如某些 Python wheel）不兼容</td></tr>
+<tr><td><code>distroless</code></td><td>2–50MB</td><td>❌ 无 shell</td><td>安全性最好；调试要用 <code>:debug</code> 变体</td></tr>
+<tr><td><code>scratch</code></td><td>0</td><td>❌ 什么都没有</td><td>Go/Rust 静态二进制（注意 CA 证书、时区）</td></tr></table></section>
+<section id="s6"><h2><span>06</span> 查看镜像里到底有什么</h2><div id="t1"></div></section>
+<section id="s7"><h2><span>⚠️</span> 新手常见坑</h2>
+<div class="pit"><b>scratch 里 HTTPS 请求失败</b> <code>x509: certificate signed by unknown authority</code>：没有 CA 证书。用 distroless/static，或 <code>COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/</code>。</div>
+<div class="pit"><b>Go 二进制在 alpine/scratch 里报 “not found”</b>：动态链接了 glibc。编译时加 <code>CGO_ENABLED=0</code>。</div>
+<div class="pit"><b>distroless 里 docker exec sh 失败</b>：本来就没 shell。调试用 <code>:debug</code> 标签或 <code>docker debug</code>（第 11 课）。</div>
+<div class="pit"><b>为了小盲目上 alpine</b>：Python 可能要从源码编译依赖，反而更慢更大。先用 slim。</div></section>
+<section id="s8"><h2><span>✅</span> 自测 4 题</h2><div id="quiz"></div><p id="score" class="mu"></p></section>
+<section id="s9"><h2><span>📝</span> 本课小结</h2><ul class="recap"><li>层只增不减：后面 <code>rm</code> 不会减小体积。</li><li>多阶段：<code>FROM ... AS builder</code> 编译，最终阶段 <code>COPY --from=builder</code> 只拿产物。</li><li>Go：<code>CGO_ENABLED=0</code> + distroless/scratch → 十几 MB。</li><li>Node/Python：构建阶段装 dev 依赖编译，运行阶段用 slim + 生产依赖。</li><li>用 <code>docker history</code> / dive 分析每层大小。</li></ul></section>
+<section><h2><span>➡️</span> 下一课预告：数据卷与持久化</h2><p>把 PostgreSQL 跑在容器里，<code>docker rm</code> 一下，数据全没了？下一课讲 volume 和 bind mount，以及开发时如何代码热重载。</p></section>
+<div class="pn"><a href="l04.html">← 上一课</a><a href="index.html">🏠 课程目录</a><a class="dis">下一课（即将发布）</a></div></main>
+<script>
+const FAT=[['Debian 基础系统',120],['gcc / git 等构建工具',260],['Go 工具链',480],['Go 模块缓存',300],['源代码 + 测试',20],['api 二进制 ✅ 真正需要的',12]];
+fat.innerHTML=FAT.map(([n,s])=>`<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="width:180px;font-size:13px">${n}</span><div class="meter" style="flex:1;height:16px"><i style="width:${s/5}%;background:${s==12?'#3fb950':'#f85149'}"></i></div><span style="width:60px;font-size:13px">${s}MB</span></div>`).join('')+'<p><b>总计 ~1.2GB，真正需要的只有 12MB（1%）</b></p>';
+async function whDemo(){wh.innerHTML='';whs.textContent='';const L=[['os','FROM debian (120MB)'],['lib','RUN apt-get install build-essential (260MB)'],['app','RUN make → 生成 app (12MB)'],['hv','RUN apt-get remove build-essential (删除标记 0MB)']];let t=0;for(const[c,x]of L){const e=document.createElement('div');e.className='layer '+c;e.textContent=x;wh.appendChild(e);t+=parseInt((x.match(/(\d+)MB/)||[0,0])[1]);whs.innerHTML='镜像大小：<b>'+t+'MB</b>';await DC.sl(600)}
+whs.innerHTML+=' 😱 还是 392MB！260MB 的工具仍在第 2 层，只是被“遮住”了。正确做法：同一条 RUN 里装完就删，或者——多阶段构建。'}
+async function msGo(){const b=document.getElementById('bin').cloneNode(true);bin.classList.add('hl');await DC.sl(500);b.classList.add('on');b.style.animation='pop .6s';fin2.appendChild(b);mss.innerHTML='✅ 最终镜像 = distroless 2MB + api 12MB ≈ <b>14MB</b>。builder 阶段的 800MB 全部丢弃（但仍可被缓存加速下次构建）。'}
+DC.tabs('gt','gp',[`FROM golang:1.23
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -o /bin/api ./cmd/api
+CMD ["/bin/api"]
+# 结果：~900MB，包含整个 Go 工具链和源码`,`# ---------- 阶段 1：编译 ----------
+FROM golang:1.23 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download                       # 依赖缓存（第 3 课技巧）
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/api ./cmd/api
+#   CGO_ENABLED=0 → 静态链接，不依赖 glibc
+#   -ldflags="-s -w" → 去掉调试符号，再小 30%
+
+# ---------- 阶段 2：运行 ----------
+FROM gcr.io/distroless/static-debian12
+COPY --from=builder /bin/api /api         # 只拿走二进制！
+USER nonroot:nonroot
+EXPOSE 8080
+ENTRYPOINT ["/api"]
+# 结果：~14MB`]);
+function bars(){const D=[['golang:1.23 单阶段',900,'#f85149'],['多阶段 + debian-slim',90,'#d29922'],['多阶段 + alpine',22,'#2496ed'],['多阶段 + distroless',14,'#3fb950'],['多阶段 + scratch',12,'#3fb950']];
+document.getElementById('bars').innerHTML=D.map(([n,s,c])=>`<div style="display:flex;align-items:center;gap:8px;margin:5px 0"><span style="width:190px;font-size:13px">${n}</span><div class="meter" style="flex:1;height:18px"><i style="width:0;background:${c}" data-w="${s/9}"></i></div><b style="width:60px">${s}MB</b></div>`).join('');setTimeout(()=>document.querySelectorAll('#bars i').forEach(i=>i.style.width=i.dataset.w+'%'),50)}
+DC.tabs('nt','np',[`FROM node:20 AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci                        # 含 devDependencies（typescript 等）
+COPY . .
+RUN npm run build                 # tsc → dist/
+
+FROM node:20-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev             # 只装生产依赖
+COPY --from=builder /app/dist ./dist
+USER node
+CMD ["node", "dist/server.js"]
+# ~1.1GB → ~220MB`,`FROM python:3.12 AS builder
+WORKDIR /app
+RUN python -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt   # 可能需要 gcc 编译
+
+FROM python:3.12-slim
+COPY --from=builder /venv /venv     # 只拿走装好的虚拟环境
+ENV PATH="/venv/bin:$PATH"
+WORKDIR /app
+COPY . .
+USER 1000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# ~1.0GB → ~180MB`]);
+DC.term('t1',[['images','docker images my-api','REPOSITORY  TAG     IMAGE ID      SIZE\nmy-api      fat     4a1c...       912MB\nmy-api      slim    9e2f...       14.2MB','同一个应用，两种 Dockerfile，体积差 60 倍。'],
+['history','docker history my-api:fat','CREATED BY                                   SIZE\nRUN go build -o /bin/api ./cmd/api           12MB\nCOPY . .                                     20MB\nRUN go mod download                          310MB\n...golang base layers...                     570MB','逐层显示大小，一眼找出“胖层”。'],
+['dive','dive my-api:fat','┃ Layers ┃ Current Layer Contents ┃\n  570 MB  FROM golang...\n  310 MB  RUN go mod download\nImage efficiency score: 97 %  Potential wasted space: 18 MB','<a href="https://github.com/wagoodman/dive" style="color:var(--ac)">dive</a> 是开源的交互式镜像分析工具，可浏览每层的文件，找出浪费的空间。'],
+['只构建某阶段','docker build --target builder -t my-api:build .','=> [builder 6/6] RUN CGO_ENABLED=0 go build ...','<b>--target</b> 只构建到指定阶段，适合在 CI 里跑测试阶段。']]);
+DC.quiz([['在 Dockerfile 最后加 RUN rm -rf /root/.cache，镜像会变小吗？',['会，缓存被删了','不会，文件仍存在于之前的层中','会，但只在 alpine 上'],1,'对！要在产生文件的同一条 RUN 里删除，或用多阶段构建。'],
+['多阶段构建的最终镜像包含哪些层？',['所有阶段的层','只有最后一个 FROM 阶段的层（及 COPY --from 拷入的文件）','只有 builder 阶段'],1,'对！前面的阶段只是“工厂”。'],
+['Go 二进制放进 scratch 后运行报 “no such file or directory”，最可能原因？',['二进制动态链接了 glibc，应 CGO_ENABLED=0','端口冲突','缺少 EXPOSE'],0,'对！scratch 里没有任何 libc。'],
+['Python 服务的运行阶段基础镜像，首选哪个？',['python:3.12（完整版）','python:3.12-slim','scratch'],1,'对！slim 兼顾体积与兼容性。']],'进入第 6 课！');
+</script>
+
+<script>addEventListener('scroll',()=>{const h=document.documentElement;document.getElementById('rp').style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%'})</script></body></html>
