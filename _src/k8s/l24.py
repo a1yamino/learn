@@ -9,7 +9,7 @@ def secs(prac,E):
     return [
 ('三类信号从哪里来','日志、指标、追踪在集群里的流向。','<div id="p1"></div>'),
 ('Prometheus 如何找到目标','服务发现、ServiceMonitor 与抓取。','<div id="p2"></div>'),
-('动手：计数器与 rate','两个 api Pod 的 <code>http_requests_total</code> 每 30 秒采样一次，其中 Pod b 在 13:02 重启过。选择查询，看 PromQL 如何计算。','<div class="chal"><pre class="log" id="ps" style="height:auto;margin:0 0 12px;white-space:pre-wrap"></pre><div class="cmds" id="pq"></div><pre class="log" id="pr" style="height:auto;min-height:90px;white-space:pre-wrap"></pre><div class="msg" id="pm"></div></div>'),
+('动手：计数器与 rate','两个 api Pod 的 <code>http_requests_total</code> 每 30 秒采样一次，其中 Pod b 在 13:02 重启过。选择查询，看 PromQL 如何计算。','<div class="chal"><pre class="log" id="ps" style="height:auto;margin:0 0 12px;white-space:pre;overflow-x:auto"></pre><div class="cmds" id="pq"></div><pre class="log" id="pr" style="height:auto;min-height:90px;white-space:pre-wrap"></pre><div class="msg" id="pm"></div></div>'),
 ('相关命令','在集群里查看三类信号。','<div id="t4"></div>'),
 ('在你的电脑上练习','用 kube-prometheus-stack 一次装好 Prometheus、Grafana、Alertmanager、kube-state-metrics 和 node-exporter。',prac([
  ('安装。','helm repo add prometheus-community https://prometheus-community.github.io/helm-charts\nhelm install mon prometheus-community/kube-prometheus-stack -n monitoring --create-namespace\nkubectl -n monitoring get pods','NAME                                               READY   STATUS\nalertmanager-mon-kube-prometheus-st-alertmanager-0  2/2     Running\nmon-grafana-6f9c8d7b5-x2kq9                        3/3     Running\nmon-kube-state-metrics-5c8d9f7b6-p4lz8             1/1     Running\nmon-prometheus-node-exporter-7xk2p                 1/1     Running\nprometheus-mon-kube-prometheus-st-prometheus-0     2/2     Running'),
