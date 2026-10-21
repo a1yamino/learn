@@ -17,7 +17,7 @@ def page(n,title,desc,secs,summ,nxt,mins=20):
 {body}
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
 <ol class="sum">{''.join(f'<li>{x}</li>' for x in summ)}</ol></section>
-<footer class="endnav"><div class="k">下一课 · {nn:02d}</div>{nav}<div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+<footer class="endnav"><div class="k">{("下一课 · %02d" % nn) if nxt else "课程完成"}</div>{nav}<div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
 <script src="l{n:02d}.js"></script>
