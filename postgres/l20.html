@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 20 课 · 分区表</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 20 课</span><span class="sp"></span><a href="l19.html">← 第 19 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 20 课</div><h1>分区表</h1>
+<p>一张表到了几亿行、几百 GB 时，维护（VACUUM、建索引、删除旧数据）会越来越痛苦。分区把一张逻辑表拆成多张物理表，查询只访问相关的分区，过期数据可以整块删除。本课讲声明式分区的三种方式、分区裁剪、分区上的索引和约束、ATTACH / DETACH，以及什么时候不该分区。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">分区裁剪</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">滚动删除旧数据</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：这个查询扫描哪些分区</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>分区裁剪</h2><div class="goal">查询只访问需要的分区。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>滚动删除旧数据</h2><div class="goal">DELETE 与 DROP PARTITION。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：这个查询扫描哪些分区</h2><div class="goal">events 按月分区（2026 年 1–12 月）。选择查询，看计划。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">管理分区。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 shop 库中建一张按月分区的 events 表。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>建分区表和三个月的分区。</p><pre class="cmd">CREATE TABLE events (id bigint GENERATED ALWAYS AS IDENTITY, created_at timestamptz NOT NULL, user_id int, kind text,
+  PRIMARY KEY (id, created_at)) PARTITION BY RANGE (created_at);
+CREATE TABLE events_2026_08 PARTITION OF events FOR VALUES FROM (&#x27;2026-08-01&#x27;) TO (&#x27;2026-09-01&#x27;);
+CREATE TABLE events_2026_09 PARTITION OF events FOR VALUES FROM (&#x27;2026-09-01&#x27;) TO (&#x27;2026-10-01&#x27;);
+CREATE TABLE events_2026_10 PARTITION OF events FOR VALUES FROM (&#x27;2026-10-01&#x27;) TO (&#x27;2026-11-01&#x27;);
+CREATE INDEX ON events (user_id);</pre><pre class="out">CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX</pre></div></div><div class="st"><span class="n">02</span><div><p>插入数据：行自动路由到对应分区。</p><pre class="cmd">INSERT INTO events (created_at, user_id, kind)
+SELECT timestamptz &#x27;2026-08-01&#x27; + random() * interval &#x27;91 days&#x27;, (random() * 1000)::int, &#x27;click&#x27; FROM generate_series(1, 300000);
+SELECT tableoid::regclass, count(*) FROM events GROUP BY 1 ORDER BY 1;</pre><pre class="out">    tableoid    | count
+----------------+--------
+ events_2026_08 | 101983
+ events_2026_09 |  98810
+ events_2026_10 |  99207</pre></div></div><div class="st"><span class="n">03</span><div><p>分区裁剪。</p><pre class="cmd">EXPLAIN SELECT count(*) FROM events WHERE created_at &gt;= &#x27;2026-10-01&#x27;;</pre><pre class="out"> Aggregate
+   -&gt;  Seq Scan on events_2026_10 events
+         Filter: (created_at &gt;= &#x27;2026-10-01 00:00:00+08&#x27;::timestamp with time zone)</pre></div></div><div class="st"><span class="n">04</span><div><p>没有分区键：扫描所有分区。</p><pre class="cmd">EXPLAIN SELECT * FROM events WHERE user_id = 42;</pre><pre class="out"> Append
+   -&gt;  Bitmap Heap Scan on events_2026_08 events_1 …
+   -&gt;  Bitmap Heap Scan on events_2026_09 events_2 …
+   -&gt;  Bitmap Heap Scan on events_2026_10 events_3 …</pre></div></div><div class="st"><span class="n">05</span><div><p>超出范围的行被拒绝；加默认分区后可以插入。</p><pre class="cmd">INSERT INTO events (created_at, kind) VALUES (&#x27;2026-12-05&#x27;, &#x27;x&#x27;);
+CREATE TABLE events_default PARTITION OF events DEFAULT;
+INSERT INTO events (created_at, kind) VALUES (&#x27;2026-12-05&#x27;, &#x27;x&#x27;);</pre><pre class="out">ERROR:  no partition of relation &quot;events&quot; found for row
+DETAIL:  Partition key of the failing row contains (created_at) = (2026-12-05 00:00:00+08).
+CREATE TABLE
+INSERT 0 1</pre></div></div><div class="st"><span class="n">06</span><div><p>删除最老的一个月。</p><pre class="cmd">ALTER TABLE events DETACH PARTITION events_2026_08 CONCURRENTLY;
+DROP TABLE events_2026_08;</pre><pre class="out">ALTER TABLE
+DROP TABLE</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>把一张大表在线改成分区表</h3><p>现有 events 表 6 亿行、未分区，持续写入。要改为按月分区，不能停机。描述可行的迁移步骤。</p><details><summary>查看参考答案</summary><div><p>PostgreSQL 不能把现有表直接转换为分区表，但可以把它整个挂成一个分区：</p><pre class="cmd">BEGIN;
+SET lock_timeout = '3s';
+ALTER TABLE events RENAME TO events_legacy;
+CREATE TABLE events (LIKE events_legacy INCLUDING DEFAULTS INCLUDING CONSTRAINTS)
+  PARTITION BY RANGE (created_at);
+-- 事先在 events_legacy 上加好 CHECK (created_at &lt; '2026-11-01') NOT VALID，再 VALIDATE（不阻塞写入）
+ALTER TABLE events ATTACH PARTITION events_legacy FOR VALUES FROM (MINVALUE) TO ('2026-11-01');
+CREATE TABLE events_2026_11 PARTITION OF events FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
+COMMIT;</pre><p>预先存在的 CHECK 约束证明了所有行都在范围内，ATTACH 不需要再扫描 6 亿行，整个事务只需要短暂的排他锁。新数据从此写进按月的新分区。旧数据留在 legacy 分区里，随着时间推移，可以按月从 legacy 中搬出（INSERT 到新的月份分区再从 legacy 删除，分批进行），或者干脆等它整体过期后一次 DETACH + DROP。注意：主键必须包含 created_at；序列/identity 列、外键引用、视图依赖都要事先处理；应用中引用表名的地方不变。也可以用逻辑复制或触发器双写同步到一张新的分区表再切换，适合需要同时重新组织旧数据的情况。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>声明式分区：<code>CREATE TABLE events (…) PARTITION BY RANGE (created_at)</code>，再为每个范围建分区 <code>CREATE TABLE events_2026_10 PARTITION OF events FOR VALUES FROM ('2026-10-01') TO ('2026-11-01')</code>。父表本身不存数据。还有 <code>LIST</code>（按地区、租户）和 <code>HASH</code>（均匀打散）。</li><li><b>分区裁剪</b>：WHERE 中有分区键的条件时，规划阶段（常量）或执行阶段（参数、子查询结果）跳过不相关的分区。查询不带分区键时要扫描所有分区，比不分区还慢。</li><li>在父表上建索引会自动在每个分区上建；<b>主键和唯一约束必须包含分区键</b>，因为唯一性只能在每个分区内部检查。所以按时间分区时，主键往往是 <code>(id, created_at)</code>。</li><li>删除旧数据：<code>ALTER TABLE events DETACH PARTITION events_2025_01 CONCURRENTLY</code> 后 DROP，瞬间完成，没有死元组也没有 VACUUM 压力。加载数据：先建好独立的表、导入并建索引，再 <code>ATTACH PARTITION</code>（预先加一个匹配的 CHECK 约束可以避免扫描验证）。</li><li>设一个 <code>DEFAULT</code> 分区接收不匹配任何范围的行，但要监控它：它有数据时，新建与之重叠的分区需要扫描它。新分区要提前创建，通常用 pg_partman 或定时任务。</li><li>不要过早分区：几千万行、索引得当的表通常不需要。分区数量保持在几百以内；太多分区会让规划时间和锁开销上升。分区键应该是绝大多数查询都会带上的列。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 21</div><a class="big" href="l21.html">连接池：PgBouncer →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l20.js"></script>
+</body></html>
