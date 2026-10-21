@@ -1,0 +1,108 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 26 课 · 综合项目：一个生产级数据库从设计到运维</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 26 课</span><span class="sp"></span><a href="l25.html">← 第 25 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 26 课</div><h1>综合项目：一个生产级数据库从设计到运维</h1>
+<p>最后一课把前面的内容串起来：为一个电商订单服务设计表结构和索引，配置连接池、复制与备份，上线后应对一次真实的性能事故和一次误删数据，最后做一次不停机的模式变更。每一步都标出用到的是哪一课的知识。约 120 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">整体架构</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">一次线上事故的时间线</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：值班决策</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">上线检查清单</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>整体架构</h2><div class="goal">应用、连接池、主备、备份。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>一次线上事故的时间线</h2><div class="goal">从报警到根因。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：值班决策</h2><div class="goal">上线后的几个场景。选择一个，看推荐的处理步骤和涉及的课程。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>上线检查清单</h2><div class="goal">部署前逐项确认。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在一个全新的 shop2 库中从零完成订单服务的数据库部分。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>建库、角色与 schema（第 24 课）。</p><pre class="cmd">CREATE DATABASE shop2;
+\c shop2
+CREATE ROLE shop_owner NOLOGIN; CREATE ROLE shop_rw NOLOGIN;
+CREATE ROLE shop_api LOGIN PASSWORD &#x27;change-me&#x27; IN ROLE shop_rw;
+CREATE SCHEMA shop AUTHORIZATION shop_owner;
+GRANT USAGE ON SCHEMA shop TO shop_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE shop_owner IN SCHEMA shop GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO shop_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE shop_owner IN SCHEMA shop GRANT USAGE ON SEQUENCES TO shop_rw;
+ALTER ROLE shop_api SET statement_timeout = &#x27;5s&#x27;;
+ALTER ROLE shop_api SET idle_in_transaction_session_timeout = &#x27;30s&#x27;;</pre><pre class="out">CREATE DATABASE
+…
+ALTER ROLE</pre></div></div><div class="st"><span class="n">02</span><div><p>表结构（第 2、11 课）。</p><pre class="cmd">SET ROLE shop_owner;
+CREATE TABLE shop.users (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX ON shop.users (lower(email));
+CREATE TABLE shop.products (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  name text NOT NULL, price_cents bigint NOT NULL CHECK (price_cents &gt;= 0),
+  stock int NOT NULL CHECK (stock &gt;= 0), attrs jsonb NOT NULL DEFAULT &#x27;{}&#x27;);
+CREATE TABLE shop.orders (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id bigint NOT NULL REFERENCES shop.users,
+  status text NOT NULL DEFAULT &#x27;pending&#x27; CHECK (status IN (&#x27;pending&#x27;,&#x27;paid&#x27;,&#x27;shipped&#x27;,&#x27;cancelled&#x27;)),
+  total_cents bigint NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE shop.order_items (
+  order_id bigint NOT NULL REFERENCES shop.orders ON DELETE CASCADE,
+  product_id bigint NOT NULL REFERENCES shop.products,
+  qty int NOT NULL CHECK (qty &gt; 0), price_cents bigint NOT NULL,
+  PRIMARY KEY (order_id, product_id));</pre><pre class="out">CREATE TABLE
+…</pre></div></div><div class="st"><span class="n">03</span><div><p>索引按查询设计（第 4、10 课）：我的订单、待支付超时扫描、商品被哪些订单引用。</p><pre class="cmd">CREATE INDEX ON shop.orders (user_id, created_at DESC);
+CREATE INDEX ON shop.orders (created_at) WHERE status = &#x27;pending&#x27;;
+CREATE INDEX ON shop.order_items (product_id);
+CREATE INDEX ON shop.products USING gin (attrs jsonb_path_ops);
+RESET ROLE;</pre><pre class="out">CREATE INDEX
+…</pre></div></div><div class="st"><span class="n">04</span><div><p>下单函数：一个事务、原子扣库存（第 5、14 课）。</p><pre class="cmd">CREATE FUNCTION shop.place_order(p_user bigint, p_product bigint, p_qty int) RETURNS bigint
+LANGUAGE plpgsql SET search_path = shop, pg_temp AS $$
+DECLARE v_price bigint; v_order bigint;
+BEGIN
+  UPDATE products SET stock = stock - p_qty WHERE id = p_product AND stock &gt;= p_qty RETURNING price_cents INTO v_price;
+  IF NOT FOUND THEN RAISE EXCEPTION &#x27;out of stock&#x27; USING ERRCODE = &#x27;P0001&#x27;; END IF;
+  INSERT INTO orders (user_id, total_cents) VALUES (p_user, v_price * p_qty) RETURNING id INTO v_order;
+  INSERT INTO order_items VALUES (v_order, p_product, p_qty, v_price);
+  RETURN v_order;
+END $$;
+ALTER FUNCTION shop.place_order OWNER TO shop_owner;</pre><pre class="out">CREATE FUNCTION
+ALTER FUNCTION</pre></div></div><div class="st"><span class="n">05</span><div><p>造数据并并发压测：库存不会变成负数。</p><pre class="cmd">INSERT INTO shop.users (email) SELECT &#x27;u&#x27; || i || &#x27;@x.com&#x27; FROM generate_series(1, 10000) i;
+INSERT INTO shop.products (name, price_cents, stock) VALUES (&#x27;hot item&#x27;, 9900, 100);
+\! echo &quot;SELECT shop.place_order((random()*9999+1)::bigint, 1, 1);&quot; &gt; /tmp/order.sql
+\! pgbench -n -c 20 -T 10 -f /tmp/order.sql shop2 2&gt;&amp;1 | grep -E &quot;tps|failed&quot;
+SELECT stock FROM shop.products WHERE id = 1;
+SELECT count(*) FROM shop.orders;</pre><pre class="out">number of failed transactions: 0 (0.000%)
+tps = 2210.4
+ stock
+-------
+     0
+ count
+-------
+   100</pre></div></div><div class="st"><span class="n">06</span><div><p>上线前自查：外键列是否都有索引、是否有从未使用的索引。</p><pre class="cmd">SELECT c.conrelid::regclass, a.attname FROM pg_constraint c
+JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+WHERE c.contype = &#x27;f&#x27; AND NOT EXISTS (
+  SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indkey[0] = c.conkey[1]);</pre><pre class="out"> conrelid | attname
+----------+---------
+(0 rows)</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一份事故复盘</h3><p>上线一个月后的某天 10:05，下单接口 p99 从 30 ms 升到 8 s，持续 25 分钟。你掌握的信息：10:00 有一次部署，迁移脚本执行了 <code>CREATE INDEX orders_status_idx ON orders (status)</code>（没有 CONCURRENTLY）；同一时间运营在跑一个导出报表；PgBouncer 的 cl_waiting 峰值 1800；10:30 索引建完后自动恢复。写出时间线、根因、为什么影响这么大，以及至少四条改进措施（标出对应课程）。</p><details><summary>查看参考答案</summary><div><p><b>时间线</b>：10:00 部署开始，迁移执行普通 CREATE INDEX，拿到 orders 的 SHARE 锁 → 10:00 起所有对 orders 的 INSERT/UPDATE 阻塞（下单、支付回调）→ 每个阻塞的请求占着一个 PgBouncer 服务端连接，池被占满，连只读请求也开始排队（cl_waiting 1800）→ 10:05 告警 → 10:30 索引建完，锁释放，积压请求在两分钟内消化完。</p><p><b>根因</b>：在 2 亿行的热表上执行了阻塞写入的 DDL。为什么持续 25 分钟：表大，而且导出报表在争抢 I/O，建索引更慢。为什么波及读接口：所有请求共用一个事务池，被阻塞的写占满了连接（第 17、21 课）。</p><p><b>改进</b>：① 索引一律 <code>CREATE INDEX CONCURRENTLY</code>，在 CI 中用 lint（如 squawk）拦截不安全的 DDL（第 4、25 课）；② 所有迁移设置 <code>lock_timeout</code>，拿不到锁就失败而不是阻塞业务（第 17、25 课）；③ 下单接口设置合理的 statement_timeout，PgBouncer 设置 query_wait_timeout，让故障快速失败而不是无限排队；读写分池，重要接口单独的池（第 6、21 课）；④ 报表改到只读副本执行（第 18 课）；⑤ 迁移安排在低峰期，并在执行前检查 pg_stat_activity 中的长查询（第 22 课）；⑥ 告警加上“锁等待会话数”指标，比 p99 更早发现（第 22 课）。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>设计</b>：bigint identity 主键；金额用 <code>numeric</code> 或整数分；时间用 <code>timestamptz</code>；状态用 CHECK 约束；外键列都建索引；按访问模式设计复合索引，等值列在前、排序列在后（第 2、4、11 课）。</li><li><b>应用接入</b>：参数化查询、事务短小、原子更新防丢失更新、只重试 40001/40P01、设置 statement_timeout 和 idle_in_transaction_session_timeout、通过 PgBouncer 事务模式连接（第 5、6、14、21 课）。</li><li><b>可靠性</b>：一主两备 + Patroni 同步模式；pgBackRest 全量/差异备份 + 连续 WAL 归档到隔离的对象存储；每周自动恢复演练（第 18、19、23 课）。</li><li><b>运维</b>：pg_stat_statements 按总耗时找优化目标；监控连接、长事务、复制延迟、事务 ID 年龄、死元组、磁盘、检查点；大表单独调 autovacuum；日志类大表按月分区（第 16、20、22 课）。</li><li><b>安全与变更</b>：owner / rw / ro 角色分离，scram + TLS，多租户表可加 RLS；所有迁移设置 lock_timeout，危险 DDL 用 NOT VALID / CONCURRENTLY / 扩展—迁移—收缩（第 17、24、25 课）。</li><li><b>排障思路</b>：先看现象（等待事件、锁、复制、日志），再看数据（EXPLAIN (ANALYZE, BUFFERS)、估算与实际），然后用对应的内部原理解释原因（MVCC、WAL、缓冲区、规划器），最后选代价最小、可回滚的修复。</li></ol></section>
+<footer class="endnav"><div class="k">课程完成</div><a class="big" href="index.html">课程目录 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l26.js"></script>
+</body></html>
