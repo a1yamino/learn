@@ -1,0 +1,95 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 22 课 · Helm 与 Kustomize</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 22 课</span><span class="sp"></span><a href="l21.html">← 第 21 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 22 课</div><h1>Helm 与 Kustomize</h1>
+<p>真实应用有十几个 YAML 文件，还要部署到多个环境，每个环境只差几个值。本课讲两种主流做法：Helm 用模板和 values 生成清单并管理发布版本；Kustomize 在一份基础清单上叠加补丁，kubectl 内置支持。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">Helm：从模板到 release</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Kustomize：base 加 overlay</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：值从哪里来</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>Helm：从模板到 release</h2><div class="goal">install、upgrade、rollback 发生了什么。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Kustomize：base 加 overlay</h2><div class="goal">不用模板，用补丁叠加。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：值从哪里来</h2><div class="goal">一个 chart 的模板片段和默认值如下。选择安装命令，看渲染结果和每个值的来源。</div></div></div>
+<div class="chal"><pre class="log" id="ht" style="height:auto;margin:0 0 12px;white-space:pre-wrap"></pre><div class="cmds" id="hv"></div><pre class="log" id="ho" style="height:auto;min-height:120px;white-space:pre-wrap"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">日常使用 Helm 和 Kustomize。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">安装 Helm（<code>brew install helm</code> 或从 GitHub Releases 下载）；Kustomize 已内置在 kubectl 中。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建一个 chart 骨架。</p><pre class="cmd">helm create web
+ls web web/templates</pre><pre class="out">web:
+Chart.yaml  charts  templates  values.yaml
+
+web/templates:
+NOTES.txt  _helpers.tpl  deployment.yaml  hpa.yaml  ingress.yaml  service.yaml  serviceaccount.yaml  tests</pre></div></div><div class="st"><span class="n">02</span><div><p>只渲染，看生成的清单。</p><pre class="cmd">helm template demo ./web --set replicaCount=3 | grep -E &quot;^kind:|replicas:&quot;</pre><pre class="out">kind: ServiceAccount
+kind: Service
+kind: Deployment
+  replicas: 3</pre></div></div><div class="st"><span class="n">03</span><div><p>安装并升级，产生两个 revision。</p><pre class="cmd">helm install demo ./web
+helm upgrade demo ./web --set image.tag=1.27-alpine
+helm history demo</pre><pre class="out">REVISION  STATUS      CHART      DESCRIPTION
+1         superseded  web-0.1.0  Install complete
+2         deployed    web-0.1.0  Upgrade complete</pre></div></div><div class="st"><span class="n">04</span><div><p>回滚，以及 release 存在哪里。</p><pre class="cmd">helm rollback demo 1
+kubectl get secrets -l owner=helm</pre><pre class="out">Rollback was a success! Happy Helming!
+NAME                         TYPE                 DATA
+sh.helm.release.v1.demo.v1   helm.sh/release.v1   1
+sh.helm.release.v1.demo.v2   helm.sh/release.v1   1
+sh.helm.release.v1.demo.v3   helm.sh/release.v1   1</pre></div></div><div class="st"><span class="n">05</span><div><p>Kustomize：base 与 prod overlay。</p><pre class="cmd">mkdir -p kz/base kz/prod
+kubectl create deploy api --image=nginx:1.27-alpine --dry-run=client -o yaml &gt; kz/base/deploy.yaml
+cat &gt; kz/base/kustomization.yaml &lt;&lt;EOT
+resources: [deploy.yaml]
+EOT
+cat &gt; kz/prod/kustomization.yaml &lt;&lt;EOT
+resources: [../base]
+namePrefix: prod-
+labels: [{pairs: {env: prod}}]
+images: [{name: nginx, newTag: 1.27.3-alpine}]
+replicas: [{name: api, count: 4}]
+configMapGenerator: [{name: api-config, literals: [LOG_LEVEL=warn]}]
+EOT
+kubectl kustomize kz/prod | grep -E &quot;name:|image:|replicas:|env:&quot;</pre><pre class="out">    env: prod
+  name: prod-api-config-5k7f2g8m9t
+    env: prod
+  name: prod-api
+  replicas: 4
+        image: nginx:1.27.3-alpine</pre></div></div><div class="st"><span class="n">06</span><div><p>应用，并清理 Helm release。</p><pre class="cmd">kubectl apply -k kz/prod
+helm uninstall demo</pre><pre class="out">configmap/prod-api-config-5k7f2g8m9t created
+deployment.apps/prod-api created
+release &quot;demo&quot; uninstalled</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>给 overlay 加补丁</h3><p>在上面的 prod overlay 里，给 api 容器加上 requests（cpu 200m、memory 256Mi）和来自 api-config 的环境变量。用补丁实现，不修改 base。之后改了 literals 再 apply，为什么 Pod 会自动滚动更新？</p><details><summary>查看参考答案</summary><div><pre class="cmd">cat > kz/prod/patch.yaml <<EOT
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: api}
+spec:
+  template:
+    spec:
+      containers:
+      - name: nginx
+        resources: {requests: {cpu: 200m, memory: 256Mi}}
+        envFrom: [{configMapRef: {name: api-config}}]
+EOT
+echo "patches: [{path: patch.yaml}]" >> kz/prod/kustomization.yaml
+kubectl kustomize kz/prod | grep -A1 configMapRef</pre><pre class="out">        - configMapRef:
+            name: prod-api-config-5k7f2g8m9t</pre><p>补丁按名字匹配 base 中的 Deployment 和容器，只合并写出的字段。补丁里写的是原名 api 和 api-config，Kustomize 会自动把引用改成加了前缀和哈希的名字。configMapGenerator 的名字带内容哈希：literals 变了，名字就变了，Deployment 的 Pod 模板引用也随之变化，于是触发滚动更新。直接修改一个普通 ConfigMap 则不会重启 Pod（第 6 课）。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>Helm chart</b>：<code>Chart.yaml</code>（名称、版本）、<code>values.yaml</code>（默认值）、<code>templates/</code>（Go 模板）。<code>helm install</code> 渲染模板并创建一个 <b>release</b>，状态存在所在命名空间的 Secret 中。</li><li>覆盖值：<code>-f values-prod.yaml</code>（多个 -f 时后面的优先）、<code>--set image.tag=1.4.3</code>（优先级最高）。<code>helm template</code> 只渲染不安装，<code>helm diff</code> 插件预览变更。</li><li><code>helm upgrade --install</code> 每次产生新的 revision；<code>helm rollback</code> 回到某个 revision（本身也是一个新 revision）。crds/ 目录里的 CRD 只在首次安装时创建，不会升级，需要单独处理。</li><li><b>Kustomize</b>：<code>base/</code> 放通用清单，<code>overlays/prod/</code> 的 kustomization.yaml 引用 base，再加补丁（patches）、改镜像（images）、加前缀、生成 ConfigMap（configMapGenerator 的名字带内容哈希，内容变了会触发滚动更新）。</li><li><code>kubectl apply -k overlays/prod</code> 应用，<code>kubectl kustomize</code> 只渲染。Kustomize 不用模板，输入输出都是合法的 YAML；它不记录发布历史。</li><li>怎么选：分发给别人安装的软件（数据库、网关、监控）通常用 Helm；自己团队的应用在多个环境间差异小时，Kustomize 更直观。两者也可以结合：用 Kustomize 修改 Helm 渲染的结果。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 23</div><a class="big" href="l23.html">GitOps 与 CI/CD →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l22.js"></script>
+</body></html>

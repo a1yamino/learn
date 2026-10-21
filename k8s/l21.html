@@ -1,0 +1,111 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 21 课 · 安全二：Pod Security、NetworkPolicy 与准入控制</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 21 课</span><span class="sp"></span><a href="l20.html">← 第 20 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 21 课</div><h1>安全二：Pod Security、NetworkPolicy 与准入控制</h1>
+<p>RBAC 决定谁能调用 API；本课讲另外三道防线：限制容器能做什么（securityContext 与 Pod Security Standards）、限制 Pod 之间能连什么（NetworkPolicy），以及在对象写入前检查和修改它（准入控制、ValidatingAdmissionPolicy、Kyverno）。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">Pod Security：三个级别</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">准入控制链</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：NetworkPolicy 放行了什么</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>Pod Security：三个级别</h2><div class="goal">同一个 Pod 在不同命名空间的结果。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>准入控制链</h2><div class="goal">对象写入 etcd 之前的最后一道关。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：NetworkPolicy 放行了什么</h2><div class="goal">命名空间 shop 里有 web、api、db 三组 Pod，另一个命名空间 monitoring 里有 prom。逐条启用策略，看哪些连接还通。</div></div></div>
+<div class="chal"><div class="cmds" id="np"></div><div id="ng"></div><div class="msg" id="nm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查看和测试这些策略。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">kind 默认的 kindnet 从 v0.24 起支持 NetworkPolicy；若你的版本不支持，可以改用 Calico 创建集群。Pod Security Admission 是内置的。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>给命名空间开启 restricted。</p><pre class="cmd">kubectl create ns secure
+kubectl label ns secure pod-security.kubernetes.io/enforce=restricted
+kubectl -n secure run bad --image=nginx:alpine</pre><pre class="out">Error from server (Forbidden): pods &quot;bad&quot; is forbidden: violates PodSecurity &quot;restricted:latest&quot;: allowPrivilegeEscalation != false (container &quot;bad&quot; must set securityContext.allowPrivilegeEscalation=false), unrestricted capabilities (container &quot;bad&quot; must set securityContext.capabilities.drop=[&quot;ALL&quot;]), runAsNonRoot != true (pod or container &quot;bad&quot; must set securityContext.runAsNonRoot=true), seccompProfile (pod or container &quot;bad&quot; must set securityContext.seccompProfile.type to &quot;RuntimeDefault&quot; or &quot;Localhost&quot;)</pre></div></div><div class="st"><span class="n">02</span><div><p>满足 restricted 的 Pod（nginx-unprivileged 监听 8080，以非 root 运行）。</p><pre class="cmd">kubectl -n secure apply -f - &lt;&lt;EOT
+apiVersion: v1
+kind: Pod
+metadata: {name: good, labels: {app: good}}
+spec:
+  securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+  containers:
+  - name: n
+    image: nginxinc/nginx-unprivileged:alpine
+    securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+EOT
+kubectl -n secure get pod good</pre><pre class="out">NAME   READY   STATUS    RESTARTS   AGE
+good   1/1     Running   0          6s</pre></div></div><div class="st"><span class="n">03</span><div><p>先看现有命名空间升级后会有多少违规（server dry-run 不改任何东西）。</p><pre class="cmd">kubectl label --dry-run=server --overwrite ns default pod-security.kubernetes.io/enforce=restricted</pre><pre class="out">Warning: existing pods in namespace &quot;default&quot; violate the new PodSecurity enforce level &quot;restricted:latest&quot;
+Warning: web-6d4b9 (and 2 other pods): allowPrivilegeEscalation != false, unrestricted capabilities, runAsNonRoot != true, seccompProfile
+namespace/default labeled (server dry run)</pre></div></div><div class="st"><span class="n">04</span><div><p>默认拒绝所有入站，然后测试。</p><pre class="cmd">kubectl -n secure expose pod good --port 8080
+kubectl -n secure apply -f - &lt;&lt;EOT
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny}
+spec: {podSelector: {}, policyTypes: [Ingress]}
+EOT
+kubectl -n secure run t --rm -it --image=busybox --restart=Never --overrides=&#x27;{&quot;spec&quot;:{&quot;securityContext&quot;:{&quot;runAsNonRoot&quot;:true,&quot;runAsUser&quot;:1000,&quot;seccompProfile&quot;:{&quot;type&quot;:&quot;RuntimeDefault&quot;}},&quot;containers&quot;:[{&quot;name&quot;:&quot;t&quot;,&quot;image&quot;:&quot;busybox&quot;,&quot;command&quot;:[&quot;wget&quot;,&quot;-T2&quot;,&quot;-qO-&quot;,&quot;good:8080&quot;],&quot;securityContext&quot;:{&quot;allowPrivilegeEscalation&quot;:false,&quot;capabilities&quot;:{&quot;drop&quot;:[&quot;ALL&quot;]}}}]}}&#x27;</pre><pre class="out">wget: download timed out
+pod &quot;t&quot; deleted
+pod secure/t terminated (Error)</pre></div></div><div class="st"><span class="n">05</span><div><p>放行带 role=client 标签的 Pod。</p><pre class="cmd">kubectl -n secure apply -f - &lt;&lt;EOT
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-client}
+spec:
+  podSelector: {matchLabels: {app: good}}
+  ingress:
+  - from: [{podSelector: {matchLabels: {role: client}}}]
+    ports: [{port: 8080}]
+EOT
+# 重复上一步的命令，在 overrides 里加上 &quot;metadata&quot;:{&quot;labels&quot;:{&quot;role&quot;:&quot;client&quot;}}</pre><pre class="out">&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+&lt;title&gt;Welcome to nginx!&lt;/title&gt;</pre></div></div><div class="st"><span class="n">06</span><div><p>ValidatingAdmissionPolicy：禁止 latest 标签。</p><pre class="cmd">kubectl apply -f - &lt;&lt;EOT
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata: {name: no-latest}
+spec:
+  matchConstraints:
+    resourceRules: [{apiGroups: [&quot;&quot;], apiVersions: [v1], operations: [CREATE, UPDATE], resources: [pods]}]
+  validations:
+  - expression: &quot;object.spec.containers.all(c, c.image.contains(&#x27;:&#x27;) &amp;&amp; !c.image.endsWith(&#x27;:latest&#x27;))&quot;
+    message: &quot;镜像必须带版本标签，且不能是 latest&quot;
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata: {name: no-latest}
+spec: {policyName: no-latest, validationActions: [Deny]}
+EOT
+kubectl run x --image=nginx</pre><pre class="out">The pods &quot;x&quot; is invalid: : ValidatingAdmissionPolicy &#x27;no-latest&#x27; with binding &#x27;no-latest&#x27; denied request: 镜像必须带版本标签，且不能是 latest</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>限制出站</h3><p>给 secure 命名空间里 <code>app=good</code> 的 Pod 加 Egress 限制：只能访问同命名空间 <code>app=db</code> 的 5432 端口。写出策略后发现它连 db 的 Service 名都解析不了，为什么？怎么修？</p><details><summary>查看参考答案</summary><div><pre class="cmd">apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: good-egress}
+spec:
+  podSelector: {matchLabels: {app: good}}
+  policyTypes: [Egress]
+  egress:
+  - to: [{podSelector: {matchLabels: {app: db}}}]
+    ports: [{port: 5432}]
+  - to:
+    - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+      podSelector: {matchLabels: {k8s-app: kube-dns}}
+    ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]</pre><pre class="out">kubectl -n secure exec good -- nslookup db
+Name:   db.secure.svc.cluster.local
+Address: 10.96.33.8</pre><p>只写第一条规则时，Pod 的 Egress 被选中，只剩到 db:5432 的流量被允许；发往 kube-system 中 CoreDNS（53 端口）的 DNS 查询也被拦截，所以名字解析失败。第二条规则放行 DNS。注意 <code>namespaceSelector</code> 和 <code>podSelector</code> 写在<b>同一个</b>列表项里表示“且”；分成两项（各带一个 -）表示“或”，会放行 kube-system 的所有 Pod 以及本命名空间所有带 kube-dns 标签的 Pod，这是常见错误。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><code>securityContext</code>：<code>runAsNonRoot</code>、<code>allowPrivilegeEscalation: false</code>、<code>readOnlyRootFilesystem</code>、<code>capabilities.drop: [ALL]</code>、<code>seccompProfile: RuntimeDefault</code>。这些对应 Docker 第 19 课的容器安全设置。</li><li><b>Pod Security Admission</b>（内置）按命名空间标签执行三个级别：<code>privileged</code>（不限制）、<code>baseline</code>（禁止明显的提权，如 privileged、hostPath、hostNetwork）、<code>restricted</code>（要求上面那组加固设置）。模式有 enforce、audit、warn。</li><li>NetworkPolicy 不存在时一切互通。一旦某个 Pod 在 Ingress（或 Egress）方向被任何策略<b>选中</b>，该方向就变成“只允许策略列出的流量”。策略是叠加的，没有拒绝规则。</li><li>常见做法：每个命名空间先放一条默认拒绝策略，再按需放行；限制 Egress 时别忘了放行 DNS（kube-system 的 53 端口）。策略由 CNI 执行，Flannel 等不支持时会被静默忽略。</li><li>准入控制在认证授权之后、写入 etcd 之前运行：先<b>变更</b>（mutating，如注入 sidecar、默认值），再<b>校验</b>（validating）。可以用 webhook，也可以用内置的 <code>ValidatingAdmissionPolicy</code>（CEL 表达式，无需部署服务）。</li><li>策略引擎 Kyverno、OPA Gatekeeper 用 CRD 写规则：禁止 latest 标签、要求 requests、只允许指定仓库的镜像等。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 22</div><a class="big" href="l22.html">Helm 与 Kustomize →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l21.js"></script>
+</body></html>
