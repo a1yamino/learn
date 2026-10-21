@@ -31,8 +31,8 @@ a{color:inherit}button{font:inherit;color:inherit}code{font:500 .88em var(--m);b
 /* player */
 .watch{display:grid;grid-template-columns:minmax(0,1fr) 360px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--bg2)}
 .pv{position:relative;height:clamp(340px,58vh,580px);overflow:hidden;background-image:radial-gradient(circle,var(--dot) 1px,transparent 1.2px);background-size:24px 24px;background-position:12px 12px}
-.board{position:absolute;left:50%;top:50%;width:1px;height:1px;transform-origin:0 0;transition:transform 900ms var(--e-move)}
-.el{position:absolute;left:0;top:0;transition:transform 720ms var(--e-move),opacity 380ms var(--e-out)}
+.board{position:absolute;left:50%;top:50%;width:1px;height:1px;transform-origin:0 0;transition:transform 600ms var(--e-move)}
+.el{position:absolute;left:0;top:0;transition:transform 480ms var(--e-move),opacity 260ms var(--e-out)}
 .pc{display:flex;align-items:center;gap:8px;padding:12px 14px;border-top:1px solid var(--line);grid-column:1}
 .pc .tl{flex:1;display:flex;gap:4px;margin:0 8px}.pc .tl i{flex:1;height:3px;border-radius:3px;background:var(--line);overflow:hidden}
 .pc .tl i b{display:block;height:100%;background:var(--ink);transform-origin:0 50%;transform:scaleX(0)}

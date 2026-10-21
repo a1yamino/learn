@@ -10,7 +10,7 @@ window.Player=function(root,o){
  const pv=root.querySelector('.pv'),board=root.querySelector('.board'),pp=root.querySelector('.pp'),ticks=[...root.querySelectorAll('.tl i')],lis=[...root.querySelectorAll('.notes li')],E={},S=o.scenes;
  for(const[id,d]of Object.entries(o.els)){const n=document.createElement('div');n.className='el '+(d.cls||'');n.style.width=d.w?d.w+'px':'max-content';if(d.h)n.style.height=d.h+'px';n.innerHTML=d.html||'';n.style.opacity=0;board.appendChild(n);E[id]={n,d,vis:false,key:null}}
  let cur=-1,playing=false,tm=null,started=false,userPaused=false;
- const dur=i=>S[i].d||3200;
+ const dur=i=>Math.round((S[i].d||3200)*0.65);
  function cam(i,inst){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;for(const id in S[i].set){const v=S[i].set[id],n=E[id].n;x0=Math.min(x0,v[0]);y0=Math.min(y0,v[1]);x1=Math.max(x1,v[0]+n.offsetWidth);y1=Math.max(y1,v[1]+n.offsetHeight)}
   const r=pv.getBoundingClientRect(),pad=Math.min(r.width,r.height)*.1,k=Math.min(1.5,(r.width-pad*2)/(x1-x0),(r.height-pad*2)/(y1-y0));
   if(inst)board.style.transition='none';board.style.transform=`scale(${k}) translate(${-(x0+x1)/2}px,${-(y0+y1)/2}px)`;if(inst){board.offsetWidth;board.style.transition=''}}
