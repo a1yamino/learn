@@ -1,5 +1,3 @@
-const G=Game('learn.docker.l01',[{id:'m1',xp:100},{id:'m2',xp:100},{id:'m3',xp:150},{id:'m4',xp:50},{id:'m5',xp:100}]);
-document.getElementById('reset').addEventListener('click',()=>G.reset());
 const kv=rows=>rows.map(([k,v,x])=>`<div class="kv${x?' x':''}"><span>${k}</span><span>${v}</span></div>`).join('');
 const blk=(t,c='')=>({cls:'blk '+c,html:t});
 /* ---------- Mission 1 animation ---------- */
@@ -39,29 +37,13 @@ Player(document.getElementById('p3'),{els:{
  {t:'多个容器共享同一份镜像',p:'三个容器，只读层在磁盘上仍然<b>只有一份</b>。',set:{...IMG,W1:W[1],W2:W[2],W3:W[3]}},
  {t:'写入只影响自己',p:'容器 1 写入 <code>/tmp/log.txt</code>，只进入它自己的可写层。这叫<b>写时复制</b>。',set:{...IMG,W1:W[1],W2:W[2],W3:W[3],f1:[308,280]}},
  {t:'删除容器，镜像不变',p:'<code>docker rm</code> 删除容器 3 和它的可写层。要保存的数据放在 <b>Volume</b> 里。',set:{...IMG,W1:W[1],W2:W[2],f1:[308,280]}}]});
-/* ---------- Challenge 1 ---------- */
-(()=>{const z=document.getElementById('srv1'),st=document.getElementById('st1'),m=document.getElementById('msg1'),chips=[...document.querySelectorAll('#m1 .chip')];
- const say=(t,c)=>{m.textContent=t;m.className='msg '+(c||'')};
- if(G.isDone('m1'))document.querySelector('#m1 .clear').classList.add('on');
- dragDrop(chips,[z],c=>{if(c.dataset.v==='code'){st.className='pill bad';st.textContent='ImportError · SSL 错误';shake(z);say('代码到了，但服务器的版本还是旧的。只换代码不够。','bad')}
-  else{z.querySelector('h6').textContent='生产服务器 · 只装了 Docker';flip(()=>[...z.querySelectorAll('.kv')],()=>{z.querySelector('.kvs').innerHTML=kv([['python','3.12'],['openssl','3.0'],['requests','2.31']])});
-   z.querySelectorAll('.kv').forEach(n=>n.classList.add('enter'));st.className='pill ok';st.textContent='运行正常';chips.forEach(x=>x.classList.add('used'));say('镜像里带着 Python 3.12 和全部依赖，服务器原来的版本不再重要。','ok');G.complete('m1')}})})();
-/* ---------- Challenge 2 ---------- */
-(()=>{const m=document.getElementById('msg2'),root=document.getElementById('vm2');let g=3,hv=false;
- const all=()=>[...root.querySelectorAll('.blk')];const say=(t,c)=>{m.textContent=t;m.className='msg '+(c||'')};
- const left=()=>`还剩：Guest OS ${g} 个${hv?'':' · Hypervisor 未替换'}`;say(left());
- root.addEventListener('click',e=>{const b=e.target.closest('button.blk');if(!b||b.classList.contains('gone'))return;
-  if(b.hasAttribute('data-g')){b.classList.add('gone');g--;setTimeout(()=>flip(all,()=>{b.remove();if(!g){const r=document.getElementById('gos');if(r)r.remove()}}),200);say(left())}
-  else if(b.hasAttribute('data-hv')){if(hv)return;hv=true;b.textContent='Docker Engine';b.className='blk ink enter';say(left())}
-  else{shake(b);say(b.textContent.startsWith('Docker')?'已经替换好了。':'容器也需要这一层。','bad');return}
-  if(!g&&hv){say('三个应用直接跑在同一个内核上，没有 Guest OS。','ok');G.complete('m2')}})})();
-/* ---------- Challenge 3 ---------- */
+/* ---------- Hands-on ---------- */
 (()=>{const host=document.getElementById('host3'),ws=document.getElementById('ws3'),n=document.getElementById('n3'),ma=document.getElementById('msg3a'),mb=document.getElementById('msg3b'),b3=document.getElementById('b3'),img=document.getElementById('img3');let c=0;
  dragDrop([img],[host],()=>{if(c>=2)return;c++;n.textContent=c;const d=document.createElement('div');d.className='blk hatch enter';d.style.height='38px';d.textContent=`容器 ${c} · 可写层`;ws.appendChild(d);
   ma.className='msg';ma.textContent=c===1?'docker run：只多了一层可写层。再运行一个。':'两个容器，只读层仍然只有 1 份。';
   if(c===2){img.classList.add('used');b3.hidden=false;b3.classList.add('enter')}});
  let solved=false;document.getElementById('pick3').addEventListener('click',e=>{const b=e.target.closest('button');if(!b||solved)return;const a=b.dataset.a;
-  if(a==='ok'){solved=true;b.innerHTML='容器 1 · 可写层 <span class="pill sig" style="margin-left:8px;padding:4px 8px">+ log.txt</span>';b.classList.add('enter');mb.className='msg ok';mb.textContent='对。镜像和容器 2 都看不到这个文件。';G.complete('m3')}
+  if(a==='ok'){solved=true;b.innerHTML='容器 1 · 可写层 <span class="pill sig" style="margin-left:8px;padding:4px 8px">+ log.txt</span>';b.classList.add('enter');mb.className='msg ok';mb.textContent='对。镜像和容器 2 都看不到这个文件。';}
   else{shake(b);mb.className='msg bad';mb.textContent=a==='ro'?'镜像层是只读的，不能修改。':'这是容器 2 的可写层。容器 1 写不到这里。'}})})();
 /* ---------- Mission 4: terminal ---------- */
 const T=[['docker run hello-world',`Unable to find image 'hello-world:latest' locally
@@ -76,15 +58,15 @@ This message shows that your installation appears to be working correctly.`,'<b>
 ['docker images',`REPOSITORY    TAG       IMAGE ID       SIZE
 hello-world   latest    d2c94e258dcb   13.3kB`,'列出本地镜像。<b>REPOSITORY:TAG</b> 是名字和版本。只有 13KB，因为里面没有操作系统。']];
 (()=>{const el=document.getElementById('term'),tabs=el.querySelector('.tabs'),pre=el.querySelector('pre'),ex=document.getElementById('ex');let tm;const ran=new Set();const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
- if(G.isDone('m4'))document.querySelector('#m4 .clear').classList.add('on');
+ 
  T.forEach(([c,o,x],i)=>{const b=document.createElement('button');b.setAttribute('role','tab');b.textContent='$ '+c;b.addEventListener('click',()=>{tabs.querySelectorAll('button').forEach(z=>z.setAttribute('aria-selected',z===b));clearInterval(tm);let k=0;ex.innerHTML='';
-  const done=()=>{ex.innerHTML=x;b.classList.add('ran');ran.add(i);if(ran.size===3)G.complete('m4')};
+  const done=()=>{ex.innerHTML=x;b.classList.add('ran');ran.add(i);};
   const draw=()=>pre.innerHTML=`<b>$ ${c}</b>\n<span>${esc(o.slice(0,k))}</span>`;if(RM){k=o.length;draw();done();return}tm=setInterval(()=>{k+=6;draw();if(k>=o.length){clearInterval(tm);done()}},14)});tabs.appendChild(b)})})();
 /* ---------- Mission 5: quiz ---------- */
 const Q=[['镜像和容器的关系，哪一项最准确？',['镜像是运行中的进程，容器是文件','镜像是只读的层；容器是镜像加一层可写层，并作为进程运行','两者是同一个东西的不同叫法'],1,'容器在镜像的只读层上加了自己的可写层。'],
 ['用同一个镜像启动 3 个容器，镜像的只读层在磁盘上有几份？',['1 份，被共享','3 份','4 份'],0,'只读层共享，每个容器只多一层可写层。'],
 ['容器比虚拟机轻量的主要原因是？',['容器用的编程语言更快','容器共享宿主机内核，不需要各自运行操作系统','容器不能联网'],1,'没有 Guest OS，所以启动快、体积小。']];
-(()=>{const el=document.getElementById('qs');let ok=0;if(G.isDone('m5'))document.querySelector('#m5 .clear').classList.add('on');
+(()=>{const el=document.getElementById('qs');let ok=0;
  Q.forEach((q,qi)=>{const d=document.createElement('div');d.className='q';d.innerHTML=`<h4>${qi+1}. ${q[0]}</h4>`+q[1].map((o,i)=>`<button class="op" data-i="${i}"><i>${'ABC'[i]}</i><span>${o}</span></button>`).join('')+'<div class="fb" aria-live="polite"></div>';
   d.addEventListener('click',e=>{const b=e.target.closest('.op');if(!b||d.classList.contains('ok'))return;const fb=d.querySelector('.fb');
-   if(+b.dataset.i===q[2]){b.classList.add('r');d.classList.add('ok');fb.textContent='正确。'+q[3];if(++ok===Q.length)G.complete('m5')}else{b.classList.add('w');shake(b);fb.textContent='不对，再选一次。'}});el.appendChild(d)})})();
+   if(+b.dataset.i===q[2]){b.classList.add('r');d.classList.add('ok');fb.textContent='正确。'+q[3];ok++}else{b.classList.add('w');shake(b);fb.textContent='不对，再选一次。'}});el.appendChild(d)})})();

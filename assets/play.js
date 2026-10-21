@@ -64,3 +64,4 @@ window.dragDrop=function(chips,zones,onDrop){let armed=null;
 window.shake=n=>{n.classList.remove('shake');n.offsetWidth;n.classList.add('shake')};
 /* FLIP: animate layout changes of children */
 window.flip=(nodes,change)=>{const a=new Map(nodes().map(n=>[n,n.getBoundingClientRect()]));change();if(RM)return;nodes().forEach(n=>{const r=a.get(n);if(!r)return;const b=n.getBoundingClientRect(),dx=r.left-b.left,dy=r.top-b.top;if(!dx&&!dy)return;n.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}],{duration:420,easing:'cubic-bezier(0.23,1,0.32,1)'})})};
+document.addEventListener('DOMContentLoaded',()=>{const p=document.querySelector('.prog');if(!p)return;let q=0;const u=()=>{q=0;const h=document.documentElement;p.style.setProperty('--p',h.scrollTop/Math.max(1,h.scrollHeight-h.clientHeight))};addEventListener('scroll',()=>{if(!q){q=1;requestAnimationFrame(u)}},{passive:true});u()});

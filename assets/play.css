@@ -114,3 +114,5 @@ button.blk:active{transform:scale(.97)}button.blk.gone{opacity:0;transform:scale
 .foot{display:flex;justify-content:space-between;padding:10vh 0 6vh;font:500 12px/1 var(--m);color:var(--ink2)}.foot a{text-decoration:none}
 @media (hover:hover) and (pointer:fine){.list a:hover{background:var(--bg2)}.list a:hover .ar{transform:translateX(4px)}}
 @media (max-width:900px){.list a{grid-template-columns:44px 1fr 24px}.list .s{display:none}}
+.prog{position:sticky;top:52px;z-index:19;height:2px;margin-bottom:-2px}.prog::after{content:"";display:block;height:100%;background:var(--sig);transform-origin:0 50%;transform:scaleX(var(--p,0))}
+.ms a{grid-template-columns:70px 1fr}

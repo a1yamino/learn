@@ -4,59 +4,41 @@
 <link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/play.css"></head><body>
-<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 1 课</span><span class="sp"></span><div class="xp"><div class="bar"><i></i></div><b>0</b><span class="t"></span></div><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 1 课</span><span class="sp"></span><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
 <main class="wrap">
 <section class="lede"><div class="k">Docker · 第 1 课</div><h1>为什么需要 Docker</h1>
-<p>5 个任务。每个任务先看一段动画，再完成一个挑战。完成后获得 XP。约 20 分钟。</p>
-<ol class="ms">
-<li data-m="m1"><a href="#m1"><span class="n">任务 1</span><span class="t">修好部署</span><span class="x">100 XP</span><span class="s">未完成</span></a></li>
-<li data-m="m2"><a href="#m2"><span class="n">任务 2</span><span class="t">虚拟机改成容器</span><span class="x">100 XP</span><span class="s">未完成</span></a></li>
-<li data-m="m3"><a href="#m3"><span class="n">任务 3</span><span class="t">运行容器，找到可写层</span><span class="x">150 XP</span><span class="s">未完成</span></a></li>
-<li data-m="m4"><a href="#m4"><span class="n">任务 4</span><span class="t">前三条命令</span><span class="x">50 XP</span><span class="s">未完成</span></a></li>
-<li data-m="m5"><a href="#m5"><span class="n">任务 5</span><span class="t">自测</span><span class="x">100 XP</span><span class="s">未完成</span></a></li></ol></section>
+<p>Docker 解决什么问题；镜像和容器是什么、怎样配合。约 15 分钟。</p>
+<ol class="ms"><li><a href="#m1"><span class="n">01</span><span class="t">环境不一致</span></a></li><li><a href="#m2"><span class="n">02</span><span class="t">虚拟机和容器</span></a></li><li><a href="#m3"><span class="n">03</span><span class="t">镜像和容器</span></a></li><li><a href="#m4"><span class="n">04</span><span class="t">前三条命令</span></a></li><li><a href="#m5"><span class="n">05</span><span class="t">自测</span></a></li></ol></section>
 
-<section class="mis" id="m1"><div class="mh"><div><div class="k">任务 1 / 5</div><h2>代码一样，环境不一样</h2><div class="goal">目标：<b>让应用在生产服务器上正常运行。</b></div></div><div class="rw">+100 XP</div></div>
-<div class="lab">动画</div><div id="p1"></div>
-<div class="chal"><p class="task">挑战：把一样东西拖到服务器上，让应用运行起来。</p><p class="hint">也可以先点一下要放的东西，再点服务器。</p>
-<div class="arena"><div class="zone"><h6>你的电脑</h6><div class="kv"><span>python</span><span>3.12</span></div><div class="kv"><span>openssl</span><span>3.0</span></div><div class="kv"><span>requests</span><span>2.31</span></div>
-<div class="chips"><button class="chip" data-v="code">app.py</button><button class="chip img" data-v="img">镜像 myapp:1.0</button></div></div>
-<div class="zone" id="srv1"><h6>生产服务器</h6><div class="kvs"><div class="kv x"><span>python</span><span>3.8</span></div><div class="kv x"><span>openssl</span><span>1.1</span></div><div class="kv x"><span>requests</span><span>2.20</span></div></div><div style="margin-top:16px"><span class="pill mute" id="st1">未部署</span></div></div></div>
-<div class="msg" id="msg1" aria-live="polite"></div>
-<div class="clear"><div class="ck"><svg viewBox="0 0 20 20"><path d="M5 10.5l3.2 3.2L15 7"/></svg></div><div class="tx"><b>任务 1 完成</b><span>+100 XP · 镜像带着环境一起部署</span></div><a class="btn" href="#m2">下一个任务 ↓</a></div></div></section>
+<section class="mis" id="m1"><div class="mh"><div><div class="k">01</div><h2>代码一样，环境不一样</h2><div class="goal">代码相同，运行环境不同，结果就不同。</div></div></div>
+<div id="p1"></div>
+</section>
 
-<section class="mis" id="m2"><div class="mh"><div><div class="k">任务 2 / 5</div><h2>虚拟机和容器</h2><div class="goal">目标：<b>理解容器为什么比虚拟机轻。</b></div></div><div class="rw">+100 XP</div></div>
-<div class="lab">动画</div><div id="p2"></div>
-<div class="chal"><p class="task">挑战：把这台虚拟机主机改成容器主机。</p><p class="hint">点击容器不需要的层把它去掉；点击需要替换的层把它换掉。</p>
-<div class="stk" id="vm2"><div class="row"><button class="blk sig">App A</button><button class="blk sig">App B</button><button class="blk sig">App C</button></div>
-<div class="row"><button class="blk">依赖</button><button class="blk">依赖</button><button class="blk">依赖</button></div>
-<div class="row" id="gos"><button class="blk dim" data-g>Guest OS</button><button class="blk dim" data-g>Guest OS</button><button class="blk dim" data-g>Guest OS</button></div>
-<button class="blk" data-hv>Hypervisor</button><button class="blk dim">宿主机操作系统</button><button class="blk dim">硬件</button></div>
-<div class="msg" id="msg2" aria-live="polite"></div>
-<div class="clear"><div class="ck"><svg viewBox="0 0 20 20"><path d="M5 10.5l3.2 3.2L15 7"/></svg></div><div class="tx"><b>任务 2 完成</b><span>+100 XP · 容器共享宿主机内核</span></div><a class="btn" href="#m3">下一个任务 ↓</a></div></div></section>
+<section class="mis" id="m2"><div class="mh"><div><div class="k">02</div><h2>虚拟机和容器</h2><div class="goal">虚拟机带着整个操作系统，容器只带应用和依赖。</div></div></div>
+<div id="p2"></div>
+</section>
 
-<section class="mis" id="m3"><div class="mh"><div><div class="k">任务 3 / 5</div><h2>镜像和容器</h2><div class="goal">目标：<b>用一个镜像运行两个容器，并找出写入发生在哪一层。</b></div></div><div class="rw">+150 XP</div></div>
-<div class="lab">动画</div><div id="p3"></div>
-<div class="chal"><p class="task">挑战 A：把镜像拖到主机上，运行 2 个容器。</p><p class="hint">每拖一次执行一次 <code>docker run</code>。</p>
+<section class="mis" id="m3"><div class="mh"><div><div class="k">03</div><h2>镜像和容器</h2><div class="goal">镜像是只读的层，容器在上面加一层可写层。</div></div></div>
+<div id="p3"></div>
+<div class="chal"><p class="task">动手：把镜像拖到主机上，运行 2 个容器。</p><p class="hint">每拖一次执行一次 <code>docker run</code>。</p>
 <div class="arena"><div class="zone"><h6>镜像仓库</h6><div class="chips"><button class="chip img" id="img3">镜像 myapp:1.0</button></div></div>
 <div class="zone" id="host3"><h6>主机 · 容器 <span id="n3">0</span>/2</h6><div class="stk"><div class="row" id="ws3"></div><div class="blk dim" style="height:38px">③ COPY app.py .</div><div class="blk dim" style="height:38px">② RUN pip install</div><div class="blk dim" style="height:38px">① FROM python:3.12-slim</div><div class="tag" style="margin-top:4px">只读层 · 磁盘上 1 份</div></div></div></div>
 <div class="msg" id="msg3a" aria-live="polite"></div>
-<div id="b3" hidden style="margin-top:28px;border-top:1px solid var(--line);padding-top:24px"><p class="task">挑战 B：容器 1 执行了 <code>echo hi &gt; /tmp/log.txt</code>。文件写进了哪一层？</p><p class="hint">点击那一层。</p>
+<div id="b3" hidden style="margin-top:28px;border-top:1px solid var(--line);padding-top:24px"><p class="task">接着：容器 1 执行了 <code>echo hi &gt; /tmp/log.txt</code>。文件写进了哪一层？</p><p class="hint">点击那一层。</p>
 <div class="stk" id="pick3"><div class="row"><button class="blk hatch" data-a="ok">容器 1 · 可写层</button><button class="blk hatch" data-a="c2">容器 2 · 可写层</button></div><button class="blk dim" data-a="ro">③ COPY app.py .</button><button class="blk dim" data-a="ro">② RUN pip install</button><button class="blk dim" data-a="ro">① FROM python:3.12-slim</button></div>
 <div class="msg" id="msg3b" aria-live="polite"></div></div>
-<div class="clear"><div class="ck"><svg viewBox="0 0 20 20"><path d="M5 10.5l3.2 3.2L15 7"/></svg></div><div class="tx"><b>任务 3 完成</b><span>+150 XP · 写入只进入容器自己的可写层</span></div><a class="btn" href="#m4">下一个任务 ↓</a></div></div></section>
+</section>
 
-<section class="mis" id="m4"><div class="mh"><div><div class="k">任务 4 / 5</div><h2>前三条命令</h2><div class="goal">目标：<b>依次运行三条命令，看懂输出。</b> 先安装 Docker Desktop（Mac / Windows）或 Docker Engine（Linux）。</div></div><div class="rw">+50 XP</div></div>
+<section class="mis" id="m4"><div class="mh"><div><div class="k">04</div><h2>前三条命令</h2><div class="goal">先安装 Docker Desktop（Mac / Windows）或 Docker Engine（Linux），然后在终端依次执行。点击命令查看输出。</div></div></div>
 <div class="term" id="term"><div class="tabs" role="tablist"></div><pre>点击上面的命令运行。</pre></div><div class="ex" id="ex"></div>
-<div class="clear"><div class="ck"><svg viewBox="0 0 20 20"><path d="M5 10.5l3.2 3.2L15 7"/></svg></div><div class="tx"><b>任务 4 完成</b><span>+50 XP · 三条命令都运行过了</span></div><a class="btn" href="#m5">下一个任务 ↓</a></div></section>
+</section>
 
-<section class="mis" id="m5"><div class="mh"><div><div class="k">任务 5 / 5</div><h2>自测</h2><div class="goal">目标：<b>三道题全部答对。</b> 答错可以再选。</div></div><div class="rw">+100 XP</div></div>
-<div id="qs"></div>
-<div class="clear"><div class="ck"><svg viewBox="0 0 20 20"><path d="M5 10.5l3.2 3.2L15 7"/></svg></div><div class="tx"><b>任务 5 完成</b><span>+100 XP</span></div></div></section>
+<section class="mis" id="m5"><div class="mh"><div><div class="k">05</div><h2>自测</h2><div class="goal">三道题，选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div></section>
 
 <section class="mis" id="sumsec"><div class="mh"><div><div class="k">小结</div><h2>记住这五点</h2></div></div>
-<div class="clear" id="final"><div class="ck"><svg viewBox="0 0 20 20"><path d="M5 10.5l3.2 3.2L15 7"/></svg></div><div class="tx"><b>第 1 课完成</b><span>500 / 500 XP</span></div><a class="btn pri" href="l02.html">第 2 课 →</a></div>
 <ol class="sum" style="margin-top:28px"><li>Docker 把应用和运行环境一起打包成镜像，解决环境不一致。</li><li>容器共享宿主机内核，比虚拟机启动快、占用小。隔离靠 namespace 和 cgroups。</li><li>镜像由只读层组成。容器 = 镜像 + 一层可写层 + 运行中的进程。</li><li>多个容器共享同一个镜像的只读层；写入只进入各自的可写层。</li><li>删除容器会删除它的可写层。需要保存的数据放在 Volume 里（第 6 课）。</li></ol>
-<p style="margin-top:28px"><button class="btn" id="reset">重置进度</button></p></section>
+</section>
 <footer class="endnav"><div class="k">下一课 · 02</div><a class="big" href="l02.html">容器生命周期<br>与核心命令 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
