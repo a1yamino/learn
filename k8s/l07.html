@@ -1,0 +1,85 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 7 课 · 存储：PV、PVC 与 StorageClass</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 7 课</span><span class="sp"></span><a href="l06.html">← 第 6 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 7 课</div><h1>存储：PV、PVC 与 StorageClass</h1>
+<p>容器的文件系统随 Pod 消失。本课讲 Kubernetes 怎样给 Pod 提供持久存储：卷的种类、PersistentVolume 与 PersistentVolumeClaim 的分工、StorageClass 动态供应、访问模式、回收策略和扩容。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">申请与供应</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">访问模式与回收策略</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：数据还在吗？</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>申请与供应</h2><div class="goal">应用说“我要 10Gi”，谁去准备磁盘？</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>访问模式与回收策略</h2><div class="goal">谁能挂载，删了以后怎样。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：数据还在吗？</h2><div class="goal">选择卷的类型，再选择一个事件，看数据是否保留。</div></div></div>
+<div class="chal"><div class="cmds" id="vt"></div><div class="cmds" id="evs"></div><div class="msg" id="vm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查看、绑定、扩容、排查。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">kind 自带一个 local-path 的 StorageClass，可以体验动态供应。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>查看默认 StorageClass。</p><pre class="cmd">kubectl get storageclass</pre><pre class="out">NAME                 PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION
+standard (default)   rancher.io/local-path   Delete          WaitForFirstConsumer   false</pre></div></div><div class="st"><span class="n">02</span><div><p>创建 PVC。注意它处于 Pending：WaitForFirstConsumer。</p><pre class="cmd">kubectl apply -f - &lt;&lt;&#x27;EOF&#x27;
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: data }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+EOF
+kubectl get pvc data</pre><pre class="out">NAME   STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+data   Pending                                      standard       2s</pre></div></div><div class="st"><span class="n">03</span><div><p>一个使用它的 Pod，写入数据。</p><pre class="cmd">kubectl run writer --image=busybox --overrides=&#x27;{&quot;spec&quot;:{&quot;volumes&quot;:[{&quot;name&quot;:&quot;d&quot;,&quot;persistentVolumeClaim&quot;:{&quot;claimName&quot;:&quot;data&quot;}}],&quot;containers&quot;:[{&quot;name&quot;:&quot;w&quot;,&quot;image&quot;:&quot;busybox&quot;,&quot;command&quot;:[&quot;sh&quot;,&quot;-c&quot;,&quot;echo hello &gt; /d/f; sleep 3600&quot;],&quot;volumeMounts&quot;:[{&quot;name&quot;:&quot;d&quot;,&quot;mountPath&quot;:&quot;/d&quot;}]}]}}&#x27;
+kubectl wait --for=condition=Ready pod/writer
+kubectl get pvc data; kubectl get pv</pre><pre class="out">data   Bound    pvc-3f1e…   1Gi   RWO   standard   40s
+NAME        CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM
+pvc-3f1e…   1Gi        RWO            Delete           Bound    default/data</pre></div></div><div class="st"><span class="n">04</span><div><p>删除 Pod，新 Pod 挂同一个 PVC，数据还在。</p><pre class="cmd">kubectl delete pod writer
+kubectl run reader --rm -it --restart=Never --image=busybox --overrides=&#x27;{&quot;spec&quot;:{&quot;volumes&quot;:[{&quot;name&quot;:&quot;d&quot;,&quot;persistentVolumeClaim&quot;:{&quot;claimName&quot;:&quot;data&quot;}}],&quot;containers&quot;:[{&quot;name&quot;:&quot;r&quot;,&quot;image&quot;:&quot;busybox&quot;,&quot;command&quot;:[&quot;cat&quot;,&quot;/d/f&quot;],&quot;volumeMounts&quot;:[{&quot;name&quot;:&quot;d&quot;,&quot;mountPath&quot;:&quot;/d&quot;}]}]}}&#x27;</pre><pre class="out">hello</pre></div></div><div class="st"><span class="n">05</span><div><p>PV 实际在节点的哪里？</p><pre class="cmd">kubectl get pv -o jsonpath=&quot;{.items[0].spec.hostPath.path}{&#x27;\n&#x27;}{.items[0].spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}&quot;</pre><pre class="out">/var/local-path-provisioner/pvc-3f1e…_default_data
+learn-worker2</pre></div></div><div class="st"><span class="n">06</span><div><p>删除 PVC：回收策略是 Delete，PV 和数据都没了。</p><pre class="cmd">kubectl delete pvc data; sleep 5; kubectl get pv</pre><pre class="out">No resources found</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>保住数据</h3><p>创建一个 <code>reclaimPolicy: Retain</code> 的 StorageClass <code>keep</code>（供应器同样是 <code>rancher.io/local-path</code>，绑定模式 WaitForFirstConsumer），用它申请 PVC 并写入数据。删除 PVC 后，让一个<b>新的</b> PVC 重新绑定到这个旧 PV，读出原来的数据。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl apply -f - <<'EOF'
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: { name: keep }
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+EOF
+# 用 storageClassName: keep 创建 PVC data，按练习第 3 步写入 hello
+kubectl delete pod writer; kubectl delete pvc data
+PV=$(kubectl get pv -o jsonpath="{.items[?(@.spec.storageClassName=='keep')].metadata.name}")
+kubectl get pv $PV               # STATUS: Released
+kubectl patch pv $PV -p '{"spec":{"claimRef":null}}'   # 变回 Available
+# 新 PVC，指定 volumeName 绑定到这个 PV
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: data2 }
+spec:
+  storageClassName: keep
+  volumeName: $PV
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 1Gi } }
+EOF
+# 按练习第 4 步用 claimName: data2 读取</pre><pre class="out">pvc-8a2c…   1Gi   RWO   Retain   Released   default/data   keep
+persistentvolume/pvc-8a2c… patched
+hello</pre><p>Retain 让 PV 在 PVC 删除后进入 Released 状态，数据保留。它仍记着旧的 claimRef，所以要清掉才能被重新绑定；<code>volumeName</code> 让新 PVC 精确地绑到这个 PV。生产中，重要数据还要有独立于集群的备份（第 26 课 Velero）。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>emptyDir 随 Pod 生灭，适合临时文件和容器间共享；hostPath 绑死在某个节点，普通应用不要用。</li><li><b>PVC</b> 是应用的“申请”（要多大、什么访问模式、哪个 StorageClass）；<b>PV</b> 是实际的存储；两者一对一绑定。</li><li>StorageClass 让存储<b>动态供应</b>：创建 PVC 时，供应器（CSI 驱动）自动创建云盘或本地卷和对应的 PV。<code>WaitForFirstConsumer</code> 让卷在 Pod 调度后再创建，保证在同一可用区。</li><li>访问模式：RWO（单节点读写，大多数云盘）、RWOP（单 Pod）、RWX（多节点读写，需要 NFS、CephFS 等）、ROX。</li><li>回收策略：<code>Delete</code>（动态供应的默认值，删 PVC 就删数据）和 <code>Retain</code>（保留，手动处理）。重要数据用 Retain，并单独备份。</li><li>Deployment 的多个副本共享同一个 RWO PVC 通常行不通；每个副本需要自己的卷时用 StatefulSet（第 17 课）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 08</div><a class="big" href="l08.html">Ingress 与 Gateway API →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l07.js"></script>
+</body></html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 8 课 · Ingress 与 Gateway API</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 8 课</span><span class="sp"></span><a href="l07.html">← 第 7 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 8 课</div><h1>Ingress 与 Gateway API</h1>
+<p>把集群里的 HTTP 服务暴露给外部：按域名和路径路由、TLS 终止、多个服务共用一个入口。本课讲 Ingress 和它的继任者 Gateway API，以及入口控制器的角色。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个入口，多个服务</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Gateway API 的三层</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：路由匹配</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个入口，多个服务</h2><div class="goal">按域名和路径分流。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Gateway API 的三层</h2><div class="goal">谁负责什么。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：路由匹配</h2><div class="goal">下面是一组路由规则。输入请求，看它会被送到哪个服务。</div></div></div>
+<div class="chal"><div class="log" id="rules" style="height:auto;min-height:0"></div><div class="cmds" id="reqs"></div><div class="msg" id="rr"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">控制器、规则、TLS、调试。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 Traefik 作为控制器，同时体验 Ingress 和 Gateway API。需要 Helm（<code>brew install helm</code> 或见 helm.sh）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>重建集群，把宿主机 8080 映射到节点的 30080。</p><pre class="cmd">cat &gt; kind-ing.yaml &lt;&lt;&#x27;EOF&#x27;
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - { containerPort: 30080, hostPort: 8080 }
+- role: worker
+EOF
+kind delete cluster --name learn; kind create cluster --name learn --config kind-ing.yaml</pre><pre class="out">Set kubectl context to &quot;kind-learn&quot;</pre></div></div><div class="st"><span class="n">02</span><div><p>安装 Gateway API CRD 和 Traefik。</p><pre class="cmd">kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
+helm repo add traefik https://traefik.github.io/charts &amp;&amp; helm repo update
+helm install traefik traefik/traefik -n traefik --create-namespace \
+  --set service.type=NodePort --set ports.web.nodePort=30080 \
+  --set providers.kubernetesGateway.enabled=true
+kubectl -n traefik rollout status deploy traefik</pre><pre class="out">deployment &quot;traefik&quot; successfully rolled out</pre></div></div><div class="st"><span class="n">03</span><div><p>两个后端服务。</p><pre class="cmd">for s in web api; do kubectl create deployment $s --image=registry.k8s.io/e2e-test-images/agnhost:2.52 -- /agnhost netexec --http-port 8080; kubectl expose deployment $s --port 80 --target-port 8080; done</pre><pre class="out">service/web exposed
+service/api exposed</pre></div></div><div class="st"><span class="n">04</span><div><p>Ingress：/api 给 api，其余给 web。</p><pre class="cmd">kubectl create ingress shop --class=traefik --rule=&quot;shop.localhost/api*=api:80&quot; --rule=&quot;shop.localhost/*=web:80&quot;
+curl -s -H &quot;Host: shop.localhost&quot; localhost:8080/hostname; echo
+curl -s -H &quot;Host: shop.localhost&quot; localhost:8080/api/hostname; echo</pre><pre class="out">web-6d8f7c9b5-2kq8x
+api-7b9c6d5f4-x7k2p</pre></div></div><div class="st"><span class="n">05</span><div><p>改用 Gateway API。先删除 Ingress，再创建 Gateway 和 HTTPRoute。</p><pre class="cmd">kubectl delete ingress shop
+kubectl apply -f - &lt;&lt;&#x27;EOF&#x27;
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata: { name: shop }
+spec:
+  gatewayClassName: traefik
+  listeners: [{ name: web, port: 8000, protocol: HTTP }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: shop }
+spec:
+  parentRefs: [{ name: shop }]
+  hostnames: [shop.localhost]
+  rules:
+  - matches: [{ path: { type: PathPrefix, value: /api } }]
+    backendRefs: [{ name: api, port: 80 }]
+  - backendRefs: [{ name: web, port: 80 }]
+EOF
+kubectl get gateway shop; curl -s -H &quot;Host: shop.localhost&quot; localhost:8080/api/hostname; echo</pre><pre class="out">NAME   CLASS     ADDRESS   PROGRAMMED   AGE
+shop   traefik             True         5s
+api-7b9c6d5f4-x7k2p</pre></div></div><div class="st"><span class="n">06</span><div><p>查看路由状态。</p><pre class="cmd">kubectl get httproute shop -o jsonpath=&quot;{.status.parents[0].conditions[*].type}&quot;</pre><pre class="out">Accepted ResolvedRefs</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>金丝雀发布</h3><p>部署 <code>web-v2</code>（同样的镜像即可，用于区分主机名）。修改 HTTPRoute，让 90% 的默认流量到 web、10% 到 web-v2；带请求头 <code>x-canary: 1</code> 的请求 100% 到 web-v2。用 100 次 curl 统计分布。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl create deployment web-v2 --image=registry.k8s.io/e2e-test-images/agnhost:2.52 -- /agnhost netexec --http-port 8080
+kubectl expose deployment web-v2 --port 80 --target-port 8080
+kubectl apply -f - <<'EOF'
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: shop }
+spec:
+  parentRefs: [{ name: shop }]
+  hostnames: [shop.localhost]
+  rules:
+  - matches: [{ path: { type: PathPrefix, value: /api } }]
+    backendRefs: [{ name: api, port: 80 }]
+  - matches: [{ headers: [{ name: x-canary, value: "1" }] }]
+    backendRefs: [{ name: web-v2, port: 80 }]
+  - backendRefs:
+    - { name: web, port: 80, weight: 90 }
+    - { name: web-v2, port: 80, weight: 10 }
+EOF
+for i in $(seq 100); do curl -s -H "Host: shop.localhost" localhost:8080/hostname; echo; done | cut -d- -f1-2 | sort | uniq -c
+curl -s -H "Host: shop.localhost" -H "x-canary: 1" localhost:8080/hostname</pre><pre class="out">     91 web-6d8f7c9b5
+      9 web-v2-5f7d8c6b4
+web-v2-5f7d8c6b4-q2w8z</pre><p>权重和请求头匹配是 Gateway API 的标准字段，换一个实现（Envoy Gateway、Istio、云厂商）配置不变。用 Ingress 实现同样的效果，要靠各控制器不同的注解。逐步调大 v2 的权重即可完成发布，出问题时把权重调回 0。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>Ingress / Gateway 本身只是规则，需要一个<b>控制器</b>（Envoy Gateway、Traefik、云厂商的负载均衡器等）来真正处理流量。没有控制器，规则不生效。</li><li>一个入口（一个 LoadBalancer）按 <b>host</b> 和 <b>path</b> 把请求分给多个 Service，省去每个服务一个负载均衡器。</li><li>pathType：<code>Prefix</code> 按路径段前缀匹配（<code>/api</code> 匹配 <code>/api/x</code>，不匹配 <code>/apix</code>），<code>Exact</code> 精确匹配。多条规则时最长匹配优先。</li><li>TLS：证书放在 <code>kubernetes.io/tls</code> 类型的 Secret 中，入口负责解密。cert-manager 可以自动申请和续期 Let's Encrypt 证书。</li><li><b>Gateway API</b>：按角色拆分为 GatewayClass（基础设施提供方）、Gateway（集群运维：监听端口、证书）、HTTPRoute（应用团队：路由规则）。原生支持按权重分流、请求头匹配、改写等，不再依赖各控制器的私有注解。新项目优先选它。</li><li>社区的 ingress-nginx 已于 2026 年 3 月停止维护。已有的 Ingress 资源仍可由其他控制器处理，迁移目标通常是 Gateway API。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 09</div><a class="big" href="l09.html">健康检查、资源请求与限制 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l08.js"></script>
+</body></html>
