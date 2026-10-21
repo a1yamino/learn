@@ -1,0 +1,23 @@
+TITLE='高可用、升级与备份';DESC='让集群本身和上面的应用在节点、可用区故障和日常维护中保持可用：控制平面与 etcd 的高可用、应用层的副本分布与 PodDisruptionBudget、Kubernetes 版本升级的顺序与版本偏差规则，以及 etcd 快照和 Velero 备份恢复。';NEXT='综合项目：从零到生产';MIN=55
+SUM=['etcd 使用 Raft，需要<b>多数派</b>（quorum）才能写入：3 个成员容忍 1 个故障，5 个容忍 2 个。偶数成员不增加容错。成员分布在不同可用区。',
+'控制平面高可用：多个 API Server 放在负载均衡后面（无状态）；scheduler 和 controller-manager 多副本但通过 <b>Lease 选主</b>，同一时间只有一个工作。托管集群（EKS、GKE、AKS）由云厂商负责。',
+'应用高可用：至少 2–3 个副本，用 topologySpreadConstraints 分散到不同节点和可用区，配置 readiness 探针，并用 <b>PodDisruptionBudget</b> 限制自愿中断（drain、节点缩容、升级）时同时被驱逐的数量。',
+'升级顺序：先控制平面（一次只升一个小版本，如 1.33 → 1.34），再逐个节点 drain、升级 kubelet、uncordon。版本偏差：kubelet 不能比 API Server 新，最多旧 3 个小版本；kubectl 与 API Server 相差不超过 1。升级前检查已弃用的 API。',
+'备份：etcd 快照（<code>etcdctl snapshot save</code>）保存整个集群状态；Velero 按命名空间备份 API 对象并配合卷快照备份数据，可恢复到另一个集群。GitOps 仓库本身也是配置的备份，但不包括 PV 中的数据和运行时生成的对象。',
+'没有演练过的备份不算备份：定期在独立环境中恢复并验证，记录恢复所需时间（RTO）和可能丢失的数据量（RPO）。']
+def secs(prac,E):
+    return [
+('etcd 多数派','几个成员、能坏几个。','<div id="p1"></div>'),
+('节点升级与 PodDisruptionBudget','drain 如何在不中断服务的前提下清空节点。','<div id="p2"></div>'),
+('动手：这次升级可以吗','左边选择 etcd 成员数和故障数；右边设置 API Server、kubelet 与 kubectl 的版本，检查是否符合版本偏差规则。','<div class="chal"><div class="cmds" id="qm"></div><div class="cmds" id="qf"></div><div class="msg" id="qr"></div><div class="cmds" id="va" style="margin-top:18px"></div><div class="cmds" id="vk"></div><div class="cmds" id="vc"></div><div class="msg" id="vr"></div></div>'),
+('相关命令','查看状态、升级和备份。','<div id="t4"></div>'),
+('在你的电脑上练习','在 kind 集群中体验 PDB 与 drain，并给 etcd 做一次快照和恢复验证。',prac([
+ ('3 副本应用加 PDB：任何时候至少 2 个可用。','kubectl create deploy web --image=nginx:alpine --replicas=3\nkubectl create pdb web --selector=app=web --min-available=2\nkubectl get pdb web','NAME   MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE\nweb    2               N/A               1                     5s'),
+ ('drain 一个节点：驱逐遵守 PDB。','kubectl drain learn-worker --ignore-daemonsets --delete-emptydir-data\nkubectl get pods -l app=web -o wide | awk \'{print $1, $7}\'','evicting pod default/web-6d4b9-x2k9l\nevicting pod default/web-6d4b9-qw8r4\nerror when evicting pods/"web-6d4b9-qw8r4" -n "default" (will retry after 5s): Cannot evict pod as it would violate the pod\'s disruption budget.\npod/web-6d4b9-x2k9l evicted\npod/web-6d4b9-qw8r4 evicted\nnode/learn-worker drained\nNAME NODE\nweb-6d4b9-7tqzr learn-worker2\nweb-6d4b9-c7m1d learn-worker2\nweb-6d4b9-k2p9x learn-worker2'),
+ ('恢复节点调度。','kubectl uncordon learn-worker\nkubectl get nodes','NAME                  STATUS   ROLES           AGE   VERSION\nlearn-control-plane   Ready    control-plane   2d    v1.34.0\nlearn-worker          Ready    <none>          2d    v1.34.0\nlearn-worker2         Ready    <none>          2d    v1.34.0'),
+ ('在控制平面节点上给 etcd 做快照。','docker exec learn-control-plane sh -c "ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd-snap.db" 2>&1 | tail -1','Snapshot saved at /var/lib/etcd-snap.db'),
+ ('检查快照。','docker exec learn-control-plane etcdutl snapshot status /var/lib/etcd-snap.db -w table','+----------+----------+------------+------------+\n|   HASH   | REVISION | TOTAL KEYS | TOTAL SIZE |\n+----------+----------+------------+------------+\n| 5c2b8e91 |   184213 |       1207 |     6.1 MB |\n+----------+----------+------------+------------+'),
+ ('升级前检查：集群里是否还在使用已弃用的 API（看 API Server 的指标）。','kubectl get --raw /metrics | grep apiserver_requested_deprecated_apis','apiserver_requested_deprecated_apis{group="flowcontrol.apiserver.k8s.io",removed_release="1.32",resource="flowschemas",version="v1beta3"} 1')],
+ ('PDB 让 drain 卡住了','一个 Deployment 只有 1 个副本，PDB 设置 <code>minAvailable: 1</code>。运维 drain 这个节点时会怎样？列出至少两种正确的处理方式，并说明 <code>maxUnavailable</code> 和 <code>minAvailable</code> 在副本数变化时的区别。',
+ '<pre class="cmd">kubectl drain learn-worker --ignore-daemonsets --timeout=60s</pre><pre class="out">error when evicting pods/"api-5f7d8-x2k9l" -n "shop" (will retry after 5s): Cannot evict pod as it would violate the pod\'s disruption budget.\n…\nerror: unable to drain node "learn-worker" due to error: … global timeout reached: 1m0s</pre><p>ALLOWED DISRUPTIONS 为 0，驱逐永远不被允许，drain 会一直重试直到超时；节点自动扩缩和托管集群的升级也会被卡住。处理方式：① 把副本数提高到 2 以上（这才是 PDB 的前提）；② 单副本应用如果能接受短暂中断，就不要设置 PDB，或设置 <code>maxUnavailable: 1</code>；③ 临时情况下先扩容 <code>kubectl scale --replicas=2</code>，新 Pod 就绪后再 drain。不要用 <code>--disable-eviction</code> 绕过，那会直接删除 Pod。</p><p><code>minAvailable: 2</code> 是绝对下限，副本从 3 扩到 10 时仍只要求 2 个，等于允许同时驱逐 8 个；<code>maxUnavailable: 1</code> 随副本数自动适应，始终一次只驱逐一个，通常更合适。也可以写百分比。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
