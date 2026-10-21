@@ -1,0 +1,69 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 18 课 · 复制：流复制与逻辑复制</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 18 课</span><span class="sp"></span><a href="l17.html">← 第 17 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 18 课</div><h1>复制：流复制与逻辑复制</h1>
+<p>复制是高可用、读扩展和许多迁移方案的基础。本课讲物理流复制如何把 WAL 实时发送给备库并重放、同步与异步复制的取舍、复制槽、复制延迟怎么看，以及逻辑复制：发布和订阅、它能做和不能做的事、典型用途（跨大版本升级、部分表同步、变更数据捕获）。约 65 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">物理流复制</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">同步复制的提交等待</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：读懂复制状态</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>物理流复制</h2><div class="goal">WAL 从主库到备库。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>同步复制的提交等待</h2><div class="goal">synchronous_commit 的几个级别。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：读懂复制状态</h2><div class="goal">主库上 <code>pg_stat_replication</code> 的几种情况。选择一种，判断发生了什么。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">管理复制和查看延迟。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 Docker 网络启动一主一备。主库沿用 pg 容器，需要先把它加入网络。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建网络、复制角色，允许复制连接。</p><pre class="cmd">docker network create pgnet &amp;&amp; docker network connect pgnet pg
+docker exec -u postgres pg psql -c &quot;CREATE ROLE repl LOGIN REPLICATION PASSWORD &#x27;repl&#x27;&quot;
+docker exec pg bash -c &quot;echo &#x27;host replication repl all scram-sha-256&#x27; &gt;&gt; /var/lib/postgresql/18/docker/pg_hba.conf&quot;
+docker exec -u postgres pg psql -c &quot;SELECT pg_reload_conf()&quot;</pre><pre class="out">CREATE ROLE
+ pg_reload_conf
+----------------
+ t</pre></div></div><div class="st"><span class="n">02</span><div><p>用 pg_basebackup 初始化备库数据目录并启动。</p><pre class="cmd">docker volume create pgdata2
+docker run --rm --network pgnet -v pgdata2:/var/lib/postgresql -e PGPASSWORD=repl postgres:18 \
+  bash -c &quot;mkdir -p /var/lib/postgresql/18/docker &amp;&amp; pg_basebackup -h pg -U repl -D /var/lib/postgresql/18/docker -R -X stream -C -S replica1 -P &amp;&amp; chown -R postgres /var/lib/postgresql&quot;
+docker run -d --name pg2 --network pgnet -p 5433:5432 -v pgdata2:/var/lib/postgresql postgres:18</pre><pre class="out">26112/26112 kB (100%), 1/1 tablespace
+9f1c2…</pre></div></div><div class="st"><span class="n">03</span><div><p>主库：查看复制状态。</p><pre class="cmd">docker exec -u postgres pg psql -c &quot;SELECT application_name, state, sync_state, sent_lsn, replay_lsn, replay_lag FROM pg_stat_replication&quot;</pre><pre class="out"> application_name |   state   | sync_state | sent_lsn  | replay_lsn | replay_lag
+------------------+-----------+------------+-----------+------------+-----------------
+ walreceiver      | streaming | async      | 0/5000148 | 0/5000148  | 00:00:00.000412</pre></div></div><div class="st"><span class="n">04</span><div><p>主库写入，备库立即可读；备库不能写。</p><pre class="cmd">docker exec -u postgres pg psql -d shop -c &quot;INSERT INTO accounts VALUES (&#x27;R&#x27;, 1)&quot;
+docker exec -u postgres pg2 psql -d shop -c &quot;SELECT * FROM accounts WHERE name = &#x27;R&#x27;&quot;
+docker exec -u postgres pg2 psql -d shop -c &quot;INSERT INTO accounts VALUES (&#x27;X&#x27;, 1)&quot;</pre><pre class="out"> name | balance
+------+---------
+ R    |       1
+ERROR:  cannot execute INSERT in a read-only transaction</pre></div></div><div class="st"><span class="n">05</span><div><p>逻辑复制：在主库发布 accounts。（需要 wal_level = logical 并重启主库。）</p><pre class="cmd">docker exec -u postgres pg psql -c &quot;ALTER SYSTEM SET wal_level = logical&quot; &amp;&amp; docker restart pg
+docker exec -u postgres pg psql -d shop -c &quot;CREATE PUBLICATION pub_acc FOR TABLE accounts&quot;</pre><pre class="out">CREATE PUBLICATION</pre></div></div><div class="st"><span class="n">06</span><div><p>另起一个独立实例订阅（先建同结构的表）。</p><pre class="cmd">docker run -d --name pg3 --network pgnet -e POSTGRES_PASSWORD=pg postgres:18
+docker exec -u postgres pg3 psql -c &quot;CREATE TABLE accounts (name text PRIMARY KEY, balance int)&quot;
+docker exec -u postgres pg3 psql -c &quot;CREATE SUBSCRIPTION sub_acc CONNECTION &#x27;host=pg dbname=shop user=postgres password=pg&#x27; PUBLICATION pub_acc&quot;
+docker exec -u postgres pg3 psql -c &quot;SELECT * FROM accounts&quot;</pre><pre class="out">NOTICE:  created replication slot &quot;sub_acc&quot; on publisher
+CREATE SUBSCRIPTION
+ name | balance
+------+---------
+ A    |      70
+ …</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用逻辑复制做大版本升级</h3><p>生产库运行 PostgreSQL 16，800 GB，要升级到 18，停机时间不超过 5 分钟。写出基于逻辑复制的步骤，并列出必须注意的坑。</p><details><summary>查看参考答案</summary><div><ol><li>新建 18 集群，用 <code>pg_dump --schema-only</code> 导入表结构（逻辑复制不复制 DDL）。</li><li>旧库 <code>wal_level = logical</code>，<code>CREATE PUBLICATION up FOR ALL TABLES</code>；新库 <code>CREATE SUBSCRIPTION … PUBLICATION up</code>，开始初始数据同步（每张表先 COPY 再追增量）。</li><li>等 <code>pg_stat_subscription_stats</code> 无错误、所有表在 <code>pg_subscription_rel</code> 中状态为 r（ready）、延迟接近 0。在新库上验证行数和关键查询，ANALYZE。</li><li>切换窗口：应用停写（或把旧库设为只读），等延迟归零；把<b>序列值</b>同步到新库（<code>setval</code> 设为旧库当前值加余量）；应用切到新库；DROP SUBSCRIPTION。</li></ol><p>注意：每张表必须有主键或设置 REPLICA IDENTITY，否则 UPDATE/DELETE 无法复制；迁移期间冻结 DDL 变更；大对象（pg_largeobject）不会复制；初始同步期间旧库会保留 WAL，留够磁盘；订阅端的冲突（例如唯一键已存在）会让复制停止，需要监控。PostgreSQL 17 起也可以用 <code>pg_createsubscriber</code> 把一个物理备库直接转成逻辑订阅端，省掉 800 GB 的初始拷贝。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>物理流复制</b>：主库的 walsender 进程把 WAL 记录流式发送给备库的 walreceiver，备库的 startup 进程持续重放。备库是主库逐字节的副本（同一大版本、同一架构），可以开启 <code>hot_standby</code> 提供只读查询。</li><li>建备库：<code>pg_basebackup -h primary -D $PGDATA -R -X stream -C -S replica1</code> 复制数据目录，<code>-R</code> 写入 <code>primary_conninfo</code> 并创建 <code>standby.signal</code>，<code>-C -S</code> 创建复制槽。主库需要 <code>wal_level = replica</code>（默认）和一个有 REPLICATION 属性的角色。</li><li><b>复制槽</b>让主库保留备库尚未接收的 WAL，备库断开再久也能接上；代价是备库长期不回来时主库的 pg_wal 会无限增长。用 <code>max_slot_wal_keep_size</code> 设上限。</li><li>默认<b>异步</b>：主库提交不等备库，故障切换时可能丢失最近的事务。<code>synchronous_standby_names = 'ANY 1 (r1, r2)'</code> 加 <code>synchronous_commit</code>：<code>remote_write</code> / <code>on</code>（备库刷盘）/ <code>remote_apply</code>（备库已重放，读自己写入的数据可见）。同步复制增加提交延迟，备库全挂时主库写入会卡住。</li><li>延迟分三段：发送（sent_lsn）、备库写入/刷盘（write/flush_lsn）、重放（replay_lsn）。备库上的长查询与重放冲突时，等待 <code>max_standby_streaming_delay</code> 后被取消；<code>hot_standby_feedback = on</code> 避免取消，但会让主库保留旧版本（第 16 课）。</li><li><b>逻辑复制</b>：<code>wal_level = logical</code>，主库把 WAL 解码成行级变更。<code>CREATE PUBLICATION</code> 选择表，订阅端 <code>CREATE SUBSCRIPTION</code>。可以跨大版本、只同步部分表或行列、订阅端可写。不复制 DDL 和序列值，表要有主键或 REPLICA IDENTITY。Debezium 等 CDC 工具也基于逻辑解码。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 19</div><a class="big" href="l19.html">高可用与故障切换 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l18.js"></script>
+</body></html>
