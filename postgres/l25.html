@@ -1,0 +1,88 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 25 课 · 模式变更与在线迁移</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 25 课</span><span class="sp"></span><a href="l24.html">← 第 24 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 25 课</div><h1>模式变更与在线迁移</h1>
+<p>在 7×24 运行的系统上改表结构，难点不是 SQL 怎么写，而是锁和兼容性：一条看似无害的 ALTER TABLE 可能锁表几十分钟，一次字段改名可能让正在运行的旧版本代码全部报错。本课讲哪些 DDL 安全、哪些危险以及替代写法，lock_timeout 与重试，以及“扩展—迁移—收缩”的多步发布模式。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个“只要 1 毫秒”的 ALTER TABLE</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">扩展—迁移—收缩</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：这条 DDL 安全吗</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个“只要 1 毫秒”的 ALTER TABLE</h2><div class="goal">以及 lock_timeout 如何避免事故。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>扩展—迁移—收缩</h2><div class="goal">在滚动发布中给列改名。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：这条 DDL 安全吗</h2><div class="goal">orders 表 2 亿行，持续写入。选择一条 DDL，看它的锁和耗时，以及更安全的写法。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">迁移中常用的语句。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">使用 shop 库的 orders 表（10 万行，规模小但步骤相同）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>加列带默认值：只改目录，瞬间完成。</p><pre class="cmd">\timing on
+SET lock_timeout = &#x27;3s&#x27;;
+ALTER TABLE orders ADD COLUMN source text DEFAULT &#x27;web&#x27;;</pre><pre class="out">ALTER TABLE
+Time: 2.112 ms</pre></div></div><div class="st"><span class="n">02</span><div><p>修改列类型会重写表：注意 relfilenode 变了。</p><pre class="cmd">SELECT pg_relation_filenode(&#x27;orders&#x27;);
+ALTER TABLE orders ALTER COLUMN user_id TYPE bigint;
+SELECT pg_relation_filenode(&#x27;orders&#x27;);</pre><pre class="out"> pg_relation_filenode
+----------------------
+                16401
+ALTER TABLE
+Time: 412.881 ms
+ pg_relation_filenode
+----------------------
+                16533</pre></div></div><div class="st"><span class="n">03</span><div><p>安全地加 NOT NULL：先 NOT VALID 约束，再验证。</p><pre class="cmd">ALTER TABLE orders ADD CONSTRAINT orders_source_nn CHECK (source IS NOT NULL) NOT VALID;
+ALTER TABLE orders VALIDATE CONSTRAINT orders_source_nn;
+ALTER TABLE orders ALTER COLUMN source SET NOT NULL;
+ALTER TABLE orders DROP CONSTRAINT orders_source_nn;</pre><pre class="out">ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE</pre></div></div><div class="st"><span class="n">04</span><div><p>安全地加外键。</p><pre class="cmd">ALTER TABLE orders ADD CONSTRAINT orders_user_fk FOREIGN KEY (user_id) REFERENCES users (id) NOT VALID;
+ALTER TABLE orders VALIDATE CONSTRAINT orders_user_fk;</pre><pre class="out">ALTER TABLE
+ALTER TABLE</pre></div></div><div class="st"><span class="n">05</span><div><p>分批回填：每次 5000 行。</p><pre class="cmd">ALTER TABLE orders ADD COLUMN amount_cents bigint;
+DO $$
+DECLARE lo bigint := 0; hi bigint;
+BEGIN
+  SELECT max(id) INTO hi FROM orders;
+  WHILE lo &lt;= hi LOOP
+    UPDATE orders SET amount_cents = (amount * 100)::bigint WHERE id &gt; lo AND id &lt;= lo + 5000 AND amount_cents IS NULL;
+    lo := lo + 5000;
+    COMMIT;
+  END LOOP;
+END $$;</pre><pre class="out">DO</pre></div></div><div class="st"><span class="n">06</span><div><p>迁移脚本模板：短锁超时，失败重试。</p><pre class="cmd">for i in 1 2 3 4 5; do
+  psql -v ON_ERROR_STOP=1 -c &quot;SET lock_timeout = &#x27;2s&#x27;&quot; -c &quot;ALTER TABLE orders ADD COLUMN note text&quot; &amp;&amp; break
+  echo &quot;retry $i&quot;; sleep $((i * 5))
+done</pre><pre class="out">ERROR:  canceling statement due to lock timeout
+retry 1
+ALTER TABLE</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>把 orders.id 从 int 改为 bigint</h3><p>orders 有 15 亿行，<code>id integer</code> 主键由序列生成，已用到 19 亿，预计 3 个月后溢出（上限约 21.4 亿）。直接 <code>ALTER COLUMN TYPE bigint</code> 要锁表重写数小时。设计一个在线方案。</p><details><summary>查看参考答案</summary><div><ol><li><code>ALTER TABLE orders ADD COLUMN id_new bigint;</code>（瞬间）。建触发器：INSERT/UPDATE 时 <code>NEW.id_new := NEW.id</code>，此后新行自动有值。</li><li>按主键范围分批回填 <code>UPDATE … SET id_new = id WHERE id BETWEEN $a AND $b AND id_new IS NULL</code>，监控复制延迟和膨胀，必要时暂停。</li><li><code>CREATE UNIQUE INDEX CONCURRENTLY orders_id_new_idx ON orders (id_new);</code> 加 <code>CHECK (id_new IS NOT NULL) NOT VALID</code> 并 VALIDATE。</li><li>引用 orders.id 的外键列也要同样改成 bigint（往往才是工作量最大的部分），先处理它们。</li><li>切换（一个短事务，设 lock_timeout 并重试）：<pre class="cmd">BEGIN;
+LOCK TABLE orders IN ACCESS EXCLUSIVE MODE;
+ALTER TABLE orders DROP CONSTRAINT orders_pkey;
+ALTER TABLE orders ADD CONSTRAINT orders_pkey PRIMARY KEY USING INDEX orders_id_new_idx;
+ALTER TABLE orders RENAME COLUMN id TO id_old;
+ALTER TABLE orders RENAME COLUMN id_new TO id;
+ALTER SEQUENCE orders_id_seq AS bigint OWNED BY orders.id;
+ALTER TABLE orders ALTER COLUMN id SET DEFAULT nextval('orders_id_seq');
+ALTER TABLE orders ALTER COLUMN id_old DROP NOT NULL;
+DROP TRIGGER orders_sync_id ON orders;
+COMMIT;</pre>利用已验证的 CHECK 约束，PRIMARY KEY USING INDEX 不需要重新扫描。</li><li>观察一段时间后删除 id_old。</li></ol><p>应用代码在整个过程中都只读写 id，不需要改动；只要确认 ORM 中的类型能容纳 bigint（尤其是 JavaScript 的 Number 超过 2<sup>53</sup> 会丢精度）。新建表从一开始就用 bigint。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>每条 DDL 都要问两个问题：拿什么锁、持有多久（只改系统目录是毫秒级；需要重写表或全表扫描验证则与表大小成正比）。即使是毫秒级的 ACCESS EXCLUSIVE，也会因为锁队列阻塞所有查询（第 17 课），所以<b>所有迁移都设置 <code>lock_timeout</code></b> 并在失败时重试。</li><li>安全（只改目录）：<code>ADD COLUMN</code>（含常量或非 volatile 默认值，PostgreSQL 11+）、<code>DROP COLUMN</code>（只是标记）、改名、<code>ALTER COLUMN … DROP NOT NULL</code>、扩大 varchar 长度、<code>CREATE INDEX CONCURRENTLY</code>。</li><li>危险及替代：加 <code>NOT NULL</code> → 先 <code>ADD CONSTRAINT … CHECK (col IS NOT NULL) NOT VALID</code>，再 <code>VALIDATE CONSTRAINT</code>（只拿 SHARE UPDATE EXCLUSIVE），然后 SET NOT NULL 会利用这个约束跳过扫描；加外键 → 同样 NOT VALID + VALIDATE；修改列类型（如 int → bigint）会重写整张表 → 新建列、回填、切换。PostgreSQL 18 起 NOT NULL 约束本身也支持 NOT VALID。</li><li><b>回填</b>大表要分批：每批几千行、单独提交、按主键范围推进，中间可以暂停，给 VACUUM 和复制留出空间。一条 <code>UPDATE big SET new = old</code> 会产生一个巨大的事务、翻倍的表和长时间的复制延迟。</li><li><b>扩展—迁移—收缩</b>（expand / migrate / contract）：部署期间新旧代码同时运行，所以每一步的结构都必须同时兼容两个版本。改名一列要拆成：加新列 → 代码双写 → 回填 → 代码改读新列 → 停止写旧列 → 删除旧列，跨越多次发布。</li><li>迁移工具（Flyway、Liquibase、Alembic、sqitch 等）管理版本顺序；但工具不会替你判断锁的影响。注意事务：<code>CREATE INDEX CONCURRENTLY</code> 不能在事务块中执行，需要让工具单独运行这一步。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 26</div><a class="big" href="l26.html">综合项目：一个生产级数据库从设计到运维 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l25.js"></script>
+</body></html>
