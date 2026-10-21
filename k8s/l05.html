@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 5 课 · Service：服务发现与负载均衡</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 5 课</span><span class="sp"></span><a href="l04.html">← 第 4 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 5 课</div><h1>Service：服务发现与负载均衡</h1>
+<p>Pod 会被替换，IP 会变。Service 给一组 Pod 一个稳定的名字和虚拟 IP，并把流量分发给它们。本课讲标签选择器与 EndpointSlice、集群 DNS、四种 Service 类型，以及就绪状态如何影响流量。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">稳定的入口</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">四种类型</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：选择器与端点</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>稳定的入口</h2><div class="goal">Pod 来来去去，Service 不变。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>四种类型</h2><div class="goal">从集群内到集群外。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：选择器与端点</h2><div class="goal">Service 的选择器是 <code>app=api</code>。修改各个 Pod 的标签和就绪状态，看哪些 Pod 会收到流量。</div></div></div>
+<div class="chal"><div class="cmds" id="sel"></div><div id="pl"></div><div class="log" id="ep" style="height:auto;min-height:0"></div><div class="msg" id="sm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">创建、查看端点、DNS、调试。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 kind 集群里验证 Service 的行为。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>部署 3 个副本的 echo 服务（返回自己的主机名），并创建 Service。</p><pre class="cmd">kubectl create deployment api --image=registry.k8s.io/e2e-test-images/agnhost:2.52 --replicas=3 -- /agnhost serve-hostname --port 8080
+kubectl expose deployment api --port 80 --target-port 8080
+kubectl get svc api</pre><pre class="out">NAME   TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+api    ClusterIP   10.96.142.37   &lt;none&gt;        80/TCP    2s</pre></div></div><div class="st"><span class="n">02</span><div><p>端点：3 个 Pod 的 IP。</p><pre class="cmd">kubectl get endpointslices -l kubernetes.io/service-name=api -o jsonpath=&quot;{.items[0].endpoints[*].addresses}&quot;</pre><pre class="out">[&quot;10.244.1.7&quot;] [&quot;10.244.2.5&quot;] [&quot;10.244.2.6&quot;]</pre></div></div><div class="st"><span class="n">03</span><div><p>从集群内多次请求，看到负载均衡。</p><pre class="cmd">kubectl run c --rm -it --image=busybox --restart=Never -- sh -c &#x27;for i in 1 2 3 4 5 6; do wget -qO- api; echo; done&#x27;</pre><pre class="out">api-5c7d9b8f6-8kq2x
+api-5c7d9b8f6-tq9ps
+api-5c7d9b8f6-8kq2x
+api-5c7d9b8f6-h8zmw
+…</pre></div></div><div class="st"><span class="n">04</span><div><p>DNS 解析。</p><pre class="cmd">kubectl run c --rm -it --image=busybox --restart=Never -- nslookup api.default.svc.cluster.local | tail -2</pre><pre class="out">Name:	api.default.svc.cluster.local
+Address: 10.96.142.37</pre></div></div><div class="st"><span class="n">05</span><div><p>把一个 Pod 的标签改掉：它离开 Service，Deployment 也会补一个新的。</p><pre class="cmd">P=$(kubectl get pod -l app=api -o name | head -1)
+kubectl label $P app=debug --overwrite
+kubectl get pods -L app</pre><pre class="out">NAME                  READY   STATUS    APP
+api-5c7d9b8f6-8kq2x   1/1     Running   debug
+api-5c7d9b8f6-h8zmw   1/1     Running   api
+api-5c7d9b8f6-tq9ps   1/1     Running   api
+api-5c7d9b8f6-zz4n1   1/1     Running   api</pre></div></div><div class="st"><span class="n">06</span><div><p>NodePort：从宿主机通过 kind 节点访问。</p><pre class="cmd">kubectl patch svc api -p &#x27;{&quot;spec&quot;:{&quot;type&quot;:&quot;NodePort&quot;}}&#x27;
+PORT=$(kubectl get svc api -o jsonpath=&quot;{.spec.ports[0].nodePort}&quot;)
+docker exec learn-control-plane curl -s localhost:$PORT</pre><pre class="out">api-5c7d9b8f6-tq9ps</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>Headless 与 Pod 直连</h3><p>为 api 再建一个 headless Service <code>api-h</code>（<code>clusterIP: None</code>，同样的选择器）。分别 nslookup <code>api</code> 和 <code>api-h</code>，对比结果，并说明哪些场景需要 headless。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Service
+metadata: { name: api-h }
+spec:
+  clusterIP: None
+  selector: { app: api }
+  ports: [{ port: 8080 }]
+EOF
+kubectl run c --rm -it --image=busybox --restart=Never -- sh -c "nslookup api | tail -2; echo ---; nslookup api-h | grep Address | tail -3"</pre><pre class="out">Name:	api.default.svc.cluster.local
+Address: 10.96.142.37
+---
+Address: 10.244.2.6
+Address: 10.244.1.9
+Address: 10.244.2.5</pre><p>普通 Service 返回一个虚拟 IP，由 kube-proxy 负载均衡；headless 直接返回所有就绪 Pod 的 IP，由客户端自己选择。需要 headless 的场景：数据库集群要直连特定成员（配合 StatefulSet 得到 <code>db-0.db</code> 这样的稳定名字）、客户端自己做负载均衡（如 gRPC 长连接）、服务发现组件需要成员列表。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>Service 通过<b>标签选择器</b>找到 Pod。匹配且<b>就绪</b>的 Pod 的 IP 写进 EndpointSlice；不就绪的 Pod 不接收流量。</li><li>ClusterIP（默认）：一个只在集群内可达的虚拟 IP。它不属于任何网卡，由每个节点上的 kube-proxy 规则转发（第 14 课）。</li><li>DNS：<code>web</code>（同命名空间）、<code>web.shop</code>、<code>web.shop.svc.cluster.local</code>。</li><li>NodePort：每个节点的 30000–32767 端口转发到 Service。LoadBalancer：再由云平台创建外部负载均衡器指向它。外部 HTTP 流量通常用 Ingress / Gateway（第 8 课）。</li><li>Headless（<code>clusterIP: None</code>）：没有虚拟 IP，DNS 直接返回各 Pod 的 IP，用于 StatefulSet（第 17 课）。</li><li><code>port</code> 是 Service 的端口，<code>targetPort</code> 是容器端口，可以用端口名。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 06</div><a class="big" href="l06.html">ConfigMap 与 Secret →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l05.js"></script>
+</body></html>
