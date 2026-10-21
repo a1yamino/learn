@@ -116,3 +116,24 @@ button.blk:active{transform:scale(.97)}button.blk.gone{opacity:0;transform:scale
 @media (max-width:900px){.list a{grid-template-columns:44px 1fr 24px}.list .s{display:none}}
 .prog{position:sticky;top:52px;z-index:19;height:2px;margin-bottom:-2px}.prog::after{content:"";display:block;height:100%;background:var(--sig);transform-origin:0 50%;transform:scaleX(var(--p,0))}
 .ms a{grid-template-columns:70px 1fr}
+/* practice on your machine */
+.prac{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.prac .st{display:grid;grid-template-columns:44px 1fr;gap:0;padding:22px 24px;border-top:1px solid var(--line)}.prac .st:first-child{border-top:0}
+.prac .st>.n{font:500 12px/1.9 var(--m);color:var(--sig)}.prac .st p{margin:0 0 10px;color:var(--ink2);font-size:15px}.prac .st p b{color:var(--ink)}
+.cmd,.out{margin:0 0 10px;padding:12px 14px;border-radius:6px;font:400 13px/1.6 var(--m);white-space:pre-wrap;overflow-x:auto}
+.cmd{background:#111113;color:#f1efe9;border:1px solid var(--line)}.cmd::before{content:"$ ";color:var(--sig)}
+.out{background:var(--bg2);color:var(--ink2);border:1px dashed var(--line)}.out::before{content:"预期输出";display:block;font:500 10.5px/1 var(--m);letter-spacing:.1em;color:var(--ink2);opacity:.7;margin-bottom:8px}
+.task2{margin-top:22px;border:1px solid var(--sig);border-radius:10px;padding:22px 24px}.task2 .k{font:500 12px/1 var(--m);letter-spacing:.1em;color:var(--sig)}.task2 h3{margin:10px 0 8px;font-size:19px}.task2 p{color:var(--ink2);margin:0 0 10px}
+details{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}summary{cursor:pointer;font:500 13px/1.6 var(--m);color:var(--ink2)}details[open] summary{color:var(--ink)}details>div{margin-top:12px}
+/* lifecycle console */
+.sm{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}.sm span{flex:1;min-width:90px;text-align:center;padding:12px 8px;border:1px solid var(--line);border-radius:6px;font:500 13px/1 var(--m);color:var(--ink2);transition:background-color 240ms ease,color 240ms ease,border-color 240ms ease}
+.sm span.on{background:var(--sig);border-color:var(--sig);color:#fff}
+.cmds{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.log{background:#111113;color:#cfcdc6;border-radius:8px;padding:14px 16px;font:400 13px/1.65 var(--m);height:200px;overflow:auto;white-space:pre-wrap}.log b{color:#fff;font-weight:500}.log .e{color:#ef5d48}.log .o{color:#43b873}
+/* dockerfile reorder */
+.df{display:flex;flex-direction:column;gap:6px}.df .ln{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 6px 6px 14px;background:var(--card);font:500 13.5px/1.4 var(--m)}
+.df .ln .mv{all:unset;cursor:pointer;width:30px;height:30px;display:grid;place-items:center;border-radius:4px;color:var(--ink2);transition:transform 160ms var(--e-out),background-color 160ms ease}.df .ln .mv:active{transform:scale(.94)}.df .ln .mv[disabled]{opacity:.25;pointer-events:none}
+@media (hover:hover) and (pointer:fine){.df .ln .mv:hover{background:var(--soft);color:var(--ink)}}
+.bl{display:grid;grid-template-columns:1fr 90px;gap:4px 12px;font:400 13px/1.6 var(--m)}.bl .c{color:var(--ok)}.bl .r{color:var(--sig)}.bl .x{color:var(--bad)}
+.tot{font:700 28px/1 var(--f);letter-spacing:-.02em;margin-top:14px}
+.grp{font:500 12px/1 var(--m);letter-spacing:.1em;color:var(--sig);padding:40px 0 14px;border-bottom:1px solid var(--line);list-style:none}

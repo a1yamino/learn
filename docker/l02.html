@@ -1,189 +1,61 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker 第 2 课：容器生命周期与核心命令</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/common.js"></script></head><body><div id="rp"></div><div class="topbar"><a href="index.html">🏠 目录</a><a href="l01.html">← 上一课</a><span class="ttl">第 2/12 课 · 容器生命周期与核心命令</span><div class="dots"><i class="done"></i><i class="on"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><a href="l03.html">下一课 →</a></div><style>
-.sm{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;margin:14px 0}
-.st8{padding:10px 16px;border-radius:30px;border:2px solid var(--bd);font-weight:600;transition:transform 250ms var(--ease-out),opacity 250ms var(--ease-out),border-color 200ms ease,box-shadow 200ms ease,background-color 200ms ease;min-width:96px;text-align:center}
-.st8.cur{transform:scale(1.12);box-shadow:0 0 18px var(--glow,#2496ed);border-color:var(--glow,#2496ed)}
-.arr{color:var(--mu)}
-.s-created{--glow:#8b949e}.s-running{--glow:#3fb950}.s-paused{--glow:#d29922}.s-exited{--glow:#f85149}.s-removed{--glow:#6e7681}
-#cli{background:#010409;color:#e6edf3;border-radius:10px;padding:12px;font:13px/1.55 ui-monospace,Menlo,monospace;height:300px;overflow:auto}
-#cli .in{color:#7ee787}#cli .er{color:#ff7b72}#cli .ok{color:#79c0ff}
-.cin{display:flex;gap:6px;margin-top:6px}.cin input{flex:1;background:#010409;color:#e6edf3;border:1px solid var(--bd);border-radius:8px;padding:9px;font:14px ui-monospace,monospace}
-.chips button{font:12px ui-monospace,monospace;padding:5px 9px;background:transparent;color:var(--tx);border:1px solid var(--bd)}
-#board{display:flex;flex-wrap:wrap;gap:10px;min-height:70px;margin-top:10px}
-.cc{border:2px solid var(--bd);border-radius:10px;padding:8px 12px;font-size:13px;min-width:150px;animation:pop .4s;transition:transform 250ms var(--ease-out),opacity 250ms var(--ease-out),border-color 200ms ease,box-shadow 200ms ease,background-color 200ms ease}
-.cc.running{border-color:#3fb950}.cc.paused{border-color:#d29922}.cc.exited{border-color:#f85149;opacity:.7}.cc.created{border-color:#8b949e}
-.flag{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
-.tabs button{background:transparent;color:var(--tx);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
-.anim{min-height:150px;border:1px dashed var(--bd);border-radius:10px;padding:14px;font:13px ui-monospace,monospace;white-space:pre-wrap}
-table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid var(--bd);padding:7px 9px;text-align:left}th{background:#2496ed1a}
-</style>
-<header><span class="tag">Docker 从入门到生产 · 第 2 课</span><h1>🔄 容器生命周期<br>与核心命令</h1><p>容器从“出生”到“消失”经历什么？每条命令到底改变了什么状态？· 约 25 分钟</p></header>
-<nav><a href="#s1">1 状态机</a><a href="#s2">2 run 拆解</a><a href="#s3">3 -d / -it</a><a href="#s4">4 exec & logs</a><a href="#s5">5 模拟器</a><a href="#s6">6 速查</a><a href="#s7">坑</a><a href="#s8">自测</a><a href="#s9">小结</a></nav>
-<main>
-<section><h2><span>🎯</span> 本课目标</h2><p>上一课你知道了：容器 = 镜像 + 可写层 + 进程。这一课我们把容器当成一个<b>有状态的对象</b>，学会用命令精确控制它。学完你能：</p>
-<ul class="recap"><li>画出容器的状态机，说清每条命令触发哪个状态转换</li><li>后台运行一个 API 服务、看日志、进容器排查</li><li>理解“容器为什么一启动就退出”——新手最常问的问题</li></ul></section>
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Docker 第 2 课 · 容器生命周期与核心命令</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 2 课</span><span class="sp"></span><a href="l01.html">← 第 1 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Docker · 第 2 课</div><h1>容器生命周期与核心命令</h1>
+<p>容器有哪些状态，用哪些命令在状态之间切换；前台和后台运行；进入容器、查看日志。约 25 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">容器的状态</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：操作一个容器</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">前台、后台与交互</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">查看日志和进入容器</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
 
-<section id="s1"><h2><span>01</span> 容器状态机：点命令，看状态跳转</h2>
-<p>容器是一个<b>状态机</b>。下面每个按钮都是一条真实命令，点它看当前状态怎么变（不合法的转换会被拒绝，就像真实 Docker 一样）。</p>
-<div class="sm"><div class="st8 s-created" data-s="created">📦 Created</div><span class="arr">→</span><div class="st8 s-running" data-s="running">🟢 Running</div><span class="arr">⇄</span><div class="st8 s-paused" data-s="paused">⏸ Paused</div><span class="arr">→</span><div class="st8 s-exited" data-s="exited">🔴 Exited</div><span class="arr">→</span><div class="st8 s-removed" data-s="removed">🗑 Removed</div></div>
-<p style="text-align:center"><span id="smst" class="tag">当前：（不存在）</span></p>
-<p style="text-align:center" class="chips" id="smbtn"></p>
-<div class="box" id="smexp">👆 先点 <code>docker create</code> 或 <code>docker run</code>。</div>
-<p class="mu">关键理解：<b>容器的生命 = 它的主进程（PID 1）的生命。</b> 主进程退出，容器就进入 Exited；Exited 的容器还占着磁盘（可写层还在），直到 <code>docker rm</code>。</p>
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>容器的状态</h2><div class="goal">一个容器从创建到删除，会经过几种固定的状态。</div></div></div>
+<div id="p1"></div>
 </section>
 
-<section id="s2"><h2><span>02</span> <code>docker run</code> 其实做了 4 件事</h2>
-<p>点“下一步”逐步拆解 <code>docker run -d --name api -p 8080:3000 node:20 node server.js</code>：</p>
-<div class="anim" id="runan"></div>
-<p><button onclick="runStep()">下一步 ▶</button><button class="sec" onclick="rs=0;runStep(true)">重来</button></p>
-<p>所以：<code>docker run</code> ≈ <code>docker pull</code>（如果需要）+ <code>docker create</code> + <code>docker start</code>（+ 默认 attach 到输出）。</p>
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：操作一个容器</h2><div class="goal">点击命令，观察状态怎样变化，以及哪些命令在当前状态下会报错。</div></div></div>
+<div class="chal"><div class="sm" id="sm"><span data-s="none">不存在</span><span data-s="created">created</span><span data-s="running">running</span><span data-s="paused">paused</span><span data-s="exited">exited</span></div><div class="cmds" id="cmds"></div><div class="log" id="log" aria-live="polite"></div></div>
 </section>
 
-<section id="s3"><h2><span>03</span> 前台、后台、交互：<code>-d</code> 和 <code>-it</code></h2>
-<p class="tabs"><button class="on" onclick="mode(0,this)">默认（前台）</button><button onclick="mode(1,this)">-d 后台</button><button onclick="mode(2,this)">-it 交互</button><button onclick="mode(3,this)">--rm 用完即删</button></p>
-<div class="anim" id="modean"></div>
-<div class="flag" style="margin-top:12px">
-<div class="box"><b>后端服务（API、DB、Redis）</b><br><span class="mu">几乎都用 <code>-d</code>，再用 <code>docker logs -f</code> 看输出。</span></div>
-<div class="box"><b>临时工具 / 调试</b><br><span class="mu"><code>-it --rm</code>：进去玩一下，退出自动清理。</span></div>
-<div class="box"><b>一次性任务（迁移脚本）</b><br><span class="mu">前台 + <code>--rm</code>，看完结果容器自动消失。</span></div></div>
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>前台、后台与交互</h2><div class="goal">同一个镜像，加不同的参数，终端的行为完全不同。</div></div></div>
+<div id="p3"></div>
 </section>
 
-<section id="s4"><h2><span>04</span> 运行中的容器：<code>logs</code> 和 <code>exec</code></h2>
-<div class="grid">
-<div class="box"><b>📜 docker logs api</b><p class="mu">看主进程写到 <b>stdout/stderr</b> 的内容。所以应用要把日志打到标准输出，而不是容器里的文件！常用：<code>-f</code> 实时跟随，<code>--tail 100</code>，<code>--since 10m</code>。</p></div>
-<div class="box"><b>🚪 docker exec -it api sh</b><p class="mu">在<b>已运行</b>的容器里<b>额外启动一个进程</b>（这里是 shell）。退出 shell 不会停止容器，因为主进程不是它。</p></div></div>
-<p>对比一下 <code>exec</code> 和 <code>attach</code>：</p>
-<table><tr><th></th><th>docker exec -it c sh</th><th>docker attach c</th></tr><tr><td>做什么</td><td>新开一个进程</td><td>连接到主进程的输入输出</td></tr><tr><td>Ctrl+C / exit</td><td>只结束那个 shell ✅</td><td>可能直接杀掉主进程 ⚠️</td></tr><tr><td>推荐度</td><td>⭐⭐⭐ 日常排查首选</td><td>⭐ 很少用</td></tr></table>
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>查看日志和进入容器</h2><div class="goal">容器在后台运行时，用这两条命令看它在做什么。</div></div></div>
+<div id="t4"></div>
 </section>
 
-<section id="s5"><h2><span>05</span> 🧪 交互式 Docker 模拟器</h2>
-<p>这是一个<b>可以敲命令</b>的模拟终端（在浏览器里模拟，不会真的运行）。试着完成任务：</p>
-<ol id="tasks" class="recap"></ol>
-<div id="cli"></div>
-<div class="cin"><input id="cmd" placeholder="输入命令，例如 docker run -d --name api my-api" autocomplete="off" autocapitalize="off" spellcheck="false"><button onclick="exec1()">回车</button></div>
-<p class="chips">快捷：<button onclick="fill('docker run -d --name api -p 8080:3000 my-api')">run -d</button><button onclick="fill('docker ps')">ps</button><button onclick="fill('docker ps -a')">ps -a</button><button onclick="fill('docker logs api')">logs</button><button onclick="fill('docker exec -it api sh')">exec</button><button onclick="fill('docker stop api')">stop</button><button onclick="fill('docker start api')">start</button><button onclick="fill('docker rm api')">rm</button><button onclick="fill('docker run ubuntu')">run ubuntu</button><button onclick="fill('help')">help</button></p>
-<div id="board"></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">打开终端，按顺序执行。每一步都给出了预期输出，ID 和时间会不一样。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>后台启动一个 nginx 容器，命名为 <b>web</b>，把本机 8080 端口映射到容器的 80 端口。</p><pre class="cmd">docker run -d --name web -p 8080:80 nginx:1.27</pre><pre class="out">Unable to find image &#x27;nginx:1.27&#x27; locally
+1.27: Pulling from library/nginx
+...
+7c1f4a2e9b3d0c8e...（64 位容器 ID）</pre></div></div><div class="st"><span class="n">02</span><div><p>确认它在运行，然后用浏览器或 curl 访问。</p><pre class="cmd">docker ps
+curl -s localhost:8080 | head -4</pre><pre class="out">CONTAINER ID   IMAGE        STATUS         PORTS                  NAMES
+7c1f4a2e9b3d   nginx:1.27   Up 5 seconds   0.0.0.0:8080-&gt;80/tcp   web
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+&lt;title&gt;Welcome to nginx!&lt;/title&gt;</pre></div></div><div class="st"><span class="n">03</span><div><p>查看访问日志。刚才的 curl 请求应该出现在最后一行。</p><pre class="cmd">docker logs --tail 3 web</pre><pre class="out">... &quot;GET / HTTP/1.1&quot; 200 615 &quot;-&quot; &quot;curl/8.5.0&quot; &quot;-&quot;</pre></div></div><div class="st"><span class="n">04</span><div><p>进入容器，修改首页，退出后再访问。</p><pre class="cmd">docker exec -it web sh -c &#x27;echo hello &gt; /usr/share/nginx/html/index.html&#x27;
+curl -s localhost:8080</pre><pre class="out">hello</pre></div></div><div class="st"><span class="n">05</span><div><p>停止再启动。修改还在吗？</p><pre class="cmd">docker stop web &amp;&amp; docker start web &amp;&amp; curl -s localhost:8080</pre><pre class="out">web
+web
+hello</pre></div></div><div class="st"><span class="n">06</span><div><p>删除容器，再用同一个镜像新建一个。修改还在吗？</p><pre class="cmd">docker rm -f web
+docker run -d --name web -p 8080:80 nginx:1.27
+curl -s localhost:8080 | grep title</pre><pre class="out">web
+...
+&lt;title&gt;Welcome to nginx!&lt;/title&gt;</pre></div></div><div class="st"><span class="n">07</span><div><p>清理。</p><pre class="cmd">docker rm -f web</pre><pre class="out">web</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>让容器自己重启</h3><p>运行一个 5 秒后就退出的容器：<code>docker run -d --name flaky alpine sh -c "sleep 5; exit 1"</code>。不修改命令本身，让 Docker 在它退出后自动重启，并用一条命令看到它已经重启了几次。</p><details><summary>查看参考答案</summary><div><pre class="cmd">docker rm -f flaky
+docker run -d --name flaky --restart on-failure:3 alpine sh -c "sleep 5; exit 1"
+sleep 30; docker inspect -f '{{.RestartCount}} {{.State.Status}}' flaky</pre><pre class="out">3 exited</pre><p><code>--restart</code> 有 <code>no</code>、<code>on-failure[:N]</code>、<code>unless-stopped</code>、<code>always</code> 四种。<code>on-failure:3</code> 只在非 0 退出时重启，最多 3 次。生产服务常用 <code>unless-stopped</code>。</p></div></details></div>
 </section>
 
-<section id="s6"><h2><span>06</span> 命令速查表</h2>
-<table><tr><th>命令</th><th>作用</th><th>状态变化</th></tr>
-<tr><td><code>docker run [opts] IMG [CMD]</code></td><td>创建并启动</td><td>∅ → Running</td></tr>
-<tr><td><code>docker create</code></td><td>只创建不启动</td><td>∅ → Created</td></tr>
-<tr><td><code>docker start / stop</code></td><td>启动 / 优雅停止（SIGTERM，10 秒后 SIGKILL）</td><td>Exited ⇄ Running</td></tr>
-<tr><td><code>docker restart</code></td><td>stop + start</td><td>Running → Running</td></tr>
-<tr><td><code>docker kill</code></td><td>立即 SIGKILL</td><td>Running → Exited</td></tr>
-<tr><td><code>docker pause / unpause</code></td><td>冻结进程（cgroups freezer）</td><td>Running ⇄ Paused</td></tr>
-<tr><td><code>docker rm [-f]</code></td><td>删除容器（-f 强制删运行中的）</td><td>Exited → Removed</td></tr>
-<tr><td><code>docker ps [-a]</code></td><td>列出运行中 / 全部容器</td><td>—</td></tr>
-<tr><td><code>docker logs [-f]</code></td><td>看 stdout/stderr</td><td>—</td></tr>
-<tr><td><code>docker exec -it C sh</code></td><td>在容器里开新进程</td><td>—</td></tr>
-<tr><td><code>docker container prune</code></td><td>清理所有已停止容器</td><td>Exited → Removed</td></tr></table>
-<p class="mu">💡 容器 ID 可以只写前几位：<code>docker stop 3f2a</code>。给容器起名（<code>--name</code>）会让一切更好管理。</p>
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
 </section>
 
-<section id="s7"><h2><span>⚠️</span> 新手常见坑</h2>
-<div class="pit"><b>“我的容器一启动就退出了！”</b> <code>docker run ubuntu</code> 的主进程是 bash，没有终端输入就立刻结束 → 容器 Exited。容器不是虚拟机，<b>没有长期运行的主进程，它就不会“开着”</b>。用 <code>docker logs</code> 和 <code>docker ps -a</code> 的退出码排查。</div>
-<div class="pit"><b>名字冲突：</b> <code>Conflict. The container name "/api" is already in use</code>——旧的同名容器虽然停了但还在。先 <code>docker rm api</code>，或者开发时用 <code>--rm</code>。</div>
-<div class="pit"><b>stop 要等 10 秒？</b> 说明你的应用没处理 SIGTERM（或者用 shell 形式启动导致信号传不到）。Node/Python 服务要监听 SIGTERM 做优雅关闭（第 12 课细讲）。</div>
-<div class="pit"><b>在容器里改了代码/装了包，重启后还在，但 rm 后就没了。</b> 永远不要把容器当“手工维护的服务器”——要改就改 Dockerfile 重新构建（第 3 课）。</div>
-<div class="pit"><b>退出码速记：</b> 0 正常 · 1 应用报错 · 137 被 SIGKILL（常见：内存超限 OOM）· 143 被 SIGTERM。</div>
-</section>
-
-<section id="s8"><h2><span>✅</span> 自测 4 题</h2><div id="quiz"></div><p id="score" class="mu"></p></section>
-
-<section id="s9"><h2><span>📝</span> 本课小结</h2><ul class="recap">
-<li>状态机：Created → Running ⇄ Paused → Exited → Removed。</li>
-<li><b>容器活多久 = 主进程活多久。</b></li>
-<li><code>run</code> = pull + create + start；服务用 <code>-d</code>，交互用 <code>-it</code>，临时用 <code>--rm</code>。</li>
-<li>日志打到 stdout，用 <code>docker logs -f</code> 看；排查用 <code>docker exec -it c sh</code>。</li>
-<li>stop 是优雅停止（SIGTERM→SIGKILL），kill 是立即杀。</li></ul></section>
-
-<section><h2><span>➡️</span> 下一课预告：Dockerfile 与层缓存</h2><p>到目前为止我们一直在用别人的镜像。下一课你会写出第一个 Dockerfile，并通过动画看到：为什么改一行代码，<b>有时构建 2 秒，有时 2 分钟</b>。</p></section>
-<div class="pn"><a href="l01.html">← 上一课</a><a href="index.html">🏠 课程目录</a><a href="l03.html">下一课 →</a></div></main>
-<script>
-// ---------- state machine
-const SM={create:[null,'created','创建容器（分配可写层、配置），但不启动主进程。'],run:[null,'running','= create + start，一步到 Running。'],
-start:['created|exited','running','启动主进程。Exited 的容器也能再次 start，可写层里的文件还在。'],
-pause:['running','paused','冻结所有进程（不占 CPU，但内存还在）。'],unpause:['paused','running','解冻，继续运行。'],
-stop:['running','exited','先发 SIGTERM 让进程优雅退出，10 秒后还不退就 SIGKILL。'],kill:['running','exited','直接 SIGKILL，进程没机会清理（可能丢数据）。'],
-restart:['running|exited','running','= stop + start。'],rm:['created|exited','removed','删除容器和它的可写层。运行中的容器要先 stop 或用 rm -f。'],'rm -f':['*','removed','强制：先 kill 再删除。']};
-let cs=null;const sb=document.getElementById('smbtn');
-Object.keys(SM).forEach(k=>{const b=document.createElement('button');b.textContent='docker '+k;b.onclick=()=>smgo(k);sb.appendChild(b)});
-function smgo(k){const[from,to,txt]=SM[k];const ok=from===null?(cs===null||cs==='removed'):from==='*'?(cs&&cs!=='removed'):(cs&&from.split('|').includes(cs));
-if(!ok){smexp.innerHTML=`<span class="bad">❌ 当前状态 ${cs||'不存在'} 不能执行 docker ${k}</span>`+(k==='rm'&&cs==='running'?'——运行中的容器要先 stop，或用 rm -f。':cs==='paused'?'——先 unpause。':'');return}
-cs=to;document.querySelectorAll('.st8').forEach(e=>e.classList.toggle('cur',e.dataset.s===cs));smst.textContent='当前：'+cs;smexp.innerHTML=`<b>docker ${k}</b>：${txt}`}
-// ---------- run steps
-const RS=['① 本地找镜像 node:20 … 没有 → 从 Docker Hub 拉取（pull），逐层下载 ⬇⬇⬇',
-'② create：在镜像只读层上加一层可写层，记录配置：名字 api、端口映射 8080→3000、启动命令 node server.js',
-'③ 网络：给容器分配一个虚拟网卡和 IP（如 172.17.0.2），配置宿主机 8080 端口转发到容器 3000',
-'④ start：在隔离环境中启动主进程 node server.js（它就是容器里的 PID 1）\n   因为有 -d，终端立刻返回容器 ID：\n   3f2a9c1b7d4e8a…',
-'✅ 完成！访问 http://localhost:8080 → 转发给容器里的 Node 服务。\n   主进程一直运行 → 容器一直是 Running。'];let rs=0;
-function runStep(r){if(r){runan.textContent='';}if(rs<RS.length){runan.textContent+=(rs?'\n\n':'')+RS[rs++]}}
-// ---------- modes
-const MD=[`$ docker run node:20 node server.js
-Server listening on :3000      ← 输出直接打在你的终端
-GET /users 200 12ms
-^C                             ← Ctrl+C 会把信号传给容器，容器停止
-（终端被占用，关掉终端容器也会停）`,
-`$ docker run -d --name api node:20 node server.js
-3f2a9c1b7d4e                    ← 只打印容器 ID，立即返回
-$ docker logs -f api           ← 想看输出就用 logs
-Server listening on :3000`,
-`$ docker run -it ubuntu bash
-root@3f2a9c1b:/# ls             ← -i 保持输入，-t 分配伪终端
-bin  etc  home  usr  var
-root@3f2a9c1b:/# exit           ← bash 是主进程，exit → 容器退出`,
-`$ docker run --rm -it python:3.12 python
->>> 1+1
-2
->>> exit()
-$ docker ps -a                  ← 什么都没留下，自动删除了
-CONTAINER ID   IMAGE   ...`];
-function mode(i,b){document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));b.classList.add('on');modean.textContent=MD[i]}modean.textContent=MD[0];
-// ---------- simulator
-const C=[];let seq=0;const out=document.getElementById('cli'),inp=document.getElementById('cmd');
-const TK=[['后台启动一个名为 api 的服务（镜像 my-api）',()=>C.some(c=>c.name==='api'&&c.st==='running')],['查看 api 的日志',()=>window._lg],['停止 api，再用 ps -a 确认它是 Exited',()=>window._psa&&C.some(c=>c.name==='api'&&c.st==='exited')],['删除 api 容器',()=>window._rmapi],['运行 docker run ubuntu，观察它为什么立刻退出',()=>C.some(c=>c.img==='ubuntu')]];
-function tasks(){tasks_.innerHTML=TK.map(([t,f])=>`<li>${f()?'✅':'⬜'} ${t}</li>`).join('')}const tasks_=document.getElementById('tasks');
-function p(t,c){const d=document.createElement('div');if(c)d.className=c;d.textContent=t;out.appendChild(d);out.scrollTop=1e9}
-function hex(){return Array.from({length:12},()=>'0123456789abcdef'[Math.random()*16|0]).join('')}
-const NM=['happy_turing','eager_hopper','brave_lovelace','quirky_knuth'];
-function find(x){return C.find(c=>c.name===x||c.id.startsWith(x))}
-function board(){document.getElementById('board').innerHTML=C.map(c=>`<div class="cc ${c.st}"><b>${c.name}</b><br><span class="mu">${c.img} · ${c.id.slice(0,6)}</span><br>${({running:'🟢 Running',exited:'🔴 Exited ('+c.code+')',paused:'⏸ Paused',created:'📦 Created'})[c.st]}</div>`).join('')||'<span class="mu">（还没有容器）</span>';tasks()}
-function fill(s){inp.value=s;inp.focus()}
-inp.addEventListener('keydown',e=>{if(e.key==='Enter')exec1()});
-function exec1(){const s=inp.value.trim();inp.value='';if(!s)return;p('$ '+s,'in');run1(s);board()}
-function run1(s){const a=s.split(/\s+/);if(a[0]==='help'){p('支持：docker run [-d] [-it] [--rm] [--name N] [-p H:C] IMG | ps [-a] | logs N | exec -it N sh | stop/start/restart/kill/pause/unpause/rm [-f] N | images | clear','ok');return}
-if(a[0]==='clear'){out.innerHTML='';return}if(a[0]!=='docker'){p(a[0]+': command not found（试试 help）','er');return}
-const sub=a[1],args=a.slice(2);
-if(sub==='run'){let d=0,rm=0,name=null,img=null;for(let i=0;i<args.length;i++){const x=args[i];if(x==='-d')d=1;else if(x==='--rm')rm=1;else if(x==='-it'||x==='-i'||x==='-t');else if(x==='--name')name=args[++i];else if(x==='-p')i++;else if(!img)img=x}
-if(!img){p('"docker run" requires at least 1 argument.','er');return}if(name&&find(name)&&find(name).name===name){p(`docker: Error response from daemon: Conflict. The container name "/${name}" is already in use by container "${find(name).id}". You have to remove (or rename) that container to be able to reuse that name.`,'er');p('💡 提示：先 docker rm '+name,'ok');return}
-const c={id:hex(),name:name||NM[seq++%4]+(seq>4?seq:''),img,st:'running',code:0};
-if(img==='ubuntu'||img==='alpine'){c.st='exited';c.code=0;if(!rm)C.push(c);p(d?c.id:'','');p('💡 ubuntu 的默认主进程是 bash，没有交互终端（没加 -it）就立即结束 → 容器 Exited (0)。用 docker ps -a 看看。','ok');return}
-if(img==='hello-world'){p('Hello from Docker!');c.st='exited';if(!rm)C.push(c);return}
-C.push(c);if(d)p(c.id);else{p('Server listening on :3000');p('💡 前台运行会占住终端。真实场景下服务一般加 -d。','ok')}return}
-if(sub==='ps'){const all=args.includes('-a');if(all)window._psa=1;p('CONTAINER ID   IMAGE        STATUS                 NAMES');C.filter(c=>all||c.st==='running'||c.st==='paused').forEach(c=>p(`${c.id.slice(0,12)}   ${c.img.padEnd(12)} ${({running:'Up 2 minutes',paused:'Up 2 minutes (Paused)',exited:'Exited ('+c.code+') 5 seconds ago',created:'Created'})[c.st].padEnd(22)} ${c.name}`));if(!all&&C.some(c=>c.st==='exited'))p('💡 有已退出的容器没显示，加 -a 看全部','ok');return}
-if(sub==='images'){p('REPOSITORY   TAG      IMAGE ID       SIZE');p('my-api       latest   a1b2c3d4e5f6   182MB');p('ubuntu       latest   35a88802559d   78MB');return}
-const n=args.filter(x=>!x.startsWith('-')).pop();const c=n&&find(args.includes('-it')?args[args.indexOf('-it')+1]:n);
-if(!n){p('需要指定容器名或 ID','er');return}if(!c){p('Error: No such container: '+n,'er');return}
-switch(sub){case 'logs':if(c.img==='ubuntu'){p('（空——bash 没输出就退出了）');return}window._lg=1;p('Server listening on :3000');p('GET /health 200 2ms');p('GET /users 200 15ms');break;
-case 'exec':if(c.st!=='running'){p(`Error response from daemon: container ${c.id.slice(0,12)} is not running`,'er');return}p('/app # ps');p('PID   USER  COMMAND');p('  1   node  node server.js   ← 主进程');p(' 27   node  sh               ← exec 新开的进程');p('/app # exit');p('💡 exit 只结束了 sh，容器仍在运行','ok');break;
-case 'stop':case 'kill':if(c.st!=='running'){p(`Error: container ${c.name} is not running`,'er');return}c.st='exited';c.code=sub==='stop'?143:137;p(c.name);p(`💡 退出码 ${c.code}：被 ${sub==='stop'?'SIGTERM':'SIGKILL'} 终止`,'ok');break;
-case 'start':if(c.st==='running'){p(c.name);return}c.st='running';p(c.name);break;
-case 'restart':c.st='running';p(c.name);break;
-case 'pause':if(c.st!=='running'){p('Error: not running','er');return}c.st='paused';p(c.name);break;
-case 'unpause':c.st='running';p(c.name);break;
-case 'rm':if((c.st==='running'||c.st==='paused')&&!args.includes('-f')){p(`Error response from daemon: You cannot remove a running container ${c.id}. Stop the container before attempting removal or force remove`,'er');return}C.splice(C.indexOf(c),1);if(c.name==='api')window._rmapi=1;p(c.name);break;
-default:p(`docker: '${sub}' is not a docker command（模拟器支持的见 help）`,'er')}}
-p('Docker 模拟器已就绪。输入 help 查看支持的命令。','ok');board();
-// ---------- quiz
-const Q=[['docker run -d ubuntu 后，docker ps 看不到它，最可能的原因是？',['镜像下载失败','ubuntu 的主进程 bash 立即结束，容器已 Exited','需要加 sudo'],1,'对！容器生命 = 主进程生命，用 docker ps -a 能看到它。'],
-['想进入正在运行的 api 容器排查问题，并且退出时不影响服务，用？',['docker attach api','docker run -it api sh','docker exec -it api sh'],2,'对！exec 在已运行容器里新开进程；run 会创建新容器。'],
-['docker stop 和 docker kill 的区别？',['没区别','stop 先发 SIGTERM 给应用优雅退出的机会，超时才 SIGKILL；kill 直接 SIGKILL','kill 会删除容器'],1,'对！所以服务要处理 SIGTERM 实现优雅关闭。'],
-['容器退出码 137 通常意味着？',['正常退出','被 SIGKILL 杀掉，常见原因是内存超限 (OOM)','语法错误'],1,'对！137 = 128 + 9 (SIGKILL)。']];
-let sc=0,done=0;Q.forEach((q,qi)=>{const d=document.createElement('div');d.className='q';d.innerHTML=`<b>Q${qi+1}. ${q[0]}</b>`;
-q[1].forEach((o,oi)=>{const l=document.createElement('label');l.textContent=o;l.onclick=()=>{if(d.dataset.a)return;d.dataset.a=1;done++;
-if(oi==q[2]){l.className='right';sc++;fb.innerHTML='<span class="good">✅ '+q[3]+'</span>'}else{l.className='wrong';d.querySelectorAll('label')[q[2]].className='right';fb.innerHTML='<span class="bad">❌ 正确答案已标绿：</span>'+q[3].replace('对！','')}
-if(done==Q.length)score.innerHTML=`得分 <b>${sc}/${Q.length}</b> ${sc==Q.length?'🎉 完美，进入第 3 课！':'— 回看对应章节再试（刷新重做）'}`};d.appendChild(l)});
-const fb=document.createElement('div');fb.className='fb';d.appendChild(fb);quiz.appendChild(d)});
-</script>
-
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>容器有五种状态：created、running、paused、exited，以及被删除。<code>docker run</code> = <code>create</code> + <code>start</code>。</li><li><code>docker stop</code> 先发 SIGTERM，默认 10 秒后发 SIGKILL；<code>docker kill</code> 直接发 SIGKILL。</li><li>停止的容器还在，可写层的数据也还在；<code>docker rm</code> 之后才真正删除。运行中的容器要先停止或用 <code>rm -f</code>。</li><li><code>-d</code> 后台运行；<code>-it</code> 分配终端并保持输入，用于交互式程序。</li><li><code>docker logs</code> 读容器主进程的 stdout/stderr；<code>docker exec</code> 在运行中的容器里再启动一个进程。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 03</div><a class="big" href="l03.html">Dockerfile 与构建缓存 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l02.js"></script>
 </body></html>
