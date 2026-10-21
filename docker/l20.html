@@ -1,0 +1,54 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Docker 第 20 课 · 安全（二）：镜像扫描、SBOM 与签名</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 20 课</span><span class="sp"></span><a href="l19.html">← 第 19 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Docker · 第 20 课</div><h1>安全（二）：镜像扫描、SBOM 与签名</h1>
+<p>镜像里到底装了什么、有没有已知漏洞、是不是你构建的那个：用扫描找漏洞、用 SBOM 记录成分、用签名和来源证明保证镜像没被替换。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">扫描在找什么</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">签名与验证</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：降低漏洞数</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>扫描在找什么</h2><div class="goal">镜像 → 软件包清单 → 漏洞库。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>签名与验证</h2><div class="goal">怎么确认拉到的镜像就是你构建的那个？</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：降低漏洞数</h2><div class="goal">一个 Python 服务。扫描结果太多，先换基础镜像，再决定哪些问题必须处理。</div></div></div>
+<div class="chal"><div class="cmds" id="bs"></div><div id="cv"></div><div class="msg" id="vm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">扫描、SBOM、签名、验证。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 Trivy（通过容器运行，不用安装）和 Docker 内置的工具。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>扫描一个旧镜像，只看高危和严重。</p><pre class="cmd">docker run --rm aquasec/trivy:latest image --severity HIGH,CRITICAL --quiet python:3.9 | grep Total</pre><pre class="out">Total: 187 (HIGH: 172, CRITICAL: 15)
+（数字随漏洞库更新变化）</pre></div></div><div class="st"><span class="n">02</span><div><p>换成 slim 版本对比。</p><pre class="cmd">docker run --rm aquasec/trivy:latest image --severity HIGH,CRITICAL --quiet python:3.12-slim | grep Total</pre><pre class="out">Total: 3 (HIGH: 3, CRITICAL: 0)</pre></div></div><div class="st"><span class="n">03</span><div><p>只显示有修复版本的漏洞。</p><pre class="cmd">docker run --rm aquasec/trivy:latest image --severity HIGH,CRITICAL --ignore-unfixed --quiet python:3.12-slim | grep Total</pre><pre class="out">Total: 0 (HIGH: 0, CRITICAL: 0)</pre></div></div><div class="st"><span class="n">04</span><div><p>生成 SBOM（SPDX 格式），统计组件数量。</p><pre class="cmd">docker run --rm aquasec/trivy:latest image --format spdx-json --quiet python:3.12-slim &gt; sbom.json
+python3 -c &quot;import json;print(len(json.load(open(&#x27;sbom.json&#x27;))[&#x27;packages&#x27;]))&quot;</pre><pre class="out">112</pre></div></div><div class="st"><span class="n">05</span><div><p>在 SBOM 里查某个组件。</p><pre class="cmd">grep -o &#x27;&quot;name&quot;: &quot;openssl[^&quot;]*&quot;, *&quot;versionInfo&quot;: &quot;[^&quot;]*&quot;&#x27; sbom.json | head -2</pre><pre class="out">&quot;name&quot;: &quot;openssl&quot;, &quot;versionInfo&quot;: &quot;3.0.15-1~deb12u1&quot;</pre></div></div><div class="st"><span class="n">06</span><div><p>CI 用法：有可修复的高危漏洞时退出码非 0。</p><pre class="cmd">docker run --rm aquasec/trivy:latest image --severity CRITICAL --ignore-unfixed --exit-code 1 --quiet python:3.12-slim; echo exit=$?</pre><pre class="out">exit=0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>签名并验证</h3><p>用第 10 课的本地仓库（localhost:5000）。推送一个镜像，用 cosign 生成密钥对并按 digest 签名，然后验证。再推送一个同名但内容不同的镜像，验证它会失败。</p><details><summary>查看参考答案</summary><div><pre class="cmd">docker run -d -p 5000:5000 --name registry registry:2
+docker tag alpine localhost:5000/demo:1 &amp;&amp; docker push localhost:5000/demo:1
+D=$(docker inspect -f "{{index .RepoDigests 0}}" localhost:5000/demo:1)
+alias cosign='docker run --rm --network host -v $PWD:/w -w /w -e COSIGN_PASSWORD= gcr.io/projectsigstore/cosign:v2.4.1'
+cosign generate-key-pair
+cosign sign --key cosign.key --tlog-upload=false -y $D
+cosign verify --key cosign.pub --insecure-ignore-tlog $D</pre><pre class="out">Verification for localhost:5000/demo@sha256:… --
+The following checks were performed on each of these signatures:
+  - The signatures were verified against the specified public key</pre><pre class="cmd">docker tag busybox localhost:5000/demo:1 &amp;&amp; docker push localhost:5000/demo:1
+cosign verify --key cosign.pub --insecure-ignore-tlog localhost:5000/demo:1</pre><pre class="out">Error: no matching signatures</pre><p>签名绑定的是 digest，不是标签。标签被改指向新内容后，签名不再匹配。<code>cosign.key</code> 是私钥，不要提交到 git；CI 里可以用无密钥签名（OIDC + 公共透明日志）。本地仓库没有接入透明日志，所以用 <code>--tlog-upload=false</code>。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>漏洞扫描把镜像里每个软件包的版本和漏洞库对比。大多数漏洞来自<b>基础镜像</b>，换更小、更新的基础镜像收益最大。</li><li>看结果时关注：严重程度、<b>是否有修复版本</b>、是否真的被用到。没有修复版本的低危漏洞，通常记录下来而不是阻塞发布。</li><li>SBOM（软件物料清单）记录镜像的所有组件。新漏洞公布时，查 SBOM 就知道哪些镜像受影响，不用重新扫描所有镜像。</li><li><code>docker buildx build --sbom=true --provenance=mode=max</code> 把 SBOM 和构建来源证明一起附加到镜像上。</li><li>签名（cosign）证明镜像来自你，且推送后没被改过。部署时<b>按 digest</b> 拉取并验证签名。</li><li>在 CI 里：构建 → 扫描（高危且可修复则失败）→ 生成 SBOM → 签名 → 推送。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 21</div><a class="big" href="l21.html">性能与资源调优 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l20.js"></script>
+</body></html>

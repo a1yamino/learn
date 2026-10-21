@@ -1,0 +1,51 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Docker 第 21 课 · 性能与资源调优</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 21 课</span><span class="sp"></span><a href="l20.html">← 第 20 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Docker · 第 21 课</div><h1>性能与资源调优</h1>
+<p>容器慢、被杀、互相争抢资源时怎么办：内存与 OOM、CPU 配额与节流、I/O、日志、网络开销，以及镜像大小对启动时间的影响。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">内存：上限与 OOM</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">CPU：配额与节流</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：设置限制</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>内存：上限与 OOM</h2><div class="goal">超过限制会发生什么？</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>CPU：配额与节流</h2><div class="goal">--cpus=0.5 不是“慢一半”。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：设置限制</h2><div class="goal">一个 API 服务：平时内存 180 MB，处理批量请求时峰值 420 MB；CPU 平时 0.3 核，突发时需要 1.5 核持续 200 毫秒。为它设置内存和 CPU 限制。</div></div></div>
+<div class="chal"><div class="cmds" id="r1"></div><div class="cmds" id="r2"></div><div class="log" id="rl"></div><div class="msg" id="rm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">观察、限制、调整。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">亲手触发 OOM 和 CPU 节流。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>在 64 MB 限制下分配 100 MB 内存。</p><pre class="cmd">docker run --name oom --memory 64m --memory-swap 64m python:3.12-slim python -c &quot;b=bytearray(100*1024*1024)&quot;; echo exit=$?</pre><pre class="out">exit=137</pre></div></div><div class="st"><span class="n">02</span><div><p>确认是 OOM。</p><pre class="cmd">docker inspect oom -f &quot;{{.State.OOMKilled}} {{.State.ExitCode}}&quot;; docker rm oom</pre><pre class="out">true 137</pre></div></div><div class="st"><span class="n">03</span><div><p>限制 0.5 核，跑满 CPU。</p><pre class="cmd">docker run -d --name burn --cpus 0.5 alpine sh -c &quot;while :; do :; done&quot;
+sleep 5; docker stats --no-stream --format &quot;{{.CPUPerc}}&quot; burn</pre><pre class="out">50.12%</pre></div></div><div class="st"><span class="n">04</span><div><p>查看节流统计（cgroup v2）。</p><pre class="cmd">docker exec burn cat /sys/fs/cgroup/cpu.stat | grep throttled</pre><pre class="out">nr_throttled 49
+throttled_usec 2463120</pre></div></div><div class="st"><span class="n">05</span><div><p>调整正在运行的容器的限制。</p><pre class="cmd">docker update --cpus 1 burn &amp;&amp; sleep 3 &amp;&amp; docker stats --no-stream --format &quot;{{.CPUPerc}}&quot; burn; docker rm -f burn</pre><pre class="out">burn
+99.87%</pre></div></div><div class="st"><span class="n">06</span><div><p>限制日志大小。</p><pre class="cmd">docker run -d --name logs --log-driver local --log-opt max-size=1m alpine sh -c &quot;while :; do echo spam; done&quot;
+sleep 5; docker inspect logs -f &quot;{{.HostConfig.LogConfig}}&quot;; docker rm -f logs</pre><pre class="out">{local map[max-size:1m]}</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>找到合适的内存限制</h3><p>运行 <code>docker run -d --name app --memory 256m python:3.12-slim python -c "import time;b=[];[b.append(bytearray(10*1024*1024)) or time.sleep(0.2) for _ in range(30)];time.sleep(600)"</code>。它会逐步分配到约 300 MB。观察它被杀，找到峰值，给出一个带余量的限制并验证它稳定运行。</p><details><summary>查看参考答案</summary><div><pre class="cmd">docker inspect app -f "{{.State.OOMKilled}}"     # true
+docker rm app
+docker run -d --name app --memory 1g python:3.12-slim python -c "…同上…"
+sleep 10; docker exec app cat /sys/fs/cgroup/memory.peak</pre><pre class="out">true
+323244032</pre><p>先给一个宽松的上限，读 <code>memory.peak</code>（约 308 MB）得到真实峰值，再加 25% 左右的余量：<code>docker update --memory 400m --memory-swap 400m app</code>。<code>docker stats</code> 的 MEM USAGE 包含页缓存，可能偏高；以 cgroup 文件为准。生产里峰值要来自真实负载测试，而不是一次运行。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>内存限制是硬上限：超过就被内核 OOM killer 杀掉（退出码 137，<code>OOMKilled=true</code>）。限制要高于峰值，并让应用知道自己的上限（如 JVM <code>-XX:MaxRAMPercentage</code>）。</li><li><code>--cpus</code> 是配额：用完本周期（100ms）的额度就被<b>节流</b>，延迟突增但不会被杀。看 <code>cpu.stat</code> 里的 <code>nr_throttled</code>。</li><li><code>--cpu-shares</code> 只在争抢时按比例分配；<code>--cpuset-cpus</code> 绑定具体核心，适合延迟敏感的服务。</li><li>频繁写入的数据放卷里，不要写容器可写层（第 16 课）。日志用 <code>local</code> 驱动或设置 <code>max-size</code>，否则 json-file 会占满磁盘。</li><li>需要极致网络性能时可用 <code>--network host</code> 跳过 NAT 和 veth，代价是失去隔离。</li><li>先测量再调：<code>docker stats</code>、cgroup 文件、应用自身指标。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 22</div><a class="big" href="l22.html">生产排障 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l21.js"></script>
+</body></html>
