@@ -1,0 +1,80 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 25 课 · 生产排障</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 25 课</span><span class="sp"></span><a href="l24.html">← 第 24 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 25 课</div><h1>生产排障</h1>
+<p>前面各课分别讲了每个组件可能出的问题。本课把它们串成一套排障方法：从症状出发，沿着请求路径和对象层级逐层缩小范围，并给出常见故障的判断依据：Pod 起不来、请求失败、节点异常、性能下降。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">排障路径</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">CrashLoopBackOff 的退避</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：一次故障</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>排障路径</h2><div class="goal">从症状到原因的两条主线。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>CrashLoopBackOff 的退避</h2><div class="goal">为什么重启间隔越来越长。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：一次故障</h2><div class="goal">用户报告 shop.example.com 返回 503。每一步选择下一条要执行的命令，根据输出继续推断。</div></div></div>
+<div class="chal"><div id="ic"></div><div class="msg" id="im"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">排障时最常用的命令。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">故意制造几种常见故障，用本课的方法定位。每一步先自己判断，再看预期输出。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>故障一：selector 写错，Service 没有端点。</p><pre class="cmd">kubectl create deploy web --image=nginx:alpine --replicas=2
+kubectl create service clusterip web --tcp=80 --dry-run=client -o yaml | sed &quot;s/app: web/app: wbe/&quot; | kubectl apply -f -
+kubectl get endpointslices -l kubernetes.io/service-name=web</pre><pre class="out">NAME        ADDRESSTYPE   PORTS     ENDPOINTS   AGE
+web-7xk2p   IPv4          &lt;unset&gt;   &lt;unset&gt;     3s</pre></div></div><div class="st"><span class="n">02</span><div><p>对比 Service 的 selector 和 Pod 的标签，修正。</p><pre class="cmd">kubectl get svc web -o jsonpath=&quot;{.spec.selector}&quot;; echo; kubectl get pods -l app=web --show-labels | tail -1
+kubectl patch svc web -p &#x27;{&quot;spec&quot;:{&quot;selector&quot;:{&quot;app&quot;:&quot;web&quot;}}}&#x27;
+kubectl get endpointslices -l kubernetes.io/service-name=web</pre><pre class="out">{&quot;app&quot;:&quot;wbe&quot;}
+web-6d4b9-x2k9l   1/1   Running   0   20s   app=web,pod-template-hash=6d4b9
+service/web patched
+NAME        ADDRESSTYPE   PORTS   ENDPOINTS               AGE
+web-7xk2p   IPv4          80      10.244.1.9,10.244.2.7   40s</pre></div></div><div class="st"><span class="n">03</span><div><p>故障二：内存 limits 太小，OOMKilled。</p><pre class="cmd">kubectl run hog --image=polinux/stress --overrides=&#x27;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;hog&quot;,&quot;image&quot;:&quot;polinux/stress&quot;,&quot;command&quot;:[&quot;stress&quot;,&quot;--vm&quot;,&quot;1&quot;,&quot;--vm-bytes&quot;,&quot;100M&quot;],&quot;resources&quot;:{&quot;limits&quot;:{&quot;memory&quot;:&quot;50Mi&quot;}}}]}}&#x27;
+sleep 20; kubectl get pod hog
+kubectl get pod hog -o jsonpath=&quot;{.status.containerStatuses[0].lastState.terminated}&quot;</pre><pre class="out">NAME   READY   STATUS             RESTARTS     AGE
+hog    0/1     CrashLoopBackOff   2 (15s ago)  20s
+{&quot;exitCode&quot;:137,&quot;reason&quot;:&quot;OOMKilled&quot;,&quot;startedAt&quot;:&quot;…&quot;,&quot;finishedAt&quot;:&quot;…&quot;}</pre></div></div><div class="st"><span class="n">04</span><div><p>故障三：没有 shell 的镜像，用临时容器调试网络。</p><pre class="cmd">kubectl run distroless --image=registry.k8s.io/pause:3.10
+kubectl exec distroless -- sh 2&gt;&amp;1 | tail -1
+kubectl debug -it distroless --image=busybox --target=distroless -- sh -c &quot;nslookup web; wget -qO- -T2 web | head -1&quot;</pre><pre class="out">error: Internal error occurred: … exec: &quot;sh&quot;: executable file not found in $PATH
+Name:   web.default.svc.cluster.local
+Address: 10.96.41.7
+&lt;!DOCTYPE html&gt;</pre></div></div><div class="st"><span class="n">05</span><div><p>故障四：调试节点。</p><pre class="cmd">kubectl debug node/learn-worker -it --image=busybox -- sh -c &quot;chroot /host sh -c &#x27;df -h /var | tail -1; ls /var/log/pods | wc -l&#x27;&quot;</pre><pre class="out">Creating debugging pod node-debugger-learn-worker-x2k9l with container debugger on node learn-worker.
+overlay          59G   21G   36G  37% /
+14</pre></div></div><div class="st"><span class="n">06</span><div><p>清理。</p><pre class="cmd">kubectl delete deploy web; kubectl delete svc web; kubectl delete pod hog distroless --now
+kubectl get pods | grep node-debugger | cut -d&quot; &quot; -f1 | xargs -r kubectl delete pod</pre><pre class="out">deployment.apps &quot;web&quot; deleted
+service &quot;web&quot; deleted
+pod &quot;hog&quot; deleted
+pod &quot;distroless&quot; deleted</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一份故障复盘</h3><p>把上面“动手”中的故障写成一份简短的复盘（postmortem），包括时间线、影响、根因、为什么没有提前发现、以及至少三项改进措施，每项写出具体由什么机制保证。</p><details><summary>查看参考答案</summary><div><pre class="out">影响：14:02–14:19（17 分钟）shop.example.com 全部请求 503。
+时间线：
+  14:00  发布 api v1.4.3（新增启动时检查 /ready 依赖 Redis）
+  14:02  api 使用 strategy: Recreate（早期为数据库迁移设置）：旧 Pod 全部先删除，新 Pod readiness 失败
+  14:05  告警 ApiHighErrorRate 触发
+  14:12  定位：EndpointSlice 为空，readiness 返回 503（REDIS_URL 未配置）
+  14:14  kubectl rollout undo；14:19 恢复
+根因：v1.4.3 依赖新环境变量 REDIS_URL，prod overlay 中漏配。
+为何未提前发现：staging 有该变量；Recreate 策略在新 Pod 就绪前就删除了全部旧 Pod。
+改进：
+  1. 改为 RollingUpdate，maxUnavailable: 0 + progressDeadlineSeconds：新 Pod 未就绪时旧 Pod 不会被删除（Deployment 机制）；迁移改用独立的 Job
+  2. Argo Rollouts 金丝雀 + 基于错误率的自动中止（分析模板）
+  3. 应用启动时校验必需配置并以非零码退出，在 CI 的 prod 渲染上运行配置检查（kustomize build + 策略测试）
+  4. 告警 for 由 5m 改为 2m，并针对 “EndpointSlice 端点数为 0” 单独告警</pre><p>复盘的重点是机制而不是“下次注意”：每条改进都应该让同样的错误在流程中被自动拦截。注意第 1 条：用滚动更新时，这次事故根本不会造成中断：新 Pod 不就绪，旧 Pod 会一直保留，发布只会卡住并在超时后报告 ProgressDeadlineExceeded。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>先止血再根因：有最近的发布就先回滚（<code>kubectl rollout undo</code> 或 git revert），扩容、切流量，恢复服务后再查原因。</li><li>沿着对象层级往下看：Deployment → ReplicaSet → Pod → 容器；每一层看 <code>status</code>、<code>conditions</code> 和 <b>events</b>。<code>kubectl describe</code> 最后的 Events 往往直接给出原因。</li><li>沿着请求路径排查网络：DNS → Service（有没有端点）→ Pod 端口 → 应用；Ingress / Gateway 在最前面。<code>kubectl get endpointslices</code> 为空几乎总是 selector 或 readiness 的问题。</li><li>Pod 状态速查：Pending（调度：资源、污点、亲和、PVC）、ContainerCreating（卷、CNI）、ImagePullBackOff（镜像名、凭证）、CrashLoopBackOff（看 <code>logs --previous</code> 和退出码）、OOMKilled（退出码 137，内存 limits）、Running 但不 Ready（readiness 探针）。</li><li>节点问题：NotReady（kubelet、容器运行时、网络）、DiskPressure / MemoryPressure 导致驱逐。<code>kubectl debug node/…</code> 可以在节点上开一个调试 Pod。</li><li>没有 shell 的镜像用 <code>kubectl debug -it pod --image=busybox --target=容器</code> 附加临时容器。性能问题先看饱和度：CPU 节流（throttling）、内存接近 limits、连接池、下游延迟。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 26</div><a class="big" href="l26.html">高可用、升级与备份 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l25.js"></script>
+</body></html>
