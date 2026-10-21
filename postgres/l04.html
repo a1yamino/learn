@@ -1,0 +1,75 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 4 课 · 索引入门：什么时候用、怎么建</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 4 课</span><span class="sp"></span><a href="l03.html">← 第 3 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 4 课</div><h1>索引入门：什么时候用、怎么建</h1>
+<p>索引是让查询变快最常用的手段，也是最常被滥用的。本课从使用者角度讲：没有索引时数据库怎么找数据、B-tree 索引能帮什么、复合索引的列顺序为什么重要、索引的写入代价，以及如何用 EXPLAIN 确认索引被用上了。内部结构留到第 10 课。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">顺序扫描与索引扫描</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">索引的代价</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：这个索引用得上吗</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>顺序扫描与索引扫描</h2><div class="goal">在 10 万行中找一个用户的订单。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>索引的代价</h2><div class="goal">每次写入都要更新所有索引。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：这个索引用得上吗</h2><div class="goal">orders 上有一个复合索引 <code>(user_id, status, created_at)</code>。选择查询，看规划器能怎样使用这个索引。</div></div></div>
+<div class="chal"><div class="cmds" id="iq"></div><pre class="log" id="ip" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="im"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">创建、查看和评估索引。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">使用第 3 课生成的 10 万笔订单。用 <code>\timing on</code> 对比耗时。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>没有索引：按用户查订单是顺序扫描。</p><pre class="cmd">\timing on
+EXPLAIN ANALYZE SELECT * FROM orders WHERE user_id = 42;</pre><pre class="out"> Seq Scan on orders  (cost=0.00..2137.00 rows=111 width=…) (actual time=0.031..9.812 rows=118 loops=1)
+   Filter: (user_id = 42)
+   Rows Removed by Filter: 99882
+ Planning Time: 0.102 ms
+ Execution Time: 9.851 ms</pre></div></div><div class="st"><span class="n">02</span><div><p>建索引后：索引扫描。</p><pre class="cmd">CREATE INDEX orders_user_id_idx ON orders (user_id);
+EXPLAIN ANALYZE SELECT * FROM orders WHERE user_id = 42;</pre><pre class="out"> Bitmap Heap Scan on orders  (cost=5.15..318.20 rows=111 width=…) (actual time=0.052..0.214 rows=118 loops=1)
+   Recheck Cond: (user_id = 42)
+   Heap Blocks: exact=114
+   -&gt;  Bitmap Index Scan on orders_user_id_idx  (cost=0.00..5.12 rows=111 width=0) (actual time=0.029..0.029 rows=118 loops=1)
+         Index Cond: (user_id = 42)
+ Execution Time: 0.251 ms</pre></div></div><div class="st"><span class="n">03</span><div><p>返回大部分行时，规划器仍选择顺序扫描。</p><pre class="cmd">EXPLAIN SELECT * FROM orders WHERE user_id &gt; 10;</pre><pre class="out"> Seq Scan on orders  (cost=0.00..2137.00 rows=98890 width=…)
+   Filter: (user_id &gt; 10)</pre></div></div><div class="st"><span class="n">04</span><div><p>对列做运算，索引用不上。</p><pre class="cmd">EXPLAIN SELECT * FROM orders WHERE user_id + 0 = 42;</pre><pre class="out"> Seq Scan on orders  (cost=0.00..2387.00 rows=500 width=…)
+   Filter: ((user_id + 0) = 42)</pre></div></div><div class="st"><span class="n">05</span><div><p>索引的大小和使用次数。</p><pre class="cmd">SELECT indexrelname, pg_size_pretty(pg_relation_size(indexrelid)) AS size, idx_scan
+FROM pg_stat_user_indexes WHERE relname = &#x27;orders&#x27;;</pre><pre class="out">    indexrelname    |  size   | idx_scan
+--------------------+---------+----------
+ orders_pkey        | 2208 kB |        0
+ orders_user_id_idx | 712 kB  |        2</pre></div></div><div class="st"><span class="n">06</span><div><p>写入代价：有索引和没有索引时插入 10 万行。</p><pre class="cmd">CREATE TABLE t1 (a int, b int, c text);
+CREATE TABLE t2 (a int, b int, c text);
+CREATE INDEX ON t2 (a); CREATE INDEX ON t2 (b); CREATE INDEX ON t2 (c);
+INSERT INTO t1 SELECT i, random()*1e6, md5(i::text) FROM generate_series(1,100000) i;
+INSERT INTO t2 SELECT i, random()*1e6, md5(i::text) FROM generate_series(1,100000) i;
+DROP TABLE t1, t2;</pre><pre class="out">INSERT 0 100000
+Time: 98.410 ms
+INSERT 0 100000
+Time: 412.733 ms</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>给常见查询设计索引</h3><p>接口“我的订单”执行：<code>SELECT id, amount, status, created_at FROM orders WHERE user_id = $1 AND status &lt;&gt; 'cancelled' ORDER BY created_at DESC LIMIT 20</code>。设计一个索引让它不需要排序就能直接按顺序取出前 20 行，并用 EXPLAIN 验证。说明为什么不把 status 放在索引第二列。</p><details><summary>查看参考答案</summary><div><pre class="cmd">CREATE INDEX orders_user_created_idx ON orders (user_id, created_at DESC);
+EXPLAIN ANALYZE SELECT id, amount, status, created_at FROM orders
+WHERE user_id = 42 AND status &lt;&gt; 'cancelled' ORDER BY created_at DESC LIMIT 20;</pre><pre class="out"> Limit  (actual time=0.031..0.064 rows=20 loops=1)
+   ->  Index Scan using orders_user_created_idx on orders  (actual time=0.030..0.061 rows=20 loops=1)
+         Index Cond: (user_id = 42)
+         Filter: (status &lt;&gt; 'cancelled'::text)
+         Rows Removed by Filter: 3
+ Execution Time: 0.081 ms</pre><p>索引按 user_id 分组、组内按 created_at 降序，于是扫描到第 20 个满足条件的行就停止，没有 Sort 节点。status 用的是不等条件（<code>&lt;&gt;</code>），放在第二列会把 created_at 的顺序拆成多段，规划器就不能直接按时间顺序读，需要额外排序。被排除的取消订单很少，作为 Filter 逐行跳过即可。这里可以把建好的单列 user_id 索引删掉：新索引的第一列就是 user_id，能覆盖它的所有用途。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>没有合适的索引时只能 <b>顺序扫描</b>（Seq Scan）：读出表的每一页逐行判断。表越大越慢。</li><li>B-tree 索引按键值排序存储（键 → 行位置 ctid），支持 <code>=</code>、范围（<code>&lt; &gt; BETWEEN</code>）、<code>ORDER BY</code>、前缀 <code>LIKE 'abc%'</code>（需要 C 排序规则或 text_pattern_ops）。主键和 UNIQUE 约束自动创建 B-tree 索引；<b>外键不会</b>。</li><li>复合索引 <code>(a, b)</code> 先按 a 排序、a 相同再按 b：能用于 <code>a = ?</code>、<code>a = ? AND b = ?</code>、<code>a = ? ORDER BY b</code>，但单独 <code>b = ?</code> 基本用不上。经验：等值条件的列在前，范围或排序的列在后。</li><li>索引不是越多越好：每次 INSERT / UPDATE / DELETE 都要维护所有相关索引，占用磁盘和缓存。用 <code>pg_stat_user_indexes.idx_scan</code> 找出从未使用的索引。</li><li>规划器可能故意不用索引：要返回的行占表的很大比例时，顺序扫描反而更快。对列做函数运算（<code>lower(email)</code>、<code>created_at::date</code>）或类型不一致时，普通索引也用不上，需要表达式索引（第 11 课）。</li><li>生产环境建索引用 <code>CREATE INDEX CONCURRENTLY</code>：不阻塞写入，代价是更慢，且失败时会留下一个 INVALID 索引需要删除重建。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 05</div><a class="big" href="l05.html">事务基础：ACID 与 BEGIN / COMMIT →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l04.js"></script>
+</body></html>

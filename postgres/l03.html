@@ -1,0 +1,94 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 3 课 · 查询基础：连接、聚合与窗口函数</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 3 课</span><span class="sp"></span><a href="l02.html">← 第 2 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 3 课</div><h1>查询基础：连接、聚合与窗口函数</h1>
+<p>后端的大多数接口都是几张表的组合查询。本课讲 JOIN 的几种类型以及 LEFT JOIN 中 ON 与 WHERE 的区别、GROUP BY 与聚合、窗口函数（不折叠行的聚合），以及 CTE 和 NULL 的语义。后面讲规划器时，这些写法会对应到不同的执行方式。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">JOIN 的类型</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">聚合与窗口</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：LEFT JOIN 的陷阱</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>JOIN 的类型</h2><div class="goal">同样两张表，不同 JOIN 得到不同的行。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>聚合与窗口</h2><div class="goal">折叠行和保留行。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：LEFT JOIN 的陷阱</h2><div class="goal">users 有 3 个用户，orders 有 4 笔订单（王芳没有订单，张伟只有一笔已取消订单）。目标：列出所有用户及其已支付订单数。选择写法，看结果。</div></div></div>
+<div class="chal"><pre class="log" id="dt" style="height:auto;margin:0 0 12px;white-space:pre;overflow-x:auto"></pre><div class="cmds" id="jq"></div><pre class="log" id="jr" style="height:auto;min-height:100px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="jm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">几种常用的查询写法。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 shop 数据库中，先用 generate_series 造一些数据（第 2 课的 users、orders 表）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>造 1000 个用户和 10 万笔订单。</p><pre class="cmd">TRUNCATE orders, users RESTART IDENTITY;
+INSERT INTO users (email, name)
+  SELECT &#x27;u&#x27; || i || &#x27;@example.com&#x27;, &#x27;用户&#x27; || i FROM generate_series(1, 1000) i;
+INSERT INTO orders (user_id, amount, status, created_at)
+  SELECT 1 + (random() * 899)::int, round((random() * 500 + 1)::numeric, 2),
+         (ARRAY[&#x27;pending&#x27;,&#x27;paid&#x27;,&#x27;paid&#x27;,&#x27;shipped&#x27;,&#x27;cancelled&#x27;])[1 + (random() * 4)::int],
+         now() - random() * interval &#x27;365 days&#x27;
+  FROM generate_series(1, 100000);
+ANALYZE;</pre><pre class="out">TRUNCATE TABLE
+INSERT 0 1000
+INSERT 0 100000
+ANALYZE</pre></div></div><div class="st"><span class="n">02</span><div><p>没有订单的用户（只有 id 1–900 有订单）。</p><pre class="cmd">SELECT count(*) FROM users u WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id);</pre><pre class="out"> count
+-------
+   100</pre></div></div><div class="st"><span class="n">03</span><div><p>每种状态的订单数与金额。</p><pre class="cmd">SELECT status, count(*), sum(amount) AS total, round(avg(amount), 2) AS avg
+FROM orders GROUP BY status ORDER BY count(*) DESC;</pre><pre class="out">  status   | count |    total    |  avg
+-----------+-------+-------------+--------
+ paid      | 50012 | 12545210.88 | 250.84
+ shipped   | 25041 |  6281204.77 | 250.84
+ pending   | 12493 |  3132018.40 | 250.70
+ cancelled | 12454 |  3125987.36 | 251.00</pre></div></div><div class="st"><span class="n">04</span><div><p>HAVING：订单数超过 130 的用户。</p><pre class="cmd">SELECT user_id, count(*) FROM orders GROUP BY user_id HAVING count(*) &gt; 130 ORDER BY 2 DESC LIMIT 3;</pre><pre class="out"> user_id | count
+---------+-------
+     417 |   147
+      88 |   142
+     731 |   139</pre></div></div><div class="st"><span class="n">05</span><div><p>窗口函数：每个用户最近的一笔订单。</p><pre class="cmd">SELECT user_id, id, amount, created_at FROM (
+  SELECT o.*, row_number() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn
+  FROM orders o
+) t WHERE rn = 1 ORDER BY user_id LIMIT 3;</pre><pre class="out"> user_id |  id   | amount |          created_at
+---------+-------+--------+-------------------------------
+       1 | 48213 | 312.40 | 2026-10-20 07:41:09.12+00
+       2 | 90117 |  45.10 | 2026-10-19 22:03:55.87+00
+       3 | 11872 | 488.93 | 2026-10-21 01:17:30.44+00</pre></div></div><div class="st"><span class="n">06</span><div><p>窗口函数：按月的收入和环比。</p><pre class="cmd">WITH m AS (
+  SELECT date_trunc(&#x27;month&#x27;, created_at) AS month, sum(amount) AS revenue
+  FROM orders WHERE status IN (&#x27;paid&#x27;,&#x27;shipped&#x27;) GROUP BY 1
+)
+SELECT month::date, revenue,
+       round(100.0 * (revenue / lag(revenue) OVER (ORDER BY month) - 1), 1) AS mom_pct
+FROM m ORDER BY month DESC LIMIT 3;</pre><pre class="out">   month    |  revenue   | mom_pct
+------------+------------+---------
+ 2026-10-01 | 1066312.75 |   -30.4
+ 2026-09-01 | 1532091.04 |     2.8
+ 2026-08-01 | 1490228.66 |    -2.1</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>NOT IN 与 NULL</h3><p>执行 <code>SELECT count(*) FROM users WHERE id NOT IN (SELECT user_id FROM orders);</code> 得到 100。现在往 orders 里加一行 user_id 为 NULL 的数据（先临时去掉 NOT NULL 约束），再执行一次，结果变成多少？为什么？换成哪种写法不受影响？最后恢复约束。</p><details><summary>查看参考答案</summary><div><pre class="cmd">ALTER TABLE orders ALTER COLUMN user_id DROP NOT NULL;
+INSERT INTO orders (user_id, amount) VALUES (NULL, 1);
+SELECT count(*) FROM users WHERE id NOT IN (SELECT user_id FROM orders);
+SELECT count(*) FROM users u WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id);
+DELETE FROM orders WHERE user_id IS NULL;
+ALTER TABLE orders ALTER COLUMN user_id SET NOT NULL;</pre><pre class="out"> count
+-------
+     0
+
+ count
+-------
+   100</pre><p><code>id NOT IN (1, 2, …, NULL)</code> 等价于 <code>id &lt;&gt; 1 AND id &lt;&gt; 2 AND … AND id &lt;&gt; NULL</code>。最后一项永远是 NULL（未知），整个条件不可能为 true，于是一行都不返回。NOT EXISTS 只判断“是否存在匹配的行”，NULL 不会匹配任何 id，所以结果正确；它通常也能被规划器执行为高效的反连接（anti join）。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>INNER JOIN</b> 只保留两边都匹配的行；<b>LEFT JOIN</b> 保留左表所有行，右边没有匹配时填 NULL。“没有订单的用户”用 LEFT JOIN … WHERE o.id IS NULL，或 <code>NOT EXISTS</code>。</li><li>LEFT JOIN 时，对右表的过滤条件写在 <b>ON</b> 里才会保留左表行；写在 <b>WHERE</b> 里会把 NULL 行过滤掉，结果等同于 INNER JOIN。</li><li>GROUP BY 把多行折叠成一行；SELECT 中的非聚合列必须出现在 GROUP BY 中（或函数依赖于主键）。<code>WHERE</code> 在分组前过滤行，<code>HAVING</code> 在分组后过滤组。<code>count(*)</code> 数行，<code>count(列)</code> 不计 NULL。</li><li>窗口函数 <code>… OVER (PARTITION BY … ORDER BY …)</code> 在不折叠行的情况下计算：排名（row_number、rank）、累计和、与上一行比较（lag）。“每个用户最近一笔订单”是典型用法。</li><li>NULL 表示“未知”：<code>NULL = NULL</code> 结果是 NULL 而不是 true，判断要用 <code>IS NULL</code> / <code>IS DISTINCT FROM</code>；<code>NOT IN (子查询)</code> 遇到 NULL 会返回空，优先用 NOT EXISTS。</li><li>CTE（<code>WITH</code>）让复杂查询分步可读；PostgreSQL 12 起，只被引用一次的 CTE 会被内联优化，不再是优化屏障（需要时可写 MATERIALIZED）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 04</div><a class="big" href="l04.html">索引入门：什么时候用、怎么建 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l03.js"></script>
+</body></html>
