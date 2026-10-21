@@ -1,0 +1,23 @@
+TITLE='备份与时间点恢复（PITR）';DESC='复制保护的是硬件故障，备份保护的是一切其他情况：误删数据、错误的迁移、勒索软件、整个机房不可用。本课讲逻辑备份 pg_dump 和物理备份的区别、WAL 归档、如何把数据库恢复到任意一秒，以及 pgBackRest 这类工具和“定期恢复演练”为什么不可省略。';NEXT='安全：角色、权限与行级安全';MIN=65
+SUM=['<b>逻辑备份</b> <code>pg_dump</code>：导出 SQL 或自定义格式（<code>-Fc</code>/<code>-Fd</code> 可以并行恢复、选择性恢复单张表），跨版本可用；但只是某一时刻的快照，大库导出和恢复都很慢（要重建索引），不能做时间点恢复。<code>pg_dumpall --globals-only</code> 备份角色和表空间。',
+'<b>物理备份</b>：复制数据目录（<code>pg_basebackup</code> 或 pgBackRest、Barman、WAL-G）。备份期间数据库照常写入，所以文件本身不一致，必须配合备份期间及之后的 WAL 才能恢复到一致状态。',
+'<b>WAL 归档</b>：<code>archive_mode = on</code> 加 <code>archive_command</code>（或 <code>archive_library</code>），每个写满的 WAL 段都被复制到安全的地方（对象存储）。<code>archive_timeout</code> 限制低流量时一个段最多多久强制切换，决定最坏情况下丢失多少。',
+'<b>PITR</b>：恢复一个基础备份，设置 <code>restore_command</code> 从归档取 WAL，<code>recovery_target_time = \'2026-10-22 14:29:00+08\'</code>（或 target_xid / target_lsn / target_name），创建 <code>recovery.signal</code> 启动，数据库重放到目标点后停下。<code>recovery_target_action = pause</code> 让你先检查再提升。',
+'PostgreSQL 17 起 <code>pg_basebackup --incremental</code> 支持增量备份（配合 <code>summarize_wal</code> 和 <code>pg_combinebackup</code>）。pgBackRest 提供全量/差异/增量备份、并行、压缩、加密、校验和保留策略，是生产中最常见的选择。',
+'没有演练过恢复的备份不算备份。定期（自动化）把备份恢复到一台临时机器、跑校验查询、记录恢复耗时——它就是你真实的 RTO。备份要异地、并且与生产凭据隔离，防止被同一次事故（或攻击者）一起删除。']
+def secs(prac,E):
+    return [
+('基础备份 + WAL = 任意时间点','PITR 的原理。','<div id="p1"></div>'),
+('一次误删的恢复','从发现问题到数据回来。','<div id="p2"></div>'),
+('动手：选择恢复方案','发生了以下事故。选择一种，看可行的恢复方案和能恢复到的状态。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('相关命令','备份、归档与恢复。','<div id="t4"></div>'),
+('在你的电脑上练习','在一个新的容器 pgb2 中开启归档，做一次完整的 PITR。',prac([
+ ('启动一个开启归档的实例，归档到容器内的 /archive（实际中应是对象存储）。','docker run -d --name pitr -e POSTGRES_PASSWORD=pg postgres:18 \\\n  -c archive_mode=on -c archive_command=\'test ! -f /archive/%f && cp %p /archive/%f\' -c archive_timeout=60\ndocker exec pitr bash -c "mkdir -p /archive && chown postgres /archive"','…'),
+ ('建表、写入，做一个基础备份。','docker exec -u postgres pitr psql -c "CREATE TABLE t (id int, at timestamptz DEFAULT now())" -c "INSERT INTO t SELECT generate_series(1,1000)"\ndocker exec -u postgres pitr pg_basebackup -D /tmp/base -Ft -z -X none -P','INSERT 0 1000\n…/… kB (100%), 1/1 tablespace'),
+ ('继续写入，记下时间，然后“误删”。','docker exec -u postgres pitr psql -c "INSERT INTO t SELECT generate_series(1001,2000)" -c "SELECT now()" -c "DROP TABLE t" -c "SELECT pg_switch_wal()"','INSERT 0 1000\n              now\n-------------------------------\n 2026-10-22 14:29:03.512+08\nDROP TABLE'),
+ ('恢复：停止实例，清空数据目录，解压基础备份。','docker exec pitr bash -c "cp -r /tmp/base /archive/base"\ndocker stop pitr\ndocker run --rm --volumes-from pitr -u postgres postgres:18 bash -c "\n  rm -rf /var/lib/postgresql/18/docker/* && cd /var/lib/postgresql/18/docker && tar xzf /archive/base/base.tar.gz"',''),
+ ('设置恢复目标并启动。','docker run --rm --volumes-from pitr -u postgres postgres:18 bash -c "cd /var/lib/postgresql/18/docker &&\n  echo \\"restore_command = \'cp /archive/%f %p\'\\" >> postgresql.auto.conf &&\n  echo \\"recovery_target_time = \'2026-10-22 14:29:03+08\'\\" >> postgresql.auto.conf &&\n  echo \\"recovery_target_action = \'promote\'\\" >> postgresql.auto.conf && touch recovery.signal"\ndocker start pitr && docker logs pitr 2>&1 | tail -4','LOG:  starting point-in-time recovery to 2026-10-22 14:29:03+08\nLOG:  restored log file "000000010000000000000003" from archive\nLOG:  recovery stopping before commit of transaction 755, time 2026-10-22 14:29:03.6+08\nLOG:  database system is ready to accept connections'),
+ ('表回来了，2000 行都在。','docker exec -u postgres pitr psql -c "SELECT count(*) FROM t"',' count\n-------\n  2000')],
+ ('制定备份策略','一个 2 TB 的生产库，每天产生约 200 GB WAL。要求：RPO ≤ 1 分钟（对误删等逻辑错误）、恢复时间 ≤ 2 小时、保留 30 天内任意时间点。用 pgBackRest 给出备份类型和频率、归档配置、存储位置，并估算恢复耗时的组成。',
+ '<ul><li><b>归档</b>：<code>archive_command = \'pgbackrest --stanza=main archive-push %p\'</code>，开启异步归档（<code>archive-async=y</code>）和压缩（zstd）。<code>archive_timeout = 60s</code> 保证低流量时最多丢 1 分钟。用 pgBackRest 的仓库（S3 等对象存储，另一个区域，开启对象锁定/版本，凭据与生产隔离）。</li><li><b>备份</b>：每周日全量；其他每天差异备份（相对上一次全量）；可选每 6 小时增量。从备库执行（<code>backup-standby=y</code>）减轻主库负担。保留 <code>repo1-retention-full=5</code>（5 周，覆盖 30 天）。</li><li><b>恢复耗时</b> ≈ 下载并解压最近的全量 + 差异（2 TB，并行 <code>process-max=16</code>，~1 GB/s 时约 35 分钟；<code>--delta</code> 在已有数据目录上只拉取变化的文件）+ 重放最多 1 天的 WAL（200 GB，重放约 100–200 MB/s，20–30 分钟）+ 检查与切换。用每日差异备份是为了限制需要重放的 WAL 量。</li></ul><p>最重要的一条：每周自动恢复一次到临时实例并跑校验，测得的时间才是真实的 RTO。并且保留 <code>pg_dump</code> 作为不依赖物理格式的第二种备份（例如每周一次关键表），防备工具本身的问题。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
