@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 7 课 · 存储：页、堆元组与 TOAST</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 7 课</span><span class="sp"></span><a href="l06.html">← 第 6 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 7 课</div><h1>存储：页、堆元组与 TOAST</h1>
+<p>从这一课开始进入内部原理。表在磁盘上是一组文件，文件由 8 KB 的页组成，页里存放带头部信息的元组。本课讲数据目录的结构、页的布局、元组头里的 xmin / xmax、ctid 是什么，以及超过约 2 KB 的大字段如何被 TOAST 压缩和切片存放。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个页的内部</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">TOAST：大字段放在哪里</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：看看这一页</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个页的内部</h2><div class="goal">8 KB 的页如何存放元组。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>TOAST：大字段放在哪里</h2><div class="goal">超过约 2 KB 的行。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：看看这一页</h2><div class="goal">用 pageinspect 读 accounts 表的第 0 页。选择一个操作，看页中的行指针和元组头怎么变化。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">定位文件、查看大小与页内容。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">使用 shop 库。pageinspect 扩展随官方镜像提供，需要超级用户。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>表对应的文件。</p><pre class="cmd">SELECT pg_relation_filepath(&#x27;accounts&#x27;);</pre><pre class="out"> pg_relation_filepath
+----------------------
+ base/16384/16422</pre></div></div><div class="st"><span class="n">02</span><div><p>在容器里看这个文件：两行数据也占一整页。</p><pre class="cmd">docker exec pg ls -l /var/lib/postgresql/18/docker/base/16384/16422</pre><pre class="out">-rw------- 1 postgres postgres 8192 Oct 22 10:20 /var/lib/postgresql/18/docker/base/16384/16422</pre></div></div><div class="st"><span class="n">03</span><div><p>查看行的物理位置和插入事务。</p><pre class="cmd">SELECT ctid, xmin, xmax, * FROM accounts;</pre><pre class="out"> ctid  | xmin | xmax | name | balance
+-------+------+------+------+---------
+ (0,3) |  790 |    0 | A    |      70
+ (0,4) |  790 |    0 | B    |     140</pre></div></div><div class="st"><span class="n">04</span><div><p>UPDATE 后 ctid 变了。</p><pre class="cmd">UPDATE accounts SET balance = balance WHERE name = &#x27;A&#x27;;
+SELECT ctid, xmin, name FROM accounts;</pre><pre class="out"> ctid  | xmin | name
+-------+------+------
+ (0,4) |  790 | B
+ (0,5) |  815 | A</pre></div></div><div class="st"><span class="n">05</span><div><p>用 pageinspect 看页里的全部元组，包括旧版本。</p><pre class="cmd">CREATE EXTENSION pageinspect;
+SELECT lp, lp_off, lp_len, t_xmin, t_xmax, t_ctid FROM heap_page_items(get_raw_page(&#x27;accounts&#x27;, 0));</pre><pre class="out"> lp | lp_off | lp_len | t_xmin | t_xmax | t_ctid
+----+--------+--------+--------+--------+--------
+  1 |   8152 |     35 |    788 |    790 | (0,3)
+  2 |   8112 |     35 |    788 |    790 | (0,4)
+  3 |   8072 |     35 |    790 |    815 | (0,5)
+  4 |   8032 |     35 |    790 |      0 | (0,4)
+  5 |   7992 |     35 |    815 |      0 | (0,5)</pre></div></div><div class="st"><span class="n">06</span><div><p>TOAST：插入一个大文本，看主表和 TOAST 表的大小。</p><pre class="cmd">CREATE TABLE docs (id int, body text);
+INSERT INTO docs SELECT 1, string_agg(md5(i::text), &#x27;&#x27;) FROM generate_series(1, 20000) i;
+SELECT pg_size_pretty(pg_relation_size(&#x27;docs&#x27;)) AS heap,
+       pg_size_pretty(pg_relation_size(reltoastrelid)) AS toast,
+       pg_column_size(body) AS stored, octet_length(body) AS raw
+FROM pg_class, docs WHERE relname = &#x27;docs&#x27;;</pre><pre class="out"> heap  | toast  | stored | raw
+-------+--------+--------+--------
+ 8192 bytes | 352 kB | 352424 | 640000</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>列顺序与对齐</h3><p>创建两张列相同但顺序不同的表：<code>(a boolean, b bigint, c boolean, d bigint)</code> 和 <code>(b bigint, d bigint, a boolean, c boolean)</code>，各插入 100 万行，比较表大小。解释差异来自哪里。</p><details><summary>查看参考答案</summary><div><pre class="cmd">CREATE TABLE t_bad (a boolean, b bigint, c boolean, d bigint);
+CREATE TABLE t_good (b bigint, d bigint, a boolean, c boolean);
+INSERT INTO t_bad SELECT true, i, false, i FROM generate_series(1,1000000) i;
+INSERT INTO t_good SELECT i, i, true, false FROM generate_series(1,1000000) i;
+SELECT relname, pg_size_pretty(pg_relation_size(oid)) FROM pg_class WHERE relname LIKE 't\_%';</pre><pre class="out"> relname | pg_size_pretty
+---------+----------------
+ t_bad   | 50 MB
+ t_good  | 42 MB</pre><p>bigint 要求 8 字节对齐。t_bad 中 boolean（1 字节）后面紧跟 bigint，要补 7 个填充字节，两处共 14 字节浪费；t_good 把两个 bigint 放在前面，两个 boolean 紧挨在后面。每行再加上 23 字节头（对齐到 24）和 4 字节行指针，差距约 16%。对宽表和大表值得在建表时把定长的宽类型放前面、变长类型放后面；对已有表通常不值得为此重建。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>数据目录 <code>PGDATA</code>（容器里是 <code>/var/lib/postgresql/18/docker</code>）下，<code>base/&lt;数据库 OID&gt;/&lt;relfilenode&gt;</code> 就是一张表的文件。超过 1 GB 切成 <code>.1</code>、<code>.2</code> 段；<code>_fsm</code> 是空闲空间映射，<code>_vm</code> 是可见性映射。</li><li>表文件（堆）由 8 KB 的<b>页</b>组成。页头之后是<b>行指针数组</b>（line pointer，向后增长），元组从页尾向前存放，中间是空闲空间。</li><li><code>ctid = (页号, 行指针号)</code> 是元组的物理位置，索引条目存的就是它。UPDATE 会生成新版本、ctid 改变，所以 ctid 不能当作稳定的行标识。</li><li>每个元组有约 23 字节的头：<code>xmin</code>（插入它的事务）、<code>xmax</code>（删除或锁定它的事务）、infomask 标志位、NULL 位图。列按类型对齐存放，列顺序会影响填充字节（把 8 字节的列放前面能省空间）。</li><li>元组不能跨页。一行超过约 2 KB（<code>TOAST_TUPLE_THRESHOLD</code>）时，变长字段先被压缩（默认 pglz，可设为 lz4），仍然太大就切成约 2 KB 的块存进该表专属的 <b>TOAST 表</b>，主元组里只留一个指针。</li><li><code>SELECT *</code> 会把 TOAST 字段读出并解压；只查需要的列，大字段不读就不付出代价。频繁更新大 jsonb 字段的一小部分，代价是整个值重写。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 08</div><a class="big" href="l08.html">WAL：预写日志与检查点 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l07.js"></script>
+</body></html>
