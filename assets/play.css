@@ -105,3 +105,12 @@ button.blk:active{transform:scale(.97)}button.blk.gone{opacity:0;transform:scale
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.el,.board{transition:opacity 240ms ease}.enter,.clear.on,.shake{animation:none}.chip.back{transition:none}}
 .watch>.pv{grid-column:1;grid-row:1}.watch>.pc{grid-row:2}
 .row>button.blk{flex:1}@media (max-width:900px){.pc .rp{font-size:0;gap:0;padding:0 10px}.pc .tl{margin:0 4px}}
+/* list pages (hub, course index) */
+.list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.list a{display:grid;grid-template-columns:72px 1fr 90px 32px;align-items:center;padding:24px 0;border-bottom:1px solid var(--line);text-decoration:none;transition:background-color 200ms ease}
+.list .n{font:500 12px/1 var(--m);color:var(--ink2)}.list .t{font-weight:700;font-size:20px;letter-spacing:-.01em}.list .d{color:var(--ink2);font-size:15px;margin-top:4px}
+.list .s{font:500 12px/1 var(--m);color:var(--ink2);text-align:right}.list .ar{text-align:right;transition:transform 250ms var(--e-out)}
+.list a.off{opacity:.4;pointer-events:none}.list .s.ok{color:var(--ok)}
+.foot{display:flex;justify-content:space-between;padding:10vh 0 6vh;font:500 12px/1 var(--m);color:var(--ink2)}.foot a{text-decoration:none}
+@media (hover:hover) and (pointer:fine){.list a:hover{background:var(--bg2)}.list a:hover .ar{transform:translateX(4px)}}
+@media (max-width:900px){.list a{grid-template-columns:44px 1fr 24px}.list .s{display:none}}
