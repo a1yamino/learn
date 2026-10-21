@@ -1,0 +1,68 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 21 课 · 连接池：PgBouncer</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 21 课</span><span class="sp"></span><a href="l20.html">← 第 20 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 21 课</div><h1>连接池：PgBouncer</h1>
+<p>第 6 课的应用内连接池解决了单个实例的问题，但当有几十个服务、几百个实例或大量短生命周期的进程（无服务器函数、PHP）时，总连接数仍会失控。本课讲 PgBouncer 的三种池模式、事务模式下哪些功能不能用、关键配置参数、监控命令，以及部署位置的选择。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">事务池模式</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">事务模式的陷阱</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：这段代码能在事务模式下工作吗</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>事务池模式</h2><div class="goal">几千个客户端共享几十个连接。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>事务模式的陷阱</h2><div class="goal">会话状态被带给了别人。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：这段代码能在事务模式下工作吗</h2><div class="goal">应用通过 transaction 模式的 PgBouncer 连接。选择一段代码，看是否安全。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">PgBouncer 管理控制台。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 pgnet 网络中运行 PgBouncer，连接 pg 容器。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写一个最小配置。</p><pre class="cmd">mkdir -p ~/pgb &amp;&amp; cat &gt; ~/pgb/pgbouncer.ini &lt;&lt;&#x27;EOF&#x27;
+[databases]
+shop = host=pg port=5432 dbname=shop
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = 6432
+auth_type = plain
+auth_file = /etc/pgbouncer/userlist.txt
+pool_mode = transaction
+default_pool_size = 5
+max_client_conn = 1000
+admin_users = postgres
+EOF
+echo &#x27;&quot;postgres&quot; &quot;pg&quot;&#x27; &gt; ~/pgb/userlist.txt</pre></div></div><div class="st"><span class="n">02</span><div><p>启动 PgBouncer（社区镜像 edoburu/pgbouncer）。</p><pre class="cmd">docker run -d --name pgb --network pgnet -p 6432:6432 -v ~/pgb:/etc/pgbouncer edoburu/pgbouncer
+psql &quot;postgresql://postgres:pg@localhost:6432/shop&quot; -c &quot;SELECT 1&quot;</pre><pre class="out"> ?column?
+----------
+        1</pre></div></div><div class="st"><span class="n">03</span><div><p>压测：100 个客户端。</p><pre class="cmd">docker exec -u postgres pg pgbench -i -s 10 shop
+docker exec -u postgres pg pgbench -h pgb -p 6432 -c 100 -j 4 -T 20 -S shop</pre><pre class="out">number of clients: 100
+…
+tps = 18412.3 (without initial connection time)</pre></div></div><div class="st"><span class="n">04</span><div><p>压测期间在 PostgreSQL 上看实际连接数。</p><pre class="cmd">docker exec -u postgres pg psql -c &quot;SELECT count(*) FROM pg_stat_activity WHERE client_addr IS NOT NULL&quot;</pre><pre class="out"> count
+-------
+     5</pre></div></div><div class="st"><span class="n">05</span><div><p>管理控制台：池状态。</p><pre class="cmd">psql &quot;postgresql://postgres:pg@localhost:6432/pgbouncer&quot; -c &quot;SHOW POOLS&quot;</pre><pre class="out"> database |   user   | cl_active | cl_waiting | sv_active | sv_idle | sv_used | maxwait | pool_mode
+----------+----------+-----------+------------+-----------+---------+---------+---------+-------------
+ shop     | postgres |       100 |         37 |         5 |       0 |       0 |       0 | transaction</pre></div></div><div class="st"><span class="n">06</span><div><p>事务模式下 SET 的问题：两次查询可能落在不同的服务端连接上。</p><pre class="cmd">psql &quot;postgresql://postgres:pg@localhost:6432/shop&quot; -c &quot;SET statement_timeout = &#x27;1s&#x27;&quot; -c &quot;SHOW statement_timeout&quot;</pre><pre class="out"> statement_timeout
+-------------------
+ 0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>迁移一个服务到事务模式</h3><p>一个 Python 服务目前直连 PostgreSQL，代码里有：连接建立后 <code>SET search_path = tenant_42</code>；用 <code>pg_advisory_lock</code> 保证定时任务单实例；用 <code>LISTEN orders_changed</code> 接收通知。要改为通过 transaction 模式的 PgBouncer 连接，逐项说明怎么改。</p><details><summary>查看参考答案</summary><div><ul><li><b>search_path</b>：会话级 SET 会泄漏给共享同一服务端连接的其他客户端，也会在下一个事务中丢失。改为在每个事务开头 <code>SET LOCAL search_path = tenant_42</code>，或在 SQL 中写全限定名 <code>tenant_42.orders</code>，或为每个租户使用不同的角色并 <code>ALTER ROLE … SET search_path</code>（PgBouncer 按用户分池，每个池的连接都带着这个设置）。</li><li><b>咨询锁</b>：会话级锁在事务结束后服务端连接被别人拿走，锁仍然挂在那个连接上，释放时也可能发到别的连接。改为事务级 <code>pg_try_advisory_xact_lock</code>，并让整个任务（或其“领取”步骤）在一个事务中完成。</li><li><b>LISTEN</b>：需要一个长期保持的会话，事务模式下无法工作。为监听者单独建一个直连 PostgreSQL 的连接（或通过 session 模式的另一个 PgBouncer 池）。NOTIFY 可以照常通过事务池发送。</li></ul><p>另外检查：驱动是否使用协议级预备语句（psycopg 3 默认会在执行多次后自动 prepare，需 PgBouncer 1.21+ 并设置 <code>max_prepared_statements</code>，或在驱动中设 <code>prepare_threshold=None</code>）；临时表；<code>WITH HOLD</code> 游标。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>PgBouncer 是一个轻量的单进程代理：客户端连到它（可以上万个），它只维护少量到 PostgreSQL 的服务端连接，并把客户端的请求分配到这些连接上。</li><li><b>池模式</b>：<code>session</code> 客户端断开前独占一个服务端连接，兼容性最好但省不了连接；<code>transaction</code> 只在事务期间占用，事务结束立即归还，最常用；<code>statement</code> 每条语句归还，不允许多语句事务。</li><li>事务模式下，跨事务的会话状态不再可靠：<code>SET</code>（用 <code>SET LOCAL</code> 代替）、会话级咨询锁、<code>LISTEN</code>、<code>WITH HOLD</code> 游标、临时表都可能“串”到别的客户端。协议级预备语句从 PgBouncer 1.21 起可通过 <code>max_prepared_statements</code> 支持。</li><li>关键参数：<code>default_pool_size</code>（每个“用户+数据库”对的服务端连接数）、<code>max_client_conn</code>、<code>reserve_pool_size</code>、<code>server_idle_timeout</code>、<code>query_wait_timeout</code>（客户端排队等待的上限）。</li><li>用管理控制台 <code>psql -p 6432 pgbouncer</code> 执行 <code>SHOW POOLS</code>：<code>cl_waiting</code> 持续大于 0 而 <code>sv_idle</code> 为 0，说明池不够或有慢事务占着连接；同时检查 PostgreSQL 端是否已经饱和。</li><li>部署：放在数据库服务器旁（集中管理），或作为应用的 sidecar（减少一跳延迟，但每个 sidecar 各有池，总数要再算）。PgBouncer 是单线程的，单个进程约能处理几万 QPS，更多时运行多个进程（<code>so_reuseport</code>）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 22</div><a class="big" href="l22.html">性能调优：配置、监控与 pg_stat_statements →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l21.js"></script>
+</body></html>
