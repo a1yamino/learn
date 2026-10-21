@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 22 课 · 性能调优：配置、监控与 pg_stat_statements</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 22 课</span><span class="sp"></span><a href="l21.html">← 第 21 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 22 课</div><h1>性能调优：配置、监控与 pg_stat_statements</h1>
+<p>性能问题大多出在查询和索引上，但一套合理的基础配置和持续的监控同样重要。本课讲上线时必须调整的参数和它们的计算方法、pg_stat_statements 如何找出最值得优化的查询、等待事件能告诉你什么，以及一份日常需要关注的指标清单。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">从哪里开始</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">等待事件</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：读 pg_stat_statements</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>从哪里开始</h2><div class="goal">总耗时最大的查询，不一定是最慢的。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>等待事件</h2><div class="goal">活跃会话在等什么。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：读 pg_stat_statements</h2><div class="goal">一个线上库按 total_exec_time 排序的前几行。选择一行，判断应该怎么处理。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">配置、统计与诊断。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">启用 pg_stat_statements（需要预加载并重启）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>预加载扩展并重启。</p><pre class="cmd">docker exec -u postgres pg psql -c &quot;ALTER SYSTEM SET shared_preload_libraries = &#x27;pg_stat_statements&#x27;&quot;
+docker restart pg
+docker exec -u postgres pg psql -d shop -c &quot;CREATE EXTENSION pg_stat_statements&quot;</pre><pre class="out">ALTER SYSTEM
+pg
+CREATE EXTENSION</pre></div></div><div class="st"><span class="n">02</span><div><p>用 pgbench 制造一些负载（第 21 课已初始化）。</p><pre class="cmd">docker exec -u postgres pg pgbench -c 8 -j 2 -T 30 shop</pre><pre class="out">tps = 1532.8 (without initial connection time)</pre></div></div><div class="st"><span class="n">03</span><div><p>总耗时最多的语句。</p><pre class="cmd">SELECT calls, round(total_exec_time) AS total_ms, round(mean_exec_time::numeric, 2) AS mean_ms, rows, left(query, 60) AS query
+FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 5;</pre><pre class="out"> calls | total_ms | mean_ms | rows  |                            query
+-------+----------+---------+-------+--------------------------------------------------------------
+ 45984 |    61210 |    1.33 | 45984 | UPDATE pgbench_branches SET bbalance = bbalance + $1 WHERE b
+ 45984 |    18301 |    0.40 | 45984 | UPDATE pgbench_tellers SET tbalance = tbalance + $1 WHERE ti
+ 45984 |     3012 |    0.07 | 45984 | UPDATE pgbench_accounts SET abalance = abalance + $1 WHERE a
+ …</pre></div></div><div class="st"><span class="n">04</span><div><p>采样等待事件：pgbench 运行时多执行几次。</p><pre class="cmd">SELECT wait_event_type, wait_event, count(*) FROM pg_stat_activity WHERE state = &#x27;active&#x27; AND pid &lt;&gt; pg_backend_pid() GROUP BY 1, 2 ORDER BY 3 DESC;</pre><pre class="out"> wait_event_type |  wait_event   | count
+-----------------+---------------+-------
+ Lock            | transactionid |     5
+ LWLock          | WALWrite      |     2
+                 |               |     1</pre></div></div><div class="st"><span class="n">05</span><div><p>解释：pgbench_branches 只有 10 行，8 个客户端都在更新它们，互相等待行锁。增加规模因子或减少客户端看变化。</p><pre class="cmd">docker exec -u postgres pg pgbench -c 8 -j 2 -T 30 -N shop</pre><pre class="out">tps = 4120.6 (without initial connection time)</pre></div></div><div class="st"><span class="n">06</span><div><p>记录慢查询到日志。</p><pre class="cmd">ALTER SYSTEM SET log_min_duration_statement = &#x27;200ms&#x27;;
+SELECT pg_reload_conf();</pre><pre class="out">ALTER SYSTEM
+ pg_reload_conf
+----------------
+ t</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一台新服务器给出初始配置</h3><p>专用数据库服务器：16 核、64 GB 内存、NVMe SSD，OLTP 为主，应用通过 PgBouncer 连接，服务端连接约 60 个；每天凌晨有几个报表任务。给出 postgresql.conf 中主要参数的初始值并说明理由。</p><details><summary>查看参考答案</summary><div><pre class="cmd">shared_buffers = 16GB                 # 25%
+effective_cache_size = 48GB           # 给规划器的总缓存估计
+work_mem = 32MB                       # (64-16)GB / (60×~3) ≈ 270MB 上限，保守取 32MB
+maintenance_work_mem = 2GB
+autovacuum_work_mem = 1GB
+max_connections = 100                 # PgBouncer 后 60 + 管理与复制余量
+random_page_cost = 1.1
+effective_io_concurrency = 200
+max_wal_size = 16GB
+checkpoint_timeout = 15min
+wal_compression = lz4
+max_worker_processes = 16
+max_parallel_workers = 8
+max_parallel_workers_per_gather = 2
+autovacuum_max_workers = 5
+autovacuum_vacuum_cost_limit = 2000
+shared_preload_libraries = 'pg_stat_statements,auto_explain'
+log_min_duration_statement = 500ms
+log_lock_waits = on
+idle_in_transaction_session_timeout = 60s
+huge_pages = try</pre><p>work_mem 是按节点分配的，一个复杂查询可能同时用到多份，所以全局值保守；报表任务在自己的会话里 <code>SET work_mem = '512MB'</code>。连接数通过 PgBouncer 控制，不需要很大的 max_connections。NVMe 上随机读便宜，调低 random_page_cost 让规划器更愿意用索引。并行查询主要服务于报表，OLTP 的短查询基本用不到，per_gather 设 2 避免报表占满 CPU。autovacuum 放宽节流，因为 NVMe 承受得起。之后用 pg_stat_statements 和监控数据逐项验证，而不是一次性改完。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>内存：<code>shared_buffers</code> 约 25% 内存；<code>effective_cache_size</code> 约 50–75%；<code>work_mem</code> 每个排序/哈希节点的内存，默认 4 MB，按 <code>(内存 − shared_buffers) / (max_connections × 2~3)</code> 估算后保守设置，复杂报表可在会话中单独调高；<code>maintenance_work_mem</code> 1–2 GB 加速 VACUUM 和建索引。</li><li>I/O 与 WAL：SSD 上 <code>random_page_cost = 1.1</code>、<code>effective_io_concurrency = 200</code>；<code>max_wal_size</code> 按检查点间隔估算（第 8 课）；<code>wal_compression = lz4</code>。并行：<code>max_parallel_workers_per_gather</code> 2–4。</li><li><b>pg_stat_statements</b> 按归一化后的语句（常量替换为 $1）累计调用次数、总耗时、平均耗时、行数、缓冲区命中与读取、WAL 量。按 <code>total_exec_time</code> 排序找出对系统整体影响最大的查询，它往往不是单次最慢的那条。</li><li><b>等待事件</b>（<code>pg_stat_activity.wait_event_type / wait_event</code>）显示活跃会话此刻在等什么：<code>Lock</code>（锁）、<code>LWLock</code>（内部锁，如 WALWrite、BufferMapping）、<code>IO</code>（DataFileRead 读盘、WALSync 刷 WAL）、<code>Client</code>（等客户端，常见于应用处理慢或 idle in transaction）。周期采样就是简易的“活跃会话历史”。</li><li>需要报警的指标：连接数与 <code>max_connections</code> 的比例、活跃会话数相对于 CPU 核数、长事务与 idle in transaction、复制延迟、事务 ID 年龄、磁盘空间（含 pg_wal）、缓存命中率、死元组与 autovacuum 运行情况、检查点频率、锁等待、错误日志（<code>log_min_duration_statement</code>、死锁）。</li><li>调优的方法：一次只改一项，有基准数据（<code>pgbench</code> 或回放真实流量），记录改动前后的指标。不要照搬网上的“最佳配置”——它们不知道你的工作负载。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 23</div><a class="big" href="l23.html">备份与时间点恢复（PITR） →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l22.js"></script>
+</body></html>
