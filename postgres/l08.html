@@ -1,0 +1,65 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 8 课 · WAL：预写日志与检查点</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 8 课</span><span class="sp"></span><a href="l07.html">← 第 7 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 8 课</div><h1>WAL：预写日志与检查点</h1>
+<p>PostgreSQL 修改数据页时并不立即写回数据文件，而是先把“做了什么”写进预写日志（WAL）。本课讲 WAL 如何保证提交不丢、LSN 是什么、崩溃恢复怎么从检查点开始重放、full-page writes 为什么存在，以及 checkpoint 和 max_wal_size 的调优。WAL 也是复制（第 18 课）和 PITR（第 23 课）的基础。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">先写日志，再写数据</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">崩溃恢复</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：在这里断电会怎样</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>先写日志，再写数据</h2><div class="goal">一次 UPDATE 和 COMMIT 背后的写入顺序。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>崩溃恢复</h2><div class="goal">从检查点开始重放。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：在这里断电会怎样</h2><div class="goal">选择一个时刻让服务器断电，看重启后的结果。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">观察 WAL 与检查点。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">使用 shop 库，需要超级用户。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>当前 WAL 位置和所在段文件。</p><pre class="cmd">SELECT pg_current_wal_lsn(), pg_walfile_name(pg_current_wal_lsn());</pre><pre class="out"> pg_current_wal_lsn |     pg_walfile_name
+--------------------+--------------------------
+ 0/1A3C2F8          | 000000010000000000000001</pre></div></div><div class="st"><span class="n">02</span><div><p>一次批量更新产生了多少 WAL。</p><pre class="cmd">SELECT pg_current_wal_lsn() AS before \gset
+UPDATE orders SET amount = amount;
+SELECT pg_size_pretty(pg_current_wal_lsn() - :&#x27;before&#x27;::pg_lsn);</pre><pre class="out">UPDATE 100000
+ pg_size_pretty
+----------------
+ 24 MB</pre></div></div><div class="st"><span class="n">03</span><div><p>段文件。</p><pre class="cmd">docker exec pg ls /var/lib/postgresql/18/docker/pg_wal | head -4</pre><pre class="out">000000010000000000000001
+000000010000000000000002
+000000010000000000000003
+archive_status</pre></div></div><div class="st"><span class="n">04</span><div><p>用 pg_waldump 看 WAL 记录。</p><pre class="cmd">docker exec -u postgres pg pg_waldump -n 5 /var/lib/postgresql/18/docker/pg_wal/000000010000000000000002</pre><pre class="out">rmgr: Heap   len (rec/tot): 72/72, tx: 830, lsn: 0/02000028, desc: HOT_UPDATE off: 4 …, blkref #0: rel 1663/16384/16401 blk 12
+rmgr: Heap   len (rec/tot): 72/72, tx: 830, lsn: 0/02000070, desc: HOT_UPDATE …
+…</pre></div></div><div class="st"><span class="n">05</span><div><p>手动检查点，看检查点统计（PostgreSQL 17+ 在 pg_stat_checkpointer）。</p><pre class="cmd">CHECKPOINT;
+SELECT num_timed, num_requested, buffers_written FROM pg_stat_checkpointer;</pre><pre class="out"> num_timed | num_requested | buffers_written
+-----------+---------------+-----------------
+        14 |             3 |            2981</pre></div></div><div class="st"><span class="n">06</span><div><p>模拟崩溃：kill -9 主进程，重启后看日志中的恢复过程。</p><pre class="cmd">docker exec pg bash -c &#x27;kill -9 $(head -1 /var/lib/postgresql/18/docker/postmaster.pid)&#x27;
+docker start pg &amp;&amp; docker logs pg 2&gt;&amp;1 | tail -5</pre><pre class="out">LOG:  database system was interrupted; last known up at 2026-10-22 10:41:02
+LOG:  database system was not properly shut down; automatic recovery in progress
+LOG:  redo starts at 0/3A21F40
+LOG:  redo done at 0/3B10C28 …
+LOG:  database system is ready to accept connections</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>估算 max_wal_size</h3><p>某服务在高峰期每分钟产生约 300 MB WAL，日志里频繁出现 “checkpoints are occurring too frequently (24 seconds apart)”。希望检查点约每 15 分钟一次。给出 checkpoint_timeout 和 max_wal_size 的设置，并说明调大的代价。</p><details><summary>查看参考答案</summary><div><pre class="cmd">ALTER SYSTEM SET checkpoint_timeout = '15min';
+ALTER SYSTEM SET max_wal_size = '8GB';
+SELECT pg_reload_conf();</pre><p>15 分钟 × 300 MB ≈ 4.5 GB。max_wal_size 是两次检查点之间允许的 WAL 量的软上限（大致对应 1 + completion_target 个检查点周期），设到 8 GB 左右，让检查点主要由时间触发。收益：检查点少了，full-page writes 显著减少，WAL 量和 I/O 都下降。代价：pg_wal 需要更多磁盘空间（峰值可能超过设置）；崩溃恢复需要重放更多 WAL，恢复时间变长（重放通常比生成快，几 GB 一般在一两分钟内）。两个参数都只需 reload。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>预写规则</b>：数据页被写回磁盘之前，描述这次修改的 WAL 记录必须先落盘。提交时只需顺序写并 fsync WAL，数据页可以在之后慢慢写，随机写变顺序写。</li><li>WAL 是一串记录，位置用 <b>LSN</b>（如 <code>0/1A3C2F8</code>，字节偏移）表示，存放在 <code>pg_wal/</code> 下 16 MB 的段文件中。每个数据页头记录最后修改它的 LSN。</li><li><b>检查点</b>把所有脏页写回数据文件并记录一个位置。崩溃后从最近的检查点开始重放 WAL 到末尾，就恢复到崩溃前已提交的状态。检查点之前的 WAL 段可以回收（除非复制槽或归档还需要）。</li><li>检查点由 <code>checkpoint_timeout</code>（默认 5 min）或 WAL 量达到 <code>max_wal_size</code>（默认 1 GB）触发。<code>checkpoint_completion_target = 0.9</code> 把写入摊开。日志中频繁出现 “checkpoints are occurring too frequently” 说明 max_wal_size 太小。</li><li><b>full_page_writes</b>：检查点后某页第一次被修改时，WAL 中写入整页镜像，防止断电造成的半页写（torn page）无法恢复。这也是检查点越频繁、WAL 越多的原因。</li><li><code>synchronous_commit = off</code> 让 COMMIT 不等 WAL 刷盘：崩溃时可能丢最近几百毫秒的已提交事务，但不会损坏数据。可以按事务设置，适合可丢的日志类写入。<code>fsync = off</code> 则可能损坏整个库，生产不要用。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 09</div><a class="big" href="l09.html">缓冲区与 I/O：shared_buffers 与操作系统缓存 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l08.js"></script>
+</body></html>
