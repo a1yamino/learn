@@ -1,0 +1,74 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 20 课 · 安全一：RBAC 与 ServiceAccount</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 20 课</span><span class="sp"></span><a href="l19.html">← 第 19 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 20 课</div><h1>安全一：RBAC 与 ServiceAccount</h1>
+<p>每个发往 API Server 的请求都要回答两个问题：你是谁（认证），你能做什么（授权）。本课讲用户和 ServiceAccount 的身份、RBAC 的四种对象、Pod 里的令牌是怎么来的，以及最小权限的实际做法。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个请求的旅程</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Role、Binding 与 ServiceAccount</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：这个请求会被允许吗</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个请求的旅程</h2><div class="goal">认证、授权、准入。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Role、Binding 与 ServiceAccount</h2><div class="goal">权限怎样授予给 Pod。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：这个请求会被允许吗</h2><div class="goal">命名空间 <code>shop</code> 里有下面的 RBAC 配置。选择请求，看授权器的判断过程。</div></div></div>
+<div class="chal"><pre class="log" id="rb" style="height:auto;margin:0 0 12px;white-space:pre-wrap"></pre><div class="cmds" id="rq"></div><div class="log" id="rl" style="height:auto;min-height:90px"></div><div class="msg" id="rm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查看身份和权限。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">给一个 Pod 最小的权限，让它在集群内读取 Pod 列表。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>kind 给你的是 cluster-admin。</p><pre class="cmd">kubectl auth whoami; kubectl auth can-i &quot;*&quot; &quot;*&quot;</pre><pre class="out">ATTRIBUTE   VALUE
+Username    kubernetes-admin
+Groups      [kubeadm:cluster-admins system:authenticated]
+yes</pre></div></div><div class="st"><span class="n">02</span><div><p>新建 ServiceAccount，默认什么都不能做。</p><pre class="cmd">kubectl create ns rbac; kubectl -n rbac create sa reader
+kubectl auth can-i list pods -n rbac --as=system:serviceaccount:rbac:reader</pre><pre class="out">no</pre></div></div><div class="st"><span class="n">03</span><div><p>Role + RoleBinding。</p><pre class="cmd">kubectl -n rbac create role pod-reader --verb=get,list,watch --resource=pods
+kubectl -n rbac create rolebinding reader --role=pod-reader --serviceaccount=rbac:reader
+kubectl auth can-i list pods -n rbac --as=system:serviceaccount:rbac:reader
+kubectl auth can-i list pods -n default --as=system:serviceaccount:rbac:reader
+kubectl auth can-i delete pods -n rbac --as=system:serviceaccount:rbac:reader</pre><pre class="out">yes
+no
+no</pre></div></div><div class="st"><span class="n">04</span><div><p>在 Pod 里用挂载的令牌直接调用 API。</p><pre class="cmd">kubectl -n rbac run c --image=curlimages/curl --overrides=&#x27;{&quot;spec&quot;:{&quot;serviceAccountName&quot;:&quot;reader&quot;}}&#x27; -- sleep 3600
+kubectl -n rbac wait --for=condition=Ready pod/c
+kubectl -n rbac exec c -- sh -c &#x27;T=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token); curl -s --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H &quot;Authorization: Bearer $T&quot; https://kubernetes.default.svc/api/v1/namespaces/rbac/pods | grep -c \&quot;name\&quot;&#x27;</pre><pre class="out">2</pre></div></div><div class="st"><span class="n">05</span><div><p>越权访问返回 403。</p><pre class="cmd">kubectl -n rbac exec c -- sh -c &#x27;T=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token); curl -s --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H &quot;Authorization: Bearer $T&quot; https://kubernetes.default.svc/api/v1/namespaces/rbac/secrets | grep message&#x27;</pre><pre class="out">  &quot;message&quot;: &quot;secrets is forbidden: User \&quot;system:serviceaccount:rbac:reader\&quot; cannot list resource \&quot;secrets\&quot; in API group \&quot;\&quot; in the namespace \&quot;rbac\&quot;&quot;,</pre></div></div><div class="st"><span class="n">06</span><div><p>令牌是有时效的 JWT，绑定到这个 Pod。</p><pre class="cmd">kubectl -n rbac exec c -- cat /var/run/secrets/kubernetes.io/serviceaccount/token | cut -d. -f2 | base64 -d 2&gt;/dev/null | jq &quot;{exp, sub, pod: .\&quot;kubernetes.io\&quot;.pod.name}&quot;</pre><pre class="out">{
+  &quot;exp&quot;: 1792578521,
+  &quot;sub&quot;: &quot;system:serviceaccount:rbac:reader&quot;,
+  &quot;pod&quot;: &quot;c&quot;
+}</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>给 CI 部署账号授权</h3><p>CI 需要一个 ServiceAccount <code>deployer</code>，能在 <code>staging</code> 和 <code>prod</code> 两个命名空间里更新 Deployment 的镜像、查看 Pod 和日志，但不能读 Secret、不能 exec，也不能在其他命名空间做任何事。规则只写一份。写出命令并用 can-i 验证。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl create clusterrole deployer --verb=get,list,watch,patch,update --resource=deployments.apps
+kubectl patch clusterrole deployer --type=json -p '[{"op":"add","path":"/rules/-","value":{"apiGroups":[""],"resources":["pods","pods/log"],"verbs":["get","list","watch"]}}]'
+kubectl create sa deployer -n ci
+for ns in staging prod; do
+  kubectl -n $ns create rolebinding deployer --clusterrole=deployer --serviceaccount=ci:deployer
+done
+SA=system:serviceaccount:ci:deployer
+kubectl auth can-i patch deploy -n prod --as=$SA
+kubectl auth can-i get pods --subresource=log -n staging --as=$SA
+kubectl auth can-i get secrets -n prod --as=$SA
+kubectl auth can-i create pods/exec -n prod --as=$SA
+kubectl auth can-i patch deploy -n default --as=$SA</pre><pre class="out">yes
+yes
+no
+no
+no</pre><p>ClusterRole 只定义一次规则，用两个 <b>RoleBinding</b> 引用：权限只在这两个命名空间生效。如果用 ClusterRoleBinding 就会扩大到所有命名空间。注意：能 patch Deployment 就能修改 Pod 模板（换镜像、挂载 Secret、改 serviceAccountName），实际上可以间接读到该命名空间的 Secret。所以生产命名空间的写权限要配合准入策略（第 21 课）或 GitOps（第 23 课），只让流水线提交变更。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>请求流程：<b>认证</b>（客户端证书、OIDC 令牌、ServiceAccount 令牌）→ <b>授权</b>（RBAC）→ <b>准入</b>（第 21 课）→ 写入 etcd。Kubernetes 没有“用户”对象，人的身份来自外部（证书 CN、OIDC）。</li><li>RBAC 只有“允许”，没有“拒绝”；默认什么都不允许。规则由 <code>apiGroups</code>、<code>resources</code>、<code>verbs</code>（get、list、watch、create、update、patch、delete）组成。</li><li><b>Role</b>（命名空间内）和 <b>ClusterRole</b>（集群范围或可复用）定义权限；<b>RoleBinding</b> 和 <b>ClusterRoleBinding</b> 把权限授予用户、组或 ServiceAccount。RoleBinding 也可以引用 ClusterRole，只在本命名空间生效。</li><li><b>ServiceAccount</b> 是给 Pod 用的身份。kubelet 给 Pod 挂载一个有时效、绑定 Pod 的投射令牌（默认约 1 小时自动轮换）到 <code>/var/run/secrets/kubernetes.io/serviceaccount/</code>。不需要访问 API 的 Pod 设 <code>automountServiceAccountToken: false</code>。</li><li>危险权限：<code>secrets</code> 的 get/list、<code>pods/exec</code>、创建 Pod（可以挂载任意 SA 和 hostPath）、<code>escalate</code>/<code>bind</code>/<code>impersonate</code>、通配符 <code>*</code>。cluster-admin 只给少数人。</li><li>检查工具：<code>kubectl auth can-i</code>（可加 <code>--as</code> 模拟他人）、<code>kubectl auth whoami</code>。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 21</div><a class="big" href="l21.html">安全二：Pod Security、NetworkPolicy 与准入控制 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l20.js"></script>
+</body></html>

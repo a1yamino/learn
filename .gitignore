@@ -1,3 +1,4 @@
 manifest.json
 .publish.json
 *.manageKey
+node_modules/

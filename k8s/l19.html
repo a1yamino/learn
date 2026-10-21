@@ -1,0 +1,101 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 19 课 · CRD 与 Operator：扩展 Kubernetes API</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 19 课</span><span class="sp"></span><a href="l18.html">← 第 18 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 19 课</div><h1>CRD 与 Operator：扩展 Kubernetes API</h1>
+<p>Kubernetes 的 API 可以扩展：用 CRD 定义新的资源类型，再写一个控制器持续把它变成现实，就是 Operator。本课讲 CRD 的结构、spec 与 status 的分工、finalizer 和 ownerReference，以及用 kubebuilder / controller-runtime 写 Operator 的基本套路。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">CRD：注册一种新资源</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Operator 的 Reconcile</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：Operator 如何响应</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>CRD：注册一种新资源</h2><div class="goal">从 YAML 到 kubectl get。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Operator 的 Reconcile</h2><div class="goal">一次调和做了什么。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：Operator 如何响应</h2><div class="goal">集群里运行着一个 Database Operator。对集群做下面的操作，看 Reconcile 被触发后做了什么。</div></div></div>
+<div class="chal"><div class="cmds" id="op"></div><div class="log" id="ol" style="height:auto;min-height:110px"></div><div class="msg" id="om"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查看 CRD 和自定义资源。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">先定义 CRD，看没有控制器时的效果；再用一个 shell 脚本当作最简单的控制器。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建 CRD。</p><pre class="cmd">kubectl apply -f - &lt;&lt;EOT
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata: {name: websites.example.com}
+spec:
+  group: example.com
+  names: {kind: Website, plural: websites, singular: website, shortNames: [ws]}
+  scope: Namespaced
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources: {status: {}}
+    additionalPrinterColumns:
+    - {name: Replicas, type: integer, jsonPath: .spec.replicas}
+    - {name: Ready, type: string, jsonPath: .status.ready}
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            required: [image]
+            properties:
+              image: {type: string}
+              replicas: {type: integer, minimum: 1, maximum: 5, default: 1}
+          status:
+            type: object
+            properties: {ready: {type: string}}
+EOT
+kubectl api-resources | grep websites</pre><pre class="out">websites    ws    example.com/v1    true    Website</pre></div></div><div class="st"><span class="n">02</span><div><p>schema 校验生效。</p><pre class="cmd">kubectl apply -f - &lt;&lt;EOT
+apiVersion: example.com/v1
+kind: Website
+metadata: {name: bad}
+spec: {image: nginx, replicas: 9}
+EOT</pre><pre class="out">The Website &quot;bad&quot; is invalid: spec.replicas: Invalid value: 9: spec.replicas in body should be less than or equal to 5</pre></div></div><div class="st"><span class="n">03</span><div><p>创建一个合法的对象：存起来了，但什么也没发生。</p><pre class="cmd">kubectl apply -f - &lt;&lt;EOT
+apiVersion: example.com/v1
+kind: Website
+metadata: {name: blog}
+spec: {image: nginx:alpine, replicas: 2}
+EOT
+kubectl get ws; kubectl get deploy</pre><pre class="out">NAME   REPLICAS   READY
+blog   2
+No resources found in default namespace.</pre></div></div><div class="st"><span class="n">04</span><div><p>最简控制器：watch Website，生成 Deployment 并设置 ownerReference，再写回 status。</p><pre class="cmd">cat &gt; ctl.sh &lt;&lt;&#x27;EOT&#x27;
+kubectl get ws -w -o jsonpath=&#x27;{.metadata.name} {.metadata.uid} {.spec.image} {.spec.replicas}{&quot;\n&quot;}&#x27; |
+while read n uid img rep; do
+  kubectl create deploy $n --image=$img --replicas=$rep --dry-run=client -o json |
+  jq --arg uid $uid --arg n $n &#x27;.metadata.ownerReferences=[{apiVersion:&quot;example.com/v1&quot;,kind:&quot;Website&quot;,name:$n,uid:$uid,controller:true}]&#x27; |
+  kubectl apply -f -
+  kubectl patch ws $n --subresource=status --type=merge -p &quot;{\&quot;status\&quot;:{\&quot;ready\&quot;:\&quot;$rep\&quot;}}&quot;
+done
+EOT
+bash ctl.sh &amp;
+sleep 5; kubectl get ws,deploy</pre><pre class="out">NAME                       REPLICAS   READY
+website.example.com/blog   2          2
+
+NAME                   READY   UP-TO-DATE   AVAILABLE
+deployment.apps/blog   2/2     2            2</pre></div></div><div class="st"><span class="n">05</span><div><p>删除 CR，Deployment 被垃圾回收器级联删除。</p><pre class="cmd">kubectl delete ws blog; sleep 3; kubectl get deploy</pre><pre class="out">No resources found in default namespace.</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为什么 Deployment 被删了也没恢复</h3><p>用上面的 ctl.sh：重新创建 blog，然后手动 <code>kubectl delete deploy blog</code>。Deployment 会被重建吗？说明原因，以及真正的 Operator（controller-runtime）怎样避免这个问题。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl apply -f blog.yaml; sleep 3
+kubectl delete deploy blog; sleep 5; kubectl get deploy</pre><pre class="out">No resources found in default namespace.</pre><p>不会。脚本只 watch Website；删除 Deployment 不改变 Website，所以没有触发。这就是只对“自己关心的那类事件”反应的边沿触发问题。</p><p>controller-runtime 里用 <code>Owns(&amp;appsv1.Deployment{})</code> 同时 watch 子资源：子资源任何变化都按 ownerReference 找到所属 CR，把它放入工作队列再 Reconcile 一次。再加上定期全量重新同步（resync），即使丢事件也能最终收敛。Reconcile 本身每次都从头比对“应有的”和“现有的”，所以多触发几次也没关系。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>CRD（CustomResourceDefinition）向 API Server 注册新的类型，例如 <code>databases.example.com</code>。之后可以像内置资源一样 <code>kubectl get databases</code>，存在 etcd 中，支持 watch、RBAC。</li><li>CRD 用 OpenAPI v3 schema 校验字段；<code>subresources.status</code> 让 status 只能通过 /status 子资源修改；<code>additionalPrinterColumns</code> 控制 kubectl get 的列；可以有多个版本，用转换 webhook 互转。</li><li>只有 CRD 没有控制器，对象只是存起来的数据。<b>Operator = CRD + 控制器</b>，把领域运维知识（创建、备份、升级、故障切换）写成代码。</li><li>控制器的 Reconcile 函数应该是<b>幂等</b>的、水平触发的（第 12 课）：读取当前对象，对比实际状态，做下一步，更新 status，必要时要求稍后再次调用。</li><li><b>ownerReference</b>：Operator 创建的子资源指向 CR，删除 CR 时垃圾回收器级联删除它们。<b>finalizer</b>：删除前需要清理外部资源（如云数据库）时，控制器完成清理后移除 finalizer，对象才真正消失。</li><li>常用框架：kubebuilder / Operator SDK（Go，基于 controller-runtime）、kopf（Python）。成熟的 Operator：CloudNativePG、Strimzi（Kafka）、cert-manager、Prometheus Operator。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 20</div><a class="big" href="l20.html">安全一：RBAC 与 ServiceAccount →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l19.js"></script>
+</body></html>
