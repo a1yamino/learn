@@ -1,0 +1,23 @@
+TITLE='高可用与故障切换';DESC='有了备库，主库故障时就可以切换过去。但“谁来判断主库挂了、怎么防止两个主库同时写入、应用怎么找到新主库”才是高可用真正难的部分。本课讲手动提升备库、时间线、pg_rewind，Patroni 这类自动故障切换的工作方式，脑裂和隔离（fencing），以及 RPO / RTO 的取舍。';NEXT='分区表';MIN=60
+SUM=['<b>RPO</b>（最多丢多少数据）和 <b>RTO</b>（多久恢复服务）是设计目标。异步复制 RPO 为几秒内的事务，同步复制可以做到 0；自动故障切换的 RTO 通常是 30 秒左右。',
+'手动提升：备库上 <code>SELECT pg_promote()</code> 或 <code>pg_ctl promote</code>。提升后它切换到新的<b>时间线</b>（timeline ID 加一），WAL 段文件名的前 8 位就是时间线，历史记录在 <code>.history</code> 文件中。',
+'旧主库恢复后不能直接作为新主库的备库：它可能有新主库没有的 WAL（异步复制时丢的那部分）。用 <code>pg_rewind</code> 把它倒回分叉点再跟随新主库（需要 <code>wal_log_hints = on</code> 或数据校验和），否则只能重新 pg_basebackup。',
+'<b>脑裂</b>：网络分区时旧主库还活着并继续接受写入，同时备库被提升，两个主库各写各的，数据分叉且无法自动合并。防止它需要可靠的共识和隔离：确认旧主库已停止写入（fencing），或者让它在失去多数派时自己降级。',
+'<b>Patroni</b>：每个节点运行一个代理，通过 etcd / Consul / Kubernetes 等分布式存储竞争一个带 TTL 的 leader 锁。持有锁的是主库；主库代理无法续约时自降为只读；锁过期后由复制最及时的备库接管。配置 <code>synchronous_mode</code> 可保证不丢已提交事务。',
+'应用如何找到主库：Patroni 的 REST 接口配合 HAProxy 健康检查；Kubernetes 中由 operator（CloudNativePG 等）更新 Service；或在 libpq 连接串中列出多个主机并指定 <code>target_session_attrs=read-write</code>。切换时连接会断开，应用必须能重连和重试。']
+def secs(prac,E):
+    return [
+('一次自动故障切换','Patroni 的 leader 锁。','<div id="p1"></div>'),
+('脑裂','网络分区时两个主库。','<div id="p2"></div>'),
+('动手：故障时会发生什么','三节点 Patroni 集群（etcd 三节点）。选择一种故障，看集群的反应。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('相关命令','提升、时间线与 patronictl。','<div id="t4"></div>'),
+('在你的电脑上练习','使用第 18 课的 pg（主）和 pg2（备）。',prac([
+ ('写入一行作为标记，然后停止主库，模拟故障。','docker exec -u postgres pg psql -d shop -c "INSERT INTO accounts VALUES (\'before\', 1)"\ndocker stop pg','INSERT 0 1\npg'),
+ ('提升备库。','docker exec -u postgres pg2 psql -c "SELECT pg_promote()"\ndocker exec -u postgres pg2 psql -c "SELECT pg_is_in_recovery(), timeline_id FROM pg_control_checkpoint()"',' pg_promote\n------------\n t\n pg_is_in_recovery | timeline_id\n-------------------+-------------\n f                 |           2'),
+ ('新主库可写，数据完整。','docker exec -u postgres pg2 psql -d shop -c "INSERT INTO accounts VALUES (\'after\', 1)" -c "SELECT name FROM accounts WHERE name IN (\'before\',\'after\')"','INSERT 0 1\n  name\n--------\n before\n after'),
+ ('时间线历史文件。','docker exec pg2 cat /var/lib/postgresql/18/docker/pg_wal/00000002.history','1\t0/6000148\tno recovery target specified'),
+ ('旧主库用 pg_rewind 回退后作为新主库的备库（需要先开启 wal_log_hints 或校验和；官方镜像 18 默认开启数据校验和）。','docker run --rm --network pgnet -v pgdata:/var/lib/postgresql -u postgres postgres:18 \\\n  pg_rewind -D /var/lib/postgresql/18/docker --source-server="host=pg2 user=postgres password=pg dbname=postgres" -R -P','pg_rewind: connected to server\npg_rewind: servers diverged at WAL location 0/6000148 on timeline 1\npg_rewind: rewinding from last common checkpoint at 0/5000098 on timeline 1\npg_rewind: Done!'),
+ ('启动旧主库，它现在跟随 pg2。','docker start pg\ndocker exec -u postgres pg2 psql -c "SELECT client_addr, state FROM pg_stat_replication"',' client_addr |   state\n-------------+-----------\n 172.19.0.2  | streaming')],
+ ('设计一个 RPO = 0 的方案','业务要求：任何单点故障都不能丢已提交的订单，切换时间不超过 1 分钟；可以接受写入延迟增加几毫秒。用 Patroni 设计节点数量、同步配置和应用连接方式，并说明这个方案在什么情况下仍会丢数据或停写。',
+ '<p>三个 PostgreSQL 节点放在三个可用区，etcd 三节点（可与 PG 同机，也可独立）。Patroni 配置 <code>synchronous_mode: true</code>、<code>synchronous_node_count: 1</code>：至少一个备库同步确认，提交才返回（<code>synchronous_commit = on</code>）。Patroni 只会把<b>同步备库</b>提升为主库，因此被提升的节点一定拥有全部已提交事务。<code>ttl: 30</code>、<code>loop_wait: 10</code>，切换在 30–40 秒内完成。</p><p>应用通过 HAProxy（检查 Patroni 的 <code>/primary</code> 接口）或 Kubernetes Service 连接，连接断开后指数退避重连，事务级重试。</p><p>边界：两个备库同时不可用时，严格模式（<code>synchronous_mode_strict: true</code>）会停止写入以保证不丢数据；非严格模式则降级为异步，此时主库再故障会丢数据——这是可用性与 RPO 的取舍，要明确选择。另外，多个可用区同时失联或 etcd 失去多数派时，主库会降级为只读，写入停止。复制保护不了误删数据（DROP TABLE 会被同步到所有备库），那需要 PITR（第 23 课）。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]

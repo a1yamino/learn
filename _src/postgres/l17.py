@@ -1,0 +1,23 @@
+TITLE='锁：行锁、表锁与死锁';DESC='MVCC 让读写互不阻塞，但写和写之间、DDL 和一切之间仍然需要锁。本课讲表级锁的八种模式和冲突关系、行锁的四种强度和 SELECT … FOR UPDATE / SKIP LOCKED、锁队列为什么能让一个 ALTER TABLE 卡住全部查询、死锁如何形成与检测，以及咨询锁。';NEXT='复制：流复制与逻辑复制';MIN=65
+SUM=['<b>表级锁</b>由语句自动获取：SELECT 拿 <code>ACCESS SHARE</code>；INSERT/UPDATE/DELETE 拿 <code>ROW EXCLUSIVE</code>；<code>CREATE INDEX</code> 拿 <code>SHARE</code>（阻塞写）；<code>CREATE INDEX CONCURRENTLY</code>、VACUUM 拿 <code>SHARE UPDATE EXCLUSIVE</code>；多数 <code>ALTER TABLE</code>、<code>DROP</code>、<code>TRUNCATE</code>、<code>VACUUM FULL</code> 拿 <code>ACCESS EXCLUSIVE</code>（与一切冲突，包括 SELECT）。',
+'<b>锁队列</b>：锁请求按到达顺序排队。一个等待 ACCESS EXCLUSIVE 的 ALTER TABLE 排在长查询后面时，之后到达的所有 SELECT 都排在它后面——表看起来“锁死”。DDL 一定要设 <code>lock_timeout</code>（如 3s）并重试。',
+'<b>行锁</b>记录在元组的 xmax 和 infomask 中，不占共享内存，所以锁一亿行也没问题。强度从弱到强：<code>FOR KEY SHARE</code>（外键检查用）、<code>FOR SHARE</code>、<code>FOR NO KEY UPDATE</code>（普通 UPDATE）、<code>FOR UPDATE</code>（DELETE 或修改主键/唯一键）。等待行锁时，会话等待的是持有它的<b>事务 ID</b>。',
+'<code>SELECT … FOR UPDATE SKIP LOCKED</code> 跳过已被锁的行，多个工作进程可以并发地从同一张表领取任务而互不等待。<code>NOWAIT</code> 拿不到锁立即报错。',
+'<b>死锁</b>：T1 持有 A 等 B，T2 持有 B 等 A。等待超过 <code>deadlock_timeout</code>（1s）后检测，其中一个事务报 <code>40P01</code> 被回滚。预防：所有代码按相同顺序锁资源（例如按 id 排序后更新）；事务短小。',
+'<b>咨询锁</b> <code>pg_advisory_lock(key)</code> / <code>pg_try_advisory_xact_lock(key)</code>：由应用定义含义的锁，用于“同一时刻只能有一个实例跑这个定时任务”等场景。事务级版本在事务结束时自动释放，更安全。']
+def secs(prac,E):
+    return [
+('锁队列','一个 ALTER TABLE 如何让整张表停止服务。','<div id="p1"></div>'),
+('死锁','两个事务互相等待。','<div id="p2"></div>'),
+('动手：这两个操作冲突吗','会话 1 正在执行左边的操作（事务未结束），会话 2 尝试右边的操作。选择组合，看会话 2 是否被阻塞。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('相关命令','查看锁和阻塞关系。','<div id="t4"></div>'),
+('在你的电脑上练习','三个 psql 窗口，使用 accounts 表。',prac([
+ ('窗口 1：开启事务并查询，持有 ACCESS SHARE。','BEGIN;\nSELECT * FROM accounts;','…'),
+ ('窗口 2：ALTER TABLE 被阻塞。','ALTER TABLE accounts ADD COLUMN note text;','（等待中）'),
+ ('窗口 3：一个普通 SELECT 也被阻塞了。查看阻塞关系。','SELECT * FROM accounts;  -- 等待中\n-- 新开窗口：\nSELECT pid, pg_blocking_pids(pid), wait_event_type, left(query, 40) FROM pg_stat_activity WHERE wait_event_type = \'Lock\';','  pid  | pg_blocking_pids | wait_event_type |                   left\n-------+------------------+-----------------+------------------------------------------\n  2012 | {2001}           | Lock            | ALTER TABLE accounts ADD COLUMN note text\n  2023 | {2012}           | Lock            | SELECT * FROM accounts;'),
+ ('正确做法：DDL 加 lock_timeout。窗口 1 先 COMMIT 释放，再重做。','-- 窗口 2\nSET lock_timeout = \'2s\';\nALTER TABLE accounts ADD COLUMN note text;','ERROR:  canceling statement due to lock timeout'),
+ ('制造死锁：两个窗口交叉更新。','-- 窗口 1\nBEGIN; UPDATE accounts SET balance = balance - 1 WHERE name = \'A\';\n-- 窗口 2\nBEGIN; UPDATE accounts SET balance = balance - 1 WHERE name = \'B\';\n-- 窗口 1\nUPDATE accounts SET balance = balance + 1 WHERE name = \'B\';\n-- 窗口 2\nUPDATE accounts SET balance = balance + 1 WHERE name = \'A\';','ERROR:  deadlock detected\nDETAIL:  Process 2012 waits for ShareLock on transaction 1043; blocked by process 2001.\nProcess 2001 waits for ShareLock on transaction 1044; blocked by process 2012.\nHINT:  See server log for query details.'),
+ ('SKIP LOCKED 任务队列：两个窗口各领一个任务。','CREATE TABLE jobs (id serial PRIMARY KEY, done bool DEFAULT false);\nINSERT INTO jobs (done) SELECT false FROM generate_series(1, 5);\n-- 两个窗口都执行：\nBEGIN;\nSELECT id FROM jobs WHERE NOT done ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED;',' id\n----\n  1\n-- 另一个窗口：\n id\n----\n  2')],
+ ('写一个可靠的任务领取','用 jobs 表实现任务队列：多个 worker 并发领取，每个任务只被一个 worker 执行；worker 崩溃时任务不能永远卡在“处理中”。写出领取任务的 SQL，并说明锁的持有方式。',
+ '<pre class="cmd">-- 方案 A：在一个事务中领取并处理（任务短）\nBEGIN;\nSELECT id, payload FROM jobs WHERE status = \'queued\'\nORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED;\n-- 处理……\nUPDATE jobs SET status = \'done\' WHERE id = $1;\nCOMMIT;\n\n-- 方案 B：领取后立即提交，用租约（任务长）\nUPDATE jobs SET status = \'running\', locked_until = now() + interval \'5 min\', worker = $w\nWHERE id = (SELECT id FROM jobs\n            WHERE status = \'queued\' OR (status = \'running\' AND locked_until &lt; now())\n            ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)\nRETURNING id, payload;</pre><p>方案 A：行锁随事务持有，worker 崩溃时连接断开、事务回滚，锁自动释放，任务回到可领取状态。缺点是处理期间一直占着一个事务，长任务会阻止 VACUUM，不适合超过几秒的任务。</p><p>方案 B：行锁只在领取的那条 UPDATE 中持有，之后靠 <code>locked_until</code> 租约；worker 定期续约，崩溃后租约过期，其他 worker 可以重新领取。需要任务本身幂等，因为租约过期时原 worker 可能仍在运行。为 <code>(status, id)</code> 建索引，并定期清理已完成的任务，否则队列表膨胀后领取会越来越慢。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
