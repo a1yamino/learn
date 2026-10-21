@@ -1,0 +1,118 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 27 课 · 综合项目：从零到生产</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 27 课</span><span class="sp"></span><a href="l26.html">← 第 26 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 27 课</div><h1>综合项目：从零到生产</h1>
+<p>把前 26 课串起来：在 kind 集群上，从一个空集群开始，把一个三层应用（web、api、PostgreSQL）部署成接近生产的形态：命名空间与配额、配置与密钥、有状态数据库、Gateway 入口、探针与资源、自动扩缩、PDB 与拓扑分布、Pod 安全与网络策略、最小 RBAC、GitOps 交付、监控告警和备份，最后做一次故障演练。约 120 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">目标架构</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">上线顺序</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：生产就绪检查</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上完成项目</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>目标架构</h2><div class="goal">这个项目最终会有哪些部分，分别对应哪一课。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>上线顺序</h2><div class="goal">按依赖关系分阶段，每一阶段都可以验证。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：生产就绪检查</h2><div class="goal">下面是项目 Deployment api 的当前配置要点。逐项检查，勾选已经满足的，看还缺什么、各自会造成什么后果。</div></div></div>
+<div class="chal"><div id="rc"></div><div class="msg" id="rm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">检查整个项目状态的命令。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上完成项目</h2><div class="goal">在 3 节点 kind 集群中完成。每一步都给出验证命令和预期输出。完整的清单请按前面各课的示例自己编写，这正是练习的目的。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>阶段 1：集群与命名空间。创建 shop 命名空间，开启 restricted、配额和默认拒绝。</p><pre class="cmd">kubectl create ns shop
+kubectl label ns shop pod-security.kubernetes.io/enforce=restricted
+kubectl -n shop create quota shop --hard=requests.cpu=4,requests.memory=8Gi,limits.memory=16Gi,pods=40
+kubectl -n shop apply -f - &lt;&lt;EOT
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny}
+spec: {podSelector: {}, policyTypes: [Ingress, Egress]}
+EOT
+kubectl get ns shop --show-labels; kubectl -n shop get quota,netpol</pre><pre class="out">NAME   STATUS   AGE   LABELS
+shop   Active   5s    kubernetes.io/metadata.name=shop,pod-security.kubernetes.io/enforce=restricted
+NAME                 AGE   REQUEST                                              LIMIT
+resourcequota/shop   3s    pods: 0/40, requests.cpu: 0/4, requests.memory: 0/8Gi   limits.memory: 0/16Gi
+NAME                                           POD-SELECTOR   AGE
+networkpolicy.networking.k8s.io/default-deny   &lt;none&gt;         2s</pre></div></div><div class="st"><span class="n">02</span><div><p>阶段 2：数据库。安装 CloudNativePG Operator，创建 3 实例集群（第 19、17 课）。</p><pre class="cmd">kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.27/releases/cnpg-1.27.0.yaml
+kubectl -n cnpg-system rollout status deploy/cnpg-controller-manager
+kubectl -n shop apply -f - &lt;&lt;EOT
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata: {name: db}
+spec:
+  instances: 3
+  storage: {size: 1Gi}
+EOT
+kubectl -n shop wait --for=condition=Ready cluster/db --timeout=300s
+kubectl -n shop get pods -l cnpg.io/cluster=db -L role</pre><pre class="out">cluster.postgresql.cnpg.io/db condition met
+NAME   READY   STATUS    ROLE
+db-1   1/1     Running   primary
+db-2   1/1     Running   replica
+db-3   1/1     Running   replica</pre></div></div><div class="st"><span class="n">03</span><div><p>放行 api → db 和 DNS，以及 Operator → db（第 21 课）。</p><pre class="cmd">kubectl -n shop apply -f netpol.yaml   # allow-dns、api-to-db、db-from-api、db-from-operator、db-replication
+kubectl -n shop get netpol -o name</pre><pre class="out">networkpolicy.networking.k8s.io/allow-dns
+networkpolicy.networking.k8s.io/api-to-db
+networkpolicy.networking.k8s.io/db-from-api
+networkpolicy.networking.k8s.io/db-from-operator
+networkpolicy.networking.k8s.io/db-replication
+networkpolicy.networking.k8s.io/default-deny</pre></div></div><div class="st"><span class="n">04</span><div><p>阶段 3：应用。用 Kustomize 部署 api 和 web（base + overlays/prod），满足 restricted、带探针、requests/limits、3 副本、拓扑分布、PDB、HPA。数据库凭证引用 Operator 生成的 Secret db-app。</p><pre class="cmd">kubectl apply -k deploy/overlays/prod
+kubectl -n shop rollout status deploy/api &amp;&amp; kubectl -n shop rollout status deploy/web
+kubectl -n shop get deploy,hpa,pdb</pre><pre class="out">deployment.apps/api   3/3   3   3
+deployment.apps/web   3/3   3   3
+NAME                                      REFERENCE        TARGETS       MINPODS   MAXPODS   REPLICAS
+horizontalpodautoscaler.autoscaling/api   Deployment/api   cpu: 8%/60%   3         10        3
+NAME                             MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS
+poddisruptionbudget.policy/api   N/A             1                 1
+poddisruptionbudget.policy/web   N/A             1                 1</pre></div></div><div class="st"><span class="n">05</span><div><p>阶段 4：入口。安装 Traefik 作为 Gateway API 实现，创建 Gateway 和 HTTPRoute（第 8 课）。</p><pre class="cmd">kubectl get gateway,httproute -n shop
+curl -s -H &quot;Host: shop.localtest.me&quot; localhost:8080/api/health</pre><pre class="out">NAME                                     CLASS     ADDRESS      PROGRAMMED
+gateway.gateway.networking.k8s.io/shop   traefik   172.18.0.5   True
+NAME                                       HOSTNAMES
+httproute.gateway.networking.k8s.io/shop   [&quot;shop.localtest.me&quot;]
+{&quot;status&quot;:&quot;ok&quot;,&quot;db&quot;:&quot;ok&quot;}</pre></div></div><div class="st"><span class="n">06</span><div><p>阶段 5：交付与可观测。把 deploy/ 推到 Git，交给 Argo CD 管理；安装 kube-prometheus-stack，添加 ServiceMonitor 和第 24 课的告警规则（第 23、24 课）。</p><pre class="cmd">kubectl -n argocd get application shop
+kubectl -n shop get servicemonitor,prometheusrule</pre><pre class="out">NAME   SYNC STATUS   HEALTH STATUS
+shop   Synced        Healthy
+NAME                                       AGE
+servicemonitor.monitoring.coreos.com/api   1m
+NAME                                            AGE
+prometheusrule.monitoring.coreos.com/api-errors 1m</pre></div></div><div class="st"><span class="n">07</span><div><p>阶段 6：备份。给数据库配置定时备份，并在另一个命名空间恢复验证（第 26 课）。</p><pre class="cmd">kubectl -n shop get scheduledbackup,backup
+kubectl -n shop-restore get cluster db-restore</pre><pre class="out">NAME                                         AGE
+scheduledbackup.postgresql.cnpg.io/nightly   1h
+NAME                                              PHASE
+backup.postgresql.cnpg.io/nightly-20261021000000   completed
+NAME         INSTANCES   READY   STATUS
+db-restore   1           1       Cluster in healthy state</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>故障演练</h3><p>对完成的系统依次执行下面五个演练，每个演练前写下你预期会发生什么，再执行并对比：① 删除数据库 primary Pod；② drain 运行着 2 个 api 副本的节点；③ 发布一个 readiness 永远失败的 api 版本；④ 手动 <code>kubectl scale deploy/web --replicas=1</code>；⑤ 删除 allow-dns 网络策略。每项写出你观察到的现象、恢复由谁完成、用户是否感知。</p><details><summary>查看参考答案</summary><div><pre class="out">① kubectl -n shop delete pod db-1
+   → CNPG 在数秒内把一个 replica 提升为 primary，Service db-rw 指向新 primary；api 的连接断开一次后重连
+   → 恢复者：Operator；用户：可能有几秒写入错误（应用需要重试）
+② kubectl drain learn-worker --ignore-daemonsets --delete-emptydir-data
+   → PDB 限制一次只驱逐 1 个 api；拓扑分布让新副本落到其他节点；db 的 PDB 同样生效
+   → 恢复者：Deployment + 调度器；用户：无感知
+③ git commit（镜像 api:broken）→ Argo CD 同步
+   → maxUnavailable: 0，新 Pod 不就绪，旧 Pod 保留；rollout 停止，ProgressDeadlineExceeded；Argo CD Health: Degraded
+   → 恢复者：人（git revert）；用户：无感知
+④ kubectl -n shop scale deploy/web --replicas=1
+   → Argo CD selfHeal 改回 Git 中的值（如果 Git 中省略了 replicas、由 HPA 管理，则 HPA 会把副本恢复到 minReplicas）
+   → 用户：短时间容量下降
+⑤ kubectl -n shop delete netpol allow-dns
+   → 新建立的连接全部因 DNS 失败而报错；已建立的连接还在
+   → Argo CD 检测到缺失并重新创建（selfHeal）；告警 ApiHighErrorRate 可能触发
+   → 用户：几十秒内部分请求失败</pre><p>演练的价值在于“预期”和“实际”的差异：每一个出乎意料的现象都是一个尚未被处理的风险。把结论写进运维手册（runbook），并把能自动化的检查加入 CI 或策略引擎。到这里，你已经亲手搭出了一个接近生产标准的 Kubernetes 应用，并验证了它在常见故障下的表现。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">综合前面各课的知识。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>生产就绪不是某个功能，而是一组检查项：每个工作负载都有 requests/limits、探针、多副本与分布、PDB；每个命名空间都有 Pod 安全级别、默认拒绝的网络策略和配额。</li><li>所有内容都在 Git 中声明（Kustomize base + overlay），由 GitOps 控制器同步；集群里的手动修改应当被视为故障。</li><li>有状态部分（数据库）要么交给成熟的 Operator（如 CloudNativePG），要么接受它的运维成本：复制、备份、升级、故障切换都要有人负责。</li><li>可观测性先于上线：至少有错误率、延迟、饱和度的仪表板，以及基于症状的告警。</li><li>备份必须恢复演练过；升级必须在类似生产的环境里先做一遍。</li><li>最后一步永远是故障演练：删 Pod、drain 节点、断开数据库、发布坏版本，确认系统和人都按预期反应。</li></ol></section>
+<footer class="endnav"><div class="k">课程完成</div><a class="big" href="index.html">课程目录 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l27.js"></script>
+</body></html>
