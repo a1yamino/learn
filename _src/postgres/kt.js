@@ -2,7 +2,7 @@
 const puppeteer=require('puppeteer-core');const fs=require('fs');
 const [,,BASE,...NS]=process.argv;const OUT='/workspace/shots/postgres';fs.mkdirSync(OUT,{recursive:true});
 const CH=['/usr/bin/chromium','/usr/bin/chromium-browser','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(f=>fs.existsSync(f));
-const ACT={};
+const ACT={'01':async g=>{await g.evaluate(()=>{document.querySelector('#cn [data-v="su"]').click();document.querySelector('#cn [data-v="idle"]').click();document.querySelector('#cn [data-v="idle"]').click()})},'02':async g=>{await g.evaluate(()=>document.querySelectorAll('#ins .btn')[4].click())}};
 (async()=>{const br=await puppeteer.launch({executablePath:CH,args:['--no-sandbox']});const errors=[];
 for(const n of NS)for(const [m,vp] of [['d',{width:1024,height:640}],['m',{width:390,height:800,isMobile:true,deviceScaleFactor:2}]]){
  const g=await br.newPage();await g.setViewport(vp);g.on('pageerror',e=>errors.push(n+m+' '+e.message));g.on('console',c=>{if(c.type()==='error')errors.push(n+m+' console '+c.text())});
