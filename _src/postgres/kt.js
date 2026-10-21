@@ -10,7 +10,7 @@ for(const n of NS)for(const [m,vp] of [['d',{width:1024,height:640}],['m',{width
  const at=async(sel,name,w=300)=>{await g.evaluate(s=>document.querySelector(s).scrollIntoView({block:'start'}),sel);await new Promise(r=>setTimeout(r,w));await g.screenshot({path:`${OUT}/l${n}-${m}-${name}.png`})};
  await g.screenshot({path:`${OUT}/l${n}-${m}-00-top.png`});
  for(const id of ['p1','p2']){if(!await g.$('#'+id+' *'))errors.push(n+m+' empty '+id);await at('#'+id,id==='p1'?'01-anim':'02-anim',4000)}
- if(ACT[n])await ACT[n](g);await at('#s3 .chal','03-hands',400);
+ if(ACT[n])await ACT[n](g);else await g.evaluate(()=>{const b=document.querySelectorAll('#s3 .chal .btn');b[1]&&b[1].click()});await at('#s3 .chal','03-hands',400);
  await g.evaluate(()=>{const b=document.querySelector('#t4 button, #t4 .cmd, #t4 [data-i]');b&&b.click()});await at('#t4','05-term',300);
  await g.evaluate(()=>{document.querySelectorAll('details').forEach(d=>d.open=true)});await at('#s5 .prac','06-practice',200);await at('#s5 .task2','07-challenge',200);
  await g.evaluate(()=>{document.querySelectorAll('#qs button').forEach(b=>b.click())});await at('#qs','08-quiz',200);
