@@ -1,0 +1,23 @@
+TITLE='Helm 与 Kustomize';DESC='真实应用有十几个 YAML 文件，还要部署到多个环境，每个环境只差几个值。本课讲两种主流做法：Helm 用模板和 values 生成清单并管理发布版本；Kustomize 在一份基础清单上叠加补丁，kubectl 内置支持。';NEXT='GitOps 与 CI/CD';MIN=55
+SUM=['<b>Helm chart</b>：<code>Chart.yaml</code>（名称、版本）、<code>values.yaml</code>（默认值）、<code>templates/</code>（Go 模板）。<code>helm install</code> 渲染模板并创建一个 <b>release</b>，状态存在所在命名空间的 Secret 中。',
+'覆盖值：<code>-f values-prod.yaml</code>（多个 -f 时后面的优先）、<code>--set image.tag=1.4.3</code>（优先级最高）。<code>helm template</code> 只渲染不安装，<code>helm diff</code> 插件预览变更。',
+'<code>helm upgrade --install</code> 每次产生新的 revision；<code>helm rollback</code> 回到某个 revision（本身也是一个新 revision）。crds/ 目录里的 CRD 只在首次安装时创建，不会升级，需要单独处理。',
+'<b>Kustomize</b>：<code>base/</code> 放通用清单，<code>overlays/prod/</code> 的 kustomization.yaml 引用 base，再加补丁（patches）、改镜像（images）、加前缀、生成 ConfigMap（configMapGenerator 的名字带内容哈希，内容变了会触发滚动更新）。',
+'<code>kubectl apply -k overlays/prod</code> 应用，<code>kubectl kustomize</code> 只渲染。Kustomize 不用模板，输入输出都是合法的 YAML；它不记录发布历史。',
+'怎么选：分发给别人安装的软件（数据库、网关、监控）通常用 Helm；自己团队的应用在多个环境间差异小时，Kustomize 更直观。两者也可以结合：用 Kustomize 修改 Helm 渲染的结果。']
+def secs(prac,E):
+    return [
+('Helm：从模板到 release','install、upgrade、rollback 发生了什么。','<div id="p1"></div>'),
+('Kustomize：base 加 overlay','不用模板，用补丁叠加。','<div id="p2"></div>'),
+('动手：值从哪里来','一个 chart 的模板片段和默认值如下。选择安装命令，看渲染结果和每个值的来源。','<div class="chal"><pre class="log" id="ht" style="height:auto;margin:0 0 12px;white-space:pre-wrap"></pre><div class="cmds" id="hv"></div><pre class="log" id="ho" style="height:auto;min-height:120px;white-space:pre-wrap"></pre><div class="msg" id="hm"></div></div>'),
+('相关命令','日常使用 Helm 和 Kustomize。','<div id="t4"></div>'),
+('在你的电脑上练习','安装 Helm（<code>brew install helm</code> 或从 GitHub Releases 下载）；Kustomize 已内置在 kubectl 中。',prac([
+ ('创建一个 chart 骨架。','helm create web\nls web web/templates','web:\nChart.yaml  charts  templates  values.yaml\n\nweb/templates:\nNOTES.txt  _helpers.tpl  deployment.yaml  hpa.yaml  ingress.yaml  service.yaml  serviceaccount.yaml  tests'),
+ ('只渲染，看生成的清单。','helm template demo ./web --set replicaCount=3 | grep -E "^kind:|replicas:"','kind: ServiceAccount\nkind: Service\nkind: Deployment\n  replicas: 3'),
+ ('安装并升级，产生两个 revision。','helm install demo ./web\nhelm upgrade demo ./web --set image.tag=1.27-alpine\nhelm history demo','REVISION  STATUS      CHART      DESCRIPTION\n1         superseded  web-0.1.0  Install complete\n2         deployed    web-0.1.0  Upgrade complete'),
+ ('回滚，以及 release 存在哪里。','helm rollback demo 1\nkubectl get secrets -l owner=helm','Rollback was a success! Happy Helming!\nNAME                         TYPE                 DATA\nsh.helm.release.v1.demo.v1   helm.sh/release.v1   1\nsh.helm.release.v1.demo.v2   helm.sh/release.v1   1\nsh.helm.release.v1.demo.v3   helm.sh/release.v1   1'),
+ ('Kustomize：base 与 prod overlay。','mkdir -p kz/base kz/prod\nkubectl create deploy api --image=nginx:1.27-alpine --dry-run=client -o yaml > kz/base/deploy.yaml\ncat > kz/base/kustomization.yaml <<EOT\nresources: [deploy.yaml]\nEOT\ncat > kz/prod/kustomization.yaml <<EOT\nresources: [../base]\nnamePrefix: prod-\nlabels: [{pairs: {env: prod}}]\nimages: [{name: nginx, newTag: 1.27.3-alpine}]\nreplicas: [{name: api, count: 4}]\nconfigMapGenerator: [{name: api-config, literals: [LOG_LEVEL=warn]}]\nEOT\nkubectl kustomize kz/prod | grep -E "name:|image:|replicas:|env:"','    env: prod\n  name: prod-api-config-5k7f2g8m9t\n    env: prod\n  name: prod-api\n  replicas: 4\n        image: nginx:1.27.3-alpine'),
+ ('应用，并清理 Helm release。','kubectl apply -k kz/prod\nhelm uninstall demo','configmap/prod-api-config-5k7f2g8m9t created\ndeployment.apps/prod-api created\nrelease "demo" uninstalled')],
+ ('给 overlay 加补丁','在上面的 prod overlay 里，给 api 容器加上 requests（cpu 200m、memory 256Mi）和来自 api-config 的环境变量。用补丁实现，不修改 base。之后改了 literals 再 apply，为什么 Pod 会自动滚动更新？',
+ '<pre class="cmd">cat > kz/prod/patch.yaml <<EOT\napiVersion: apps/v1\nkind: Deployment\nmetadata: {name: api}\nspec:\n  template:\n    spec:\n      containers:\n      - name: nginx\n        resources: {requests: {cpu: 200m, memory: 256Mi}}\n        envFrom: [{configMapRef: {name: api-config}}]\nEOT\necho "patches: [{path: patch.yaml}]" >> kz/prod/kustomization.yaml\nkubectl kustomize kz/prod | grep -A1 configMapRef</pre><pre class="out">        - configMapRef:\n            name: prod-api-config-5k7f2g8m9t</pre><p>补丁按名字匹配 base 中的 Deployment 和容器，只合并写出的字段。补丁里写的是原名 api 和 api-config，Kustomize 会自动把引用改成加了前缀和哈希的名字。configMapGenerator 的名字带内容哈希：literals 变了，名字就变了，Deployment 的 Pod 模板引用也随之变化，于是触发滚动更新。直接修改一个普通 ConfigMap 则不会重启 Pod（第 6 课）。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
