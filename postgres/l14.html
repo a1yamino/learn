@@ -1,0 +1,96 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 14 课 · 事务隔离级别</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 14 课</span><span class="sp"></span><a href="l13.html">← 第 13 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 14 课</div><h1>事务隔离级别</h1>
+<p>多个事务同时读写同一份数据时会出现哪些异常，SQL 标准用四个隔离级别描述能防止哪些异常。本课讲 PostgreSQL 实际提供的三个级别——READ COMMITTED、REPEATABLE READ、SERIALIZABLE——各自看到的数据是什么样、写冲突怎样处理、需要应用做什么，以及丢失更新和写偏斜这两个最常见的并发 bug。约 65 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">丢失更新</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">写偏斜</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：在这个隔离级别下会怎样</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>丢失更新</h2><div class="goal">两个事务读同一个值、各自计算后写回。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>写偏斜</h2><div class="goal">两个事务都检查了条件，都成功了，条件却被破坏。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：在这个隔离级别下会怎样</h2><div class="goal">两个会话按同样的时间顺序执行。选择场景和隔离级别，看每一步的结果。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">设置与查看隔离级别。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">打开两个 psql 窗口，使用第 5 课的 accounts 表（A=100、B=100）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>READ COMMITTED：窗口 1 开启事务读一次。</p><pre class="cmd">-- 窗口 1
+BEGIN;
+SELECT balance FROM accounts WHERE name = &#x27;A&#x27;;</pre><pre class="out"> balance
+---------
+     100</pre></div></div><div class="st"><span class="n">02</span><div><p>窗口 2 修改并提交，窗口 1 再读：看到了新值。</p><pre class="cmd">-- 窗口 2
+UPDATE accounts SET balance = 50 WHERE name = &#x27;A&#x27;;
+-- 窗口 1
+SELECT balance FROM accounts WHERE name = &#x27;A&#x27;;
+COMMIT;</pre><pre class="out"> balance
+---------
+      50</pre></div></div><div class="st"><span class="n">03</span><div><p>REPEATABLE READ：窗口 1 的两次读取一致。</p><pre class="cmd">-- 窗口 1
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT balance FROM accounts WHERE name = &#x27;A&#x27;;
+-- 窗口 2
+UPDATE accounts SET balance = 80 WHERE name = &#x27;A&#x27;;
+-- 窗口 1
+SELECT balance FROM accounts WHERE name = &#x27;A&#x27;;</pre><pre class="out"> balance
+---------
+      50
+ balance
+---------
+      50</pre></div></div><div class="st"><span class="n">04</span><div><p>窗口 1 再修改同一行：序列化失败。</p><pre class="cmd">-- 窗口 1
+UPDATE accounts SET balance = balance - 10 WHERE name = &#x27;A&#x27;;
+ROLLBACK;</pre><pre class="out">ERROR:  could not serialize access due to concurrent update
+ROLLBACK</pre></div></div><div class="st"><span class="n">05</span><div><p>写偏斜：值班表要求至少一人在班。两个窗口用 SERIALIZABLE。</p><pre class="cmd">CREATE TABLE oncall (doctor text PRIMARY KEY, on_duty bool);
+INSERT INTO oncall VALUES (&#x27;alice&#x27;, true), (&#x27;bob&#x27;, true);
+-- 窗口 1 和 窗口 2 都执行：
+BEGIN ISOLATION LEVEL SERIALIZABLE;
+SELECT count(*) FROM oncall WHERE on_duty;   -- 2，可以请假
+-- 窗口 1
+UPDATE oncall SET on_duty = false WHERE doctor = &#x27;alice&#x27;;
+-- 窗口 2
+UPDATE oncall SET on_duty = false WHERE doctor = &#x27;bob&#x27;;
+-- 窗口 1
+COMMIT;
+-- 窗口 2
+COMMIT;</pre><pre class="out">COMMIT
+ERROR:  could not serialize access due to read/write dependencies among transactions
+DETAIL:  Reason code: Canceled on identification as a pivot, during commit attempt.
+HINT:  The transaction might succeed if retried.</pre></div></div><div class="st"><span class="n">06</span><div><p>同样的步骤用 REPEATABLE READ：两个都提交，没有人值班了。</p><pre class="cmd">SELECT * FROM oncall;</pre><pre class="out"> doctor | on_duty
+--------+---------
+ alice  | f
+ bob    | f</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>修复库存扣减</h3><p>库存扣减代码：<code>SELECT stock FROM items WHERE id = $1</code>，应用里判断 <code>stock &gt;= qty</code>，然后 <code>UPDATE items SET stock = $new WHERE id = $1</code>，<code>$new = stock - qty</code>。高峰期出现超卖。说明在 READ COMMITTED 下为什么会超卖，给出至少两种正确写法并比较。</p><details><summary>查看参考答案</summary><div><p>两个请求同时 SELECT 到 stock = 1，都判断通过，都写回 0：卖出 2 件，只扣了 1 件（丢失更新）。第二个 UPDATE 虽然等了第一个，但写回的是应用算好的常量 0，而不是基于最新值计算。</p><pre class="cmd">-- 写法 1：原子条件更新（推荐）
+UPDATE items SET stock = stock - $2 WHERE id = $1 AND stock &gt;= $2;
+-- 受影响行数为 0 表示库存不足
+
+-- 写法 2：先锁行再判断
+BEGIN;
+SELECT stock FROM items WHERE id = $1 FOR UPDATE;
+-- 应用判断后
+UPDATE items SET stock = stock - $2 WHERE id = $1;
+COMMIT;
+
+-- 写法 3：REPEATABLE READ / SERIALIZABLE + 重试 40001</pre><p>写法 1 一条语句完成，行锁只持有一瞬间，并发最好；配合 <code>CHECK (stock &gt;= 0)</code> 兜底。写法 2 适合判断逻辑复杂、要在应用里做的情况，代价是锁持有时间更长，热门商品会排队。写法 3 不需要显式锁，但冲突时要重试，热点行上重试率很高，不适合这里。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>READ COMMITTED</b>（默认）：<b>每条语句</b>开始时取一个快照，只看到在此之前已提交的数据。同一事务内两次 SELECT 可能看到不同结果（不可重复读、幻读）。</li><li>READ COMMITTED 下 UPDATE/DELETE 遇到被并发事务修改的行，会等待对方结束；对方提交后，<b>重新读取该行最新版本并重新检查 WHERE</b>，满足就基于新版本修改。所以 <code>SET x = x + 1</code> 不会丢失更新，但“先 SELECT 到应用、计算后再 UPDATE 写回值”会。</li><li><b>REPEATABLE READ</b>：<b>整个事务</b>使用第一条语句时取的快照，读到的数据不会变（PostgreSQL 的实现也防住了幻读）。如果要修改的行已被并发事务修改并提交，报 <code>40001 could not serialize access due to concurrent update</code>，应用需要重试整个事务。</li><li><b>SERIALIZABLE</b>：在 REPEATABLE READ 的基础上用 SSI（可串行化快照隔离）跟踪读写依赖，保证结果等价于某种串行执行顺序，能检测<b>写偏斜</b>（两个事务各自读到对方会修改的数据、各写各的行）。有冲突时其中一个事务报 40001。</li><li>READ UNCOMMITTED 在 PostgreSQL 中等同于 READ COMMITTED，不存在脏读。</li><li>选择建议：大部分 OLTP 用 READ COMMITTED，配合原子 UPDATE、<code>SELECT … FOR UPDATE</code>（第 17 课）或约束；需要一致的多语句读（报表、导出）用 REPEATABLE READ；业务规则跨多行且难以用锁表达时用 SERIALIZABLE，并在应用层实现重试。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 15</div><a class="big" href="l15.html">MVCC：元组版本与快照可见性 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l14.js"></script>
+</body></html>
