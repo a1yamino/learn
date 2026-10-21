@@ -2,7 +2,7 @@
 const puppeteer=require('puppeteer-core');const fs=require('fs');
 const [,,BASE,...NS]=process.argv;const OUT='/workspace/shots/k8s';fs.mkdirSync(OUT,{recursive:true});
 const CH=['/usr/bin/chromium','/usr/bin/chromium-browser','/usr/bin/google-chrome','/opt/google/chrome/chrome'].find(f=>fs.existsSync(f));
-const ACT={'19':async g=>{await g.evaluate(()=>document.querySelectorAll('#op .btn').forEach(b=>b.click()))},'20':async g=>{await g.evaluate(()=>document.querySelectorAll('#rq .btn').forEach(b=>b.click()))}};
+const ACT={'21':async g=>{await g.evaluate(()=>document.querySelectorAll('#np .btn').forEach(b=>b.click()))},'22':async g=>{await g.evaluate(()=>document.querySelectorAll('#hv .btn')[4].click())},'19':async g=>{await g.evaluate(()=>document.querySelectorAll('#op .btn').forEach(b=>b.click()))},'20':async g=>{await g.evaluate(()=>document.querySelectorAll('#rq .btn').forEach(b=>b.click()))}};
 (async()=>{const br=await puppeteer.launch({executablePath:CH,args:['--no-sandbox']});const errors=[];
 for(const n of NS)for(const [m,vp] of [['d',{width:1024,height:640}],['m',{width:390,height:800,isMobile:true,deviceScaleFactor:2}]]){
  const g=await br.newPage();await g.setViewport(vp);g.on('pageerror',e=>errors.push(n+m+' '+e.message));g.on('console',c=>{if(c.type()==='error')errors.push(n+m+' console '+c.text())});
