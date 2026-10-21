@@ -1,6 +1,6 @@
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker 第 2 课：容器生命周期与核心命令</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/common.js"></script></head><body><div id="rp"></div><div class="topbar"><a href="index.html">🏠 目录</a><a href="l01.html">← 上一课</a><span class="ttl">第 2/12 课 · 容器生命周期与核心命令</span><div class="dots"><i class="done"></i><i class="on"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><a href="l03.html">下一课 →</a></div><style>
 .sm{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center;margin:14px 0}
-.st8{padding:10px 16px;border-radius:30px;border:2px solid var(--bd);font-weight:600;transition:.3s;min-width:96px;text-align:center}
+.st8{padding:10px 16px;border-radius:30px;border:2px solid var(--bd);font-weight:600;transition:transform 250ms var(--ease-out),opacity 250ms var(--ease-out),border-color 200ms ease,box-shadow 200ms ease,background-color 200ms ease;min-width:96px;text-align:center}
 .st8.cur{transform:scale(1.12);box-shadow:0 0 18px var(--glow,#2496ed);border-color:var(--glow,#2496ed)}
 .arr{color:var(--mu)}
 .s-created{--glow:#8b949e}.s-running{--glow:#3fb950}.s-paused{--glow:#d29922}.s-exited{--glow:#f85149}.s-removed{--glow:#6e7681}
@@ -9,7 +9,7 @@
 .cin{display:flex;gap:6px;margin-top:6px}.cin input{flex:1;background:#010409;color:#e6edf3;border:1px solid var(--bd);border-radius:8px;padding:9px;font:14px ui-monospace,monospace}
 .chips button{font:12px ui-monospace,monospace;padding:5px 9px;background:transparent;color:var(--tx);border:1px solid var(--bd)}
 #board{display:flex;flex-wrap:wrap;gap:10px;min-height:70px;margin-top:10px}
-.cc{border:2px solid var(--bd);border-radius:10px;padding:8px 12px;font-size:13px;min-width:150px;animation:pop .4s;transition:.3s}
+.cc{border:2px solid var(--bd);border-radius:10px;padding:8px 12px;font-size:13px;min-width:150px;animation:pop .4s;transition:transform 250ms var(--ease-out),opacity 250ms var(--ease-out),border-color 200ms ease,box-shadow 200ms ease,background-color 200ms ease}
 .cc.running{border-color:#3fb950}.cc.paused{border-color:#d29922}.cc.exited{border-color:#f85149;opacity:.7}.cc.created{border-color:#8b949e}
 .flag{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .tabs button{background:transparent;color:var(--tx);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
@@ -186,4 +186,4 @@ if(done==Q.length)score.innerHTML=`得分 <b>${sc}/${Q.length}</b> ${sc==Q.lengt
 const fb=document.createElement('div');fb.className='fb';d.appendChild(fb);quiz.appendChild(d)});
 </script>
 
-<script>addEventListener('scroll',()=>{const h=document.documentElement;document.getElementById('rp').style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%'})</script></body></html>
+</body></html>

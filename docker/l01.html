@@ -33,13 +33,14 @@
 <div class="box">🧱 <b>镜像</b> ≈ 类（Class）<br><span class="mu">只读的模板，由多层<b>只读层</b>叠成。每层是文件系统的一次变更。</span></div>
 <div class="box">🏃 <b>容器</b> ≈ 实例（Object）<br><span class="mu">镜像 + 顶上一层<b>可写层</b>，然后作为进程跑起来。</span></div>
 </div>
-<p>机制：多个容器<b>共享同一个镜像的只读层</b>（不复制，所以省空间、启动快）；每个容器写文件时，写进自己的可写层（写时复制 Copy-on-Write）。删掉容器，可写层也就没了——镜像不受影响。</p>
+<p>镜像本身不运行。<b>把镜像拖到下面的 Docker 主机上</b>（或点 docker run），就会用它创建一个容器。多个容器<b>共享同一个镜像的只读层</b>（不复制，所以省空间、启动快）；每个容器写文件时，写进自己的可写层（写时复制 Copy-on-Write）。删掉容器，可写层也就没了——镜像不受影响。</p>
 <p><button onclick="run()">$ docker run myapp</button><button class="sec" onclick="writeFile()">✏️ 在容器里写文件</button><button class="sec" onclick="rmC()">🗑 docker rm 最后一个</button></p>
-<div id="stage">
+<div id="stage" style="align-items:flex-start">
 <div class="img box"><b>镜像 myapp:1.0</b> <span class="mu" style="font-size:12px">🔒只读</span>
 <div class="stack" style="margin-top:8px"><div class="layer os ro">① FROM python:3.12-slim</div><div class="layer lib ro">② pip install -r req.txt</div><div class="layer app ro">③ COPY app.py</div></div></div>
 </div>
-<p id="cinfo" class="mu">点击 docker run 看看容器从同一个镜像“生出来”。</p>
+<div id="host" class="dropzone" style="margin-top:14px;padding:14px;min-height:150px"><b>🖥️ Docker 主机</b> <span class="mu" style="font-size:13px">把左上角的镜像卡片拖到这里 = docker run</span><div id="hostc" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px"></div></div>
+<p id="cinfo" class="mu">拖动镜像，或点 docker run。</p>
 </section>
 
 <section id="s4"><h2><span>04</span> 动手：你的前三条命令</h2>
@@ -91,7 +92,8 @@ m1.style.width='90%';m2.style.width='12%';}
 let n=0;const ctrs=[];
 function run(){if(ctrs.length>=4){cinfo.textContent='演示最多 4 个容器，先删一个吧';return}n++;
 const b=document.createElement('div');b.className='ctr box';b.innerHTML=`<b>容器 #${n}</b><div class="mu" style="font-size:12px">状态: 🟢 running</div><div class="stack" style="margin-top:8px"><div class="layer os ro">① 共享</div><div class="layer lib ro">② 共享</div><div class="layer app ro">③ 共享</div><div class="layer w">✏️ 可写层 (空)</div></div>`;
-stage.appendChild(b);ctrs.push(b);cinfo.innerHTML=`镜像只有 <b>1</b> 份，容器有 <b>${ctrs.length}</b> 个。只读层被共享，每个容器只多了一层薄薄的可写层。`}
+hostc.appendChild(b);ctrs.push(b);cinfo.innerHTML=`镜像只有 <b>1</b> 份，容器有 <b>${ctrs.length}</b> 个。只读层被共享，每个容器只多了一层薄薄的可写层。`}
+DC.drag(document.querySelector('#stage .img'),()=>[host],()=>run());
 function writeFile(){const c=ctrs[ctrs.length-1];if(!c){cinfo.textContent='先 docker run 一个容器';return}
 c.querySelector('.w').textContent='✏️ /tmp/log.txt';cinfo.innerHTML='文件写进了<b>这个容器自己的可写层</b>，镜像和其他容器完全看不到。'}
 function rmC(){const c=ctrs.pop();if(!c){cinfo.textContent='没有容器可删';return}c.remove();cinfo.innerHTML='容器和它的可写层一起消失了，<b>镜像毫发无损</b>——所以重要数据要放 Volume（后面会讲）。'}
@@ -124,4 +126,4 @@ if(done==3)score.innerHTML=`得分 <b>${sc}/3</b> ${sc==3?'🎉 完美，可以�
 const fb=document.createElement('div');fb.className='fb';d.appendChild(fb);quiz.appendChild(d)});
 </script>
 
-<script>addEventListener('scroll',()=>{const h=document.documentElement;document.getElementById('rp').style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%'})</script></body></html>
+</body></html>

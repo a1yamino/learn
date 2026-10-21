@@ -1,15 +1,15 @@
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Docker 第 3 课：Dockerfile 入门与层缓存</title><link rel="stylesheet" href="../assets/course.css"><script src="../assets/common.js"></script></head><body><div id="rp"></div><div class="topbar"><a href="index.html">🏠 目录</a><a href="l02.html">← 上一课</a><span class="ttl">第 3/12 课 · Dockerfile 入门与层缓存</span><div class="dots"><i class="done"></i><i class="done"></i><i class="on"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><a href="l04.html">下一课 →</a></div><style>
 .df{font:13px/1.6 ui-monospace,Menlo,monospace;background:#010409;color:#e6edf3;border-radius:10px;padding:10px}
-.df .ln{display:flex;gap:10px;align-items:center;padding:4px 8px;border-radius:6px;transition:.3s;border:1px solid transparent}
+.df .ln{display:flex;gap:10px;align-items:center;padding:4px 8px;border-radius:6px;transition:transform 250ms var(--ease-out),opacity 250ms var(--ease-out),border-color 200ms ease,box-shadow 200ms ease,background-color 200ms ease;border:1px solid transparent}
 .df .ln .k{color:#ff7b72;font-weight:700;min-width:70px}.df .ln .badge{margin-left:auto;font-size:11px;padding:1px 8px;border-radius:10px}
 .ln.cached{background:#3fb95018}.ln.cached .badge{background:#3fb95040;color:#7ee787}
 .ln.build{background:#d2992225;border-color:#d29922}.ln.build .badge{background:#d2992250;color:#f2cc60}
 .ln.wait{opacity:.5}
-.tl{display:flex;height:26px;border-radius:6px;overflow:hidden;margin:8px 0;background:var(--bd)}.tl i{display:block;height:100%;transition:width .4s}
+.tl{display:flex;height:26px;border-radius:6px;overflow:hidden;margin:8px 0;background:var(--bd)}.tl i{display:block;height:100%;transition:width 400ms var(--ease-out)}
 .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
 .kv .box code{color:var(--ac)}
 .tabs button{background:transparent;color:var(--tx);border:1px solid var(--bd)}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
-.ctx{display:flex;flex-wrap:wrap;gap:6px}.ctx span{font:12px ui-monospace,monospace;padding:4px 8px;border-radius:6px;border:1px solid var(--bd);transition:.3s}
+.ctx{display:flex;flex-wrap:wrap;gap:6px}.ctx span{font:12px ui-monospace,monospace;padding:4px 8px;border-radius:6px;border:1px solid var(--bd);transition:transform 250ms var(--ease-out),opacity 250ms var(--ease-out),border-color 200ms ease,box-shadow 200ms ease,background-color 200ms ease}
 .ctx span.ign{opacity:.3;text-decoration:line-through}
 table{border-collapse:collapse;width:100%;font-size:14px}td,th{border:1px solid var(--bd);padding:7px 9px;text-align:left}th{background:#2496ed1a}
 .big{font-size:28px;font-weight:800}
@@ -169,4 +169,4 @@ if(done==Q.length)score.innerHTML=`得分 <b>${sc}/${Q.length}</b> ${sc==Q.lengt
 const fb=document.createElement('div');fb.className='fb';d.appendChild(fb);quiz.appendChild(d)});
 </script>
 
-<script>addEventListener('scroll',()=>{const h=document.documentElement;document.getElementById('rp').style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%'})</script></body></html>
+</body></html>

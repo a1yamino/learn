@@ -1,7 +1,7 @@
-# 📚 Learn · 可视化渐进式学习中心
+# Learn · 互动技术课程
 
-> 用互动图解、动画、模拟终端和自测题，一步步把技术学明白。
-> *Interactive, visual, step-by-step tech courses (Chinese-first).*
+> 按顺序推进的互动技术课程。每节课包含可操作的图解、模拟终端、常见错误和自测题。
+> *Interactive tech courses in Chinese.*
 
 🌐 **在线访问 / Live site：https://a1yamino.github.io/learn/**
 
@@ -10,7 +10,7 @@
 | 课程 | 适合人群 | 状态 |
 |---|---|---|
 | 🐳 [Docker 从入门到生产](https://a1yamino.github.io/learn/docker/) | 初级后端工程师 | 持续更新（12 课） |
-| ✨ 更多课程 | — | 即将到来 |
+| ☸️ Kubernetes | 学完 Docker 的工程师 | 计划中 |
 
 ### 🐳 Docker 课程大纲
 1. 为什么需要 Docker · 镜像与容器
@@ -27,10 +27,10 @@
 12. 最佳实践、安全与走向生产
 
 ## 每一课都有 / What's in each lesson
-- 🎬 动画图解与可交互可视化
-- 💻 模拟终端：点命令看输出与解释
-- ⚠️ 新手常见坑
-- ✅ 即时反馈的自测题 + 📝 小结
+- 可操作的图解：点击、拖动，观察每一步
+- 模拟终端：点命令，看输出和解释
+- 常见错误
+- 自测题（即时判分）和小结
 
 ## 项目结构 / Structure
 ```
