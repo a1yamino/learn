@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 24 课 · 安全：角色、权限与行级安全</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 24 课</span><span class="sp"></span><a href="l23.html">← 第 23 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 24 课</div><h1>安全：角色、权限与行级安全</h1>
+<p>数据库的安全不只是一个强密码。本课讲 PostgreSQL 的角色模型、对象权限和默认权限、为什么应用不该用超级用户或表的所有者连接、pg_hba.conf 与 SCRAM 认证、TLS，以及行级安全（RLS）如何在数据库层面实现多租户隔离。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条查询的权限检查</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">行级安全</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：这个角色能做什么</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一条查询的权限检查</h2><div class="goal">从连接到行。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>行级安全</h2><div class="goal">同一条 SQL，不同的租户看到不同的行。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：这个角色能做什么</h2><div class="goal">角色 api 被授予了 app_rw。选择一个操作，看结果。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">角色、权限与认证。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 shop 库中建立推荐的角色结构。用 postgres 超级用户执行。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建角色。</p><pre class="cmd">CREATE ROLE app_owner NOLOGIN;
+CREATE ROLE app_rw NOLOGIN;
+CREATE ROLE app_ro NOLOGIN;
+CREATE ROLE api LOGIN PASSWORD &#x27;change-me&#x27; IN ROLE app_rw;
+CREATE ROLE analyst LOGIN PASSWORD &#x27;change-me&#x27; IN ROLE app_ro;</pre><pre class="out">CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE
+CREATE ROLE</pre></div></div><div class="st"><span class="n">02</span><div><p>建 schema 并把对象的所有权交给 app_owner。</p><pre class="cmd">CREATE SCHEMA app AUTHORIZATION app_owner;
+GRANT USAGE ON SCHEMA app TO app_rw, app_ro;
+SET ROLE app_owner;
+CREATE TABLE app.notes (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, tenant_id int NOT NULL, body text);
+RESET ROLE;</pre><pre class="out">CREATE SCHEMA
+GRANT
+SET
+CREATE TABLE
+RESET</pre></div></div><div class="st"><span class="n">03</span><div><p>授权，并设置之后新建对象的默认权限。</p><pre class="cmd">GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO app_rw;
+GRANT SELECT ON ALL TABLES IN SCHEMA app TO app_ro;
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT ON TABLES TO app_ro;
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT USAGE ON SEQUENCES TO app_rw;</pre><pre class="out">GRANT
+GRANT
+ALTER DEFAULT PRIVILEGES
+…</pre></div></div><div class="st"><span class="n">04</span><div><p>以 api 连接：能写，不能删表。</p><pre class="cmd">psql &quot;postgresql://api:change-me@localhost/shop&quot; -c &quot;INSERT INTO app.notes (tenant_id, body) VALUES (1, &#x27;a&#x27;), (2, &#x27;b&#x27;)&quot; -c &quot;DROP TABLE app.notes&quot;</pre><pre class="out">INSERT 0 2
+ERROR:  must be owner of table notes</pre></div></div><div class="st"><span class="n">05</span><div><p>开启行级安全，按会话变量过滤租户。</p><pre class="cmd">ALTER TABLE app.notes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON app.notes
+  USING (tenant_id = current_setting(&#x27;app.tenant_id&#x27;, true)::int)
+  WITH CHECK (tenant_id = current_setting(&#x27;app.tenant_id&#x27;, true)::int);</pre><pre class="out">ALTER TABLE
+CREATE POLICY</pre></div></div><div class="st"><span class="n">06</span><div><p>api 只能看到当前租户的行，也不能写入别的租户。</p><pre class="cmd">psql &quot;postgresql://api:change-me@localhost/shop&quot; &lt;&lt;&#x27;SQL&#x27;
+BEGIN;
+SET LOCAL app.tenant_id = &#x27;1&#x27;;
+SELECT * FROM app.notes;
+INSERT INTO app.notes (tenant_id, body) VALUES (2, &#x27;x&#x27;);
+SQL</pre><pre class="out"> id | tenant_id | body
+----+-----------+------
+  1 |         1 | a
+ERROR:  new row violates row-level security policy for table &quot;notes&quot;</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>审查一个不安全的配置</h3><p>某服务的现状：应用用 <code>postgres</code> 超级用户连接；pg_hba.conf 有一行 <code>host all all 0.0.0.0/0 md5</code>；数据库端口对公网开放；连接串明文写在仓库的 config.yaml 中；多租户靠应用代码里每条 SQL 加 <code>WHERE tenant_id = ?</code>。按优先级列出风险和修复。</p><details><summary>查看参考答案</summary><div><ol><li><b>端口对公网开放 + 0.0.0.0/0</b>：任何人都能尝试暴力破解，md5 哈希泄露后可直接用于登录。放进私有网络/安全组，只允许应用子网；pg_hba 改为 <code>hostssl shop api 10.0.0.0/16 scram-sha-256</code>，删除宽泛规则；<code>password_encryption = scram-sha-256</code> 后重设所有密码。</li><li><b>超级用户连接</b>：一次 SQL 注入就等于整台服务器（<code>COPY … TO PROGRAM</code> 可以执行系统命令）。建立 app_owner / app_rw / api 结构，应用只用 api；迁移用单独的凭据。</li><li><b>密码在仓库里</b>：视为已泄露，立即轮换；改为从密钥管理服务或环境变量注入，扫描 git 历史。</li><li><b>租户隔离只靠应用</b>：漏写一个 WHERE 就会跨租户泄露数据。在多租户表上启用 RLS 作为第二道防线，应用在每个事务开头 <code>SET LOCAL app.tenant_id</code>；注意 api 角色不能是表的所有者，也不能有 BYPASSRLS。</li><li>开启 TLS（<code>ssl = on</code>，客户端 <code>sslmode=verify-full</code>），并用 pgaudit 记录 DDL 和权限变更。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>角色</b>统一了用户和组：有 <code>LOGIN</code> 的角色可以登录，角色可以被授予给其他角色以继承权限。超级用户绕过所有权限检查，应用永远不要用它连接。</li><li>权限分层：先要有数据库的 <code>CONNECT</code>、schema 的 <code>USAGE</code>，才谈得上表的 <code>SELECT/INSERT/UPDATE/DELETE</code>、序列的 <code>USAGE</code>。PostgreSQL 15 起普通用户默认不能在 public schema 中建表。<code>ALTER DEFAULT PRIVILEGES</code> 让之后新建的对象自动授权。</li><li>推荐结构：<code>app_owner</code>（NOLOGIN，拥有所有对象，迁移时 <code>SET ROLE</code> 使用）、<code>app_rw</code>（读写）、<code>app_ro</code>（只读，报表与排查）。应用以继承了 app_rw 的 LOGIN 角色连接，因此不能 DROP 或 ALTER 表。PostgreSQL 14+ 有预定义角色 <code>pg_read_all_data</code>、<code>pg_write_all_data</code>，16+ 有 <code>pg_maintain</code>（18 可用）等。</li><li><code>pg_hba.conf</code> 按顺序匹配“连接类型 + 数据库 + 用户 + 来源地址 → 认证方式”。使用 <code>scram-sha-256</code>（<code>md5</code> 已弃用，18 中会给出警告），只对需要的网段开放，远程连接用 <code>hostssl</code> 强制 TLS，客户端用 <code>sslmode=verify-full</code> 校验证书。</li><li><b>行级安全</b>：<code>ALTER TABLE … ENABLE ROW LEVEL SECURITY</code> 后，除所有者和 BYPASSRLS 角色外，每条查询都自动加上策略的条件。<code>CREATE POLICY tenant ON orders USING (tenant_id = current_setting('app.tenant_id')::int)</code>；所有者也要受限时加 <code>FORCE ROW LEVEL SECURITY</code>。</li><li>其他要点：<code>SECURITY DEFINER</code> 函数必须 <code>SET search_path</code> 防止被劫持；定期 <code>REVOKE</code> 不再需要的权限；用 <code>pgaudit</code> 记录敏感操作；备份和日志中同样有敏感数据；密码不要写进连接串提交到代码库，使用密钥管理或 <code>.pgpass</code>。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 25</div><a class="big" href="l25.html">模式变更与在线迁移 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l24.js"></script>
+</body></html>
