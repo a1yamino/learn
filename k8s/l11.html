@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 11 课 · 控制平面：API Server、etcd、调度器、控制器</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 11 课</span><span class="sp"></span><a href="l10.html">← 第 10 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 11 课</div><h1>控制平面：API Server、etcd、调度器、控制器</h1>
+<p>打开控制平面：一个请求在 API Server 里经过哪些步骤，etcd 如何保存状态并保持一致，调度器如何选节点，控制器如何通过 watch 协作。最后完整追踪一次 kubectl apply。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">请求在 API Server 里的旅程</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">watch：组件如何协作</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：追踪一次部署</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>请求在 API Server 里的旅程</h2><div class="goal">从收到请求到写入 etcd。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>watch：组件如何协作</h2><div class="goal">没有组件直接调用另一个组件。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：追踪一次部署</h2><div class="goal">执行了 <code>kubectl apply -f web.yaml</code>（一个 2 副本的 Deployment）。按发生的先后顺序点击下面的步骤。</div></div></div>
+<div class="chal"><div class="cmds" id="steps"></div><div class="log" id="seq" style="height:auto;min-height:60px"></div><div class="msg" id="sm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">看看控制平面里有什么。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">kind 用 kubeadm 搭建控制平面，可以直接看到每个组件。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>控制平面组件都是 kube-system 里的 Pod。</p><pre class="cmd">kubectl get pods -n kube-system -o wide | grep control-plane</pre><pre class="out">etcd-learn-control-plane                      1/1   Running   learn-control-plane
+kube-apiserver-learn-control-plane            1/1   Running   learn-control-plane
+kube-controller-manager-learn-control-plane   1/1   Running   learn-control-plane
+kube-scheduler-learn-control-plane            1/1   Running   learn-control-plane</pre></div></div><div class="st"><span class="n">02</span><div><p>它们是静态 Pod：定义在节点的文件里。</p><pre class="cmd">docker exec learn-control-plane ls /etc/kubernetes/manifests</pre><pre class="out">etcd.yaml
+kube-apiserver.yaml
+kube-controller-manager.yaml
+kube-scheduler.yaml</pre></div></div><div class="st"><span class="n">03</span><div><p>API Server 的启动参数：准入插件、etcd 地址。</p><pre class="cmd">docker exec learn-control-plane grep -E &quot;admission-plugins|etcd-servers|authorization-mode&quot; /etc/kubernetes/manifests/kube-apiserver.yaml</pre><pre class="out">    - --authorization-mode=Node,RBAC
+    - --enable-admission-plugins=NodeRestriction
+    - --etcd-servers=https://127.0.0.1:2379</pre></div></div><div class="st"><span class="n">04</span><div><p>直接看 etcd 里存的键（需要证书）。</p><pre class="cmd">kubectl -n kube-system exec etcd-learn-control-plane -- etcdctl --cacert /etc/kubernetes/pki/etcd/ca.crt --cert /etc/kubernetes/pki/etcd/server.crt --key /etc/kubernetes/pki/etcd/server.key get /registry/deployments --prefix --keys-only</pre><pre class="out">/registry/deployments/kube-system/coredns
+/registry/deployments/local-path-storage/local-path-provisioner</pre></div></div><div class="st"><span class="n">05</span><div><p>用 watch 观察事件流（另开终端执行第 2 条）。</p><pre class="cmd">kubectl get pods -w --output-watch-events
+# 另一个终端：kubectl create deployment w --image=nginx:alpine --replicas=2</pre><pre class="out">EVENT    NAME                READY   STATUS
+ADDED    w-6f9c7d8b5-4kq2x   0/1     Pending
+ADDED    w-6f9c7d8b5-tq9ps   0/1     Pending
+MODIFIED w-6f9c7d8b5-4kq2x   0/1     Pending
+MODIFIED w-6f9c7d8b5-4kq2x   0/1     ContainerCreating
+MODIFIED w-6f9c7d8b5-4kq2x   1/1     Running</pre></div></div><div class="st"><span class="n">06</span><div><p>按时间顺序看各组件留下的事件。</p><pre class="cmd">kubectl get events --sort-by=.metadata.creationTimestamp -o custom-columns=FROM:.source.component,REASON:.reason,OBJ:.involvedObject.name | tail -6</pre><pre class="out">deployment-controller   ScalingReplicaSet   w
+replicaset-controller   SuccessfulCreate    w-6f9c7d8b5
+replicaset-controller   SuccessfulCreate    w-6f9c7d8b5
+default-scheduler       Scheduled           w-6f9c7d8b5-4kq2x
+kubelet                 Pulled              w-6f9c7d8b5-4kq2x
+kubelet                 Started             w-6f9c7d8b5-4kq2x</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>停掉调度器</h3><p>把调度器的静态 Pod 文件移出 manifests 目录（kubelet 会停止它），然后创建一个 Deployment。观察 Pod 的状态，再把文件移回去。解释你看到的现象说明了什么。</p><details><summary>查看参考答案</summary><div><pre class="cmd">docker exec learn-control-plane mv /etc/kubernetes/manifests/kube-scheduler.yaml /tmp/
+sleep 20; kubectl get pods -n kube-system | grep scheduler   # 消失
+kubectl create deployment nosched --image=nginx:alpine --replicas=2
+kubectl get pods -l app=nosched -o wide
+docker exec learn-control-plane mv /tmp/kube-scheduler.yaml /etc/kubernetes/manifests/
+sleep 30; kubectl get pods -l app=nosched -o wide</pre><pre class="out">NAME                       READY   STATUS    NODE
+nosched-7d8f9c6b5-2kq8x    0/1     Pending   &lt;none&gt;
+nosched-7d8f9c6b5-x7k2p    0/1     Pending   &lt;none&gt;
+…（调度器恢复后）
+nosched-7d8f9c6b5-2kq8x    1/1     Running   learn-worker
+nosched-7d8f9c6b5-x7k2p    1/1     Running   learn-worker2</pre><p>API Server 和控制器都正常：Deployment、ReplicaSet、Pod 对象都被创建了。只是没有人给 Pod 填写 <code>nodeName</code>，所以停在 Pending，kubelet 也不会认领。调度器回来后，它 watch 到这些未调度的 Pod，立刻处理。这说明每个组件独立工作，通过 API Server 里的对象状态衔接；任何一个暂时缺席，其余部分照常运行，恢复后自动补上。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>API Server 处理请求：<b>认证</b>（你是谁）→ <b>授权</b>（RBAC）→ <b>准入</b>（变更型，然后校验型 webhook）→ 结构校验 → 写入 etcd。它是唯一直接访问 etcd 的组件。</li><li>etcd 是基于 <b>Raft</b> 的强一致键值存储。写入需要多数成员确认：3 个成员容忍 1 个故障，5 个容忍 2 个。etcd 是集群唯一的状态来源，必须备份（第 26 课）。</li><li>组件之间不直接调用，而是通过 API Server 的 <b>watch</b>：订阅某类对象的变化，收到事件后各自行动。</li><li>调度器：为每个未调度的 Pod，先<b>过滤</b>（资源够吗、污点、亲和性），再<b>打分</b>（均衡、镜像已存在…），选最高分节点，写入 <code>spec.nodeName</code>（绑定）。</li><li>kube-controller-manager 里运行着几十个控制器：Deployment、ReplicaSet、Node、Endpoint、Job、ServiceAccount、垃圾回收……每个只负责一件事。</li><li>kubeadm 集群里，控制平面组件本身是 <b>静态 Pod</b>：kubelet 直接读取 <code>/etc/kubernetes/manifests/</code> 里的 YAML 运行它们。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 12</div><a class="big" href="l12.html">声明式 API 与控制循环 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l11.js"></script>
+</body></html>
