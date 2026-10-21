@@ -1,0 +1,66 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PostgreSQL 第 12 课 · 查询规划器与 EXPLAIN</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">PostgreSQL</a><span class="crumb">第 12 课</span><span class="sp"></span><a href="l11.html">← 第 11 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">PostgreSQL · 第 12 课</div><h1>查询规划器与 EXPLAIN</h1>
+<p>同一条 SQL 有很多种执行方式，规划器估算每种方式的代价并选最便宜的。本课讲一条查询从解析到执行的过程、计划树的读法、cost 的含义和代价参数、EXPLAIN ANALYZE 的各个字段，以及估算行数与实际行数相差很大时意味着什么。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">从 SQL 到结果</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">读一棵计划树</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：读 EXPLAIN ANALYZE</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>从 SQL 到结果</h2><div class="goal">规划器如何选出一个计划。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>读一棵计划树</h2><div class="goal">从内到外，从下到上。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：读 EXPLAIN ANALYZE</h2><div class="goal">点击计划中的一行，看这一行说明了什么。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">EXPLAIN 的选项和代价参数。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">使用 shop 库的 users（1000 行）和 orders（10 万行）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>只估算，不执行。</p><pre class="cmd">EXPLAIN SELECT * FROM orders WHERE amount &gt; 900;</pre><pre class="out"> Seq Scan on orders  (cost=0.00..2137.00 rows=10050 width=29)
+   Filter: (amount &gt; &#x27;900&#x27;::numeric)</pre></div></div><div class="st"><span class="n">02</span><div><p>验证代价公式：1370 页 × 1.0 + 100000 行 × 0.01 + 100000 × 0.0025。</p><pre class="cmd">SELECT relpages, reltuples, relpages * 1.0 + reltuples * 0.01 + reltuples * 0.0025 AS cost FROM pg_class WHERE relname = &#x27;orders&#x27;;</pre><pre class="out"> relpages | reltuples |  cost
+----------+-----------+---------
+     1370 |    100000 | 2620.00</pre></div></div><div class="st"><span class="n">03</span><div><p>估算与实际。</p><pre class="cmd">EXPLAIN ANALYZE SELECT * FROM orders WHERE amount &gt; 900;</pre><pre class="out"> Seq Scan on orders  (cost=0.00..2137.00 rows=10050 width=29) (actual time=0.015..12.801 rows=9981 loops=1)
+   Filter: (amount &gt; &#x27;900&#x27;::numeric)
+   Rows Removed by Filter: 90019
+   Buffers: shared hit=1370
+ Planning Time: 0.081 ms
+ Execution Time: 13.212 ms</pre></div></div><div class="st"><span class="n">04</span><div><p>连接查询的计划树。</p><pre class="cmd">EXPLAIN ANALYZE SELECT u.name, count(*) FROM users u JOIN orders o ON o.user_id = u.id WHERE u.id &lt; 10 GROUP BY u.name;</pre><pre class="out"> HashAggregate  (actual time=0.512..0.514 rows=9 loops=1)
+   Group Key: u.name
+   -&gt;  Nested Loop  (actual time=0.031..0.441 rows=1012 loops=1)
+         -&gt;  Index Scan using users_pkey on users u  (actual time=0.009..0.014 rows=9 loops=1)
+               Index Cond: (id &lt; 10)
+         -&gt;  Index Scan using orders_user_id_idx on orders o  (actual time=0.004..0.038 rows=112 loops=9)
+               Index Cond: (user_id = u.id)</pre></div></div><div class="st"><span class="n">05</span><div><p>对写语句用 ANALYZE 时放进事务回滚。</p><pre class="cmd">BEGIN;
+EXPLAIN ANALYZE UPDATE orders SET amount = amount + 1 WHERE user_id = 42;
+ROLLBACK;</pre><pre class="out"> Update on orders  (actual time=0.612..0.613 rows=0 loops=1)
+   -&gt;  Bitmap Heap Scan on orders  (actual time=0.041..0.198 rows=118 loops=1)
+ …
+ROLLBACK</pre></div></div><div class="st"><span class="n">06</span><div><p>诊断：关掉顺序扫描，看索引计划的代价和真实耗时。</p><pre class="cmd">SET enable_seqscan = off;
+EXPLAIN ANALYZE SELECT * FROM orders WHERE user_id &gt; 10;
+RESET enable_seqscan;</pre><pre class="out"> Bitmap Heap Scan on orders  (cost=1897.40..4021.12 rows=98890 …) (actual time=4.8..21.6 rows=98880 loops=1)
+ …
+ Execution Time: 25.010 ms</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>解释一个反直觉的计划</h3><p><code>SELECT * FROM orders WHERE user_id = 42 ORDER BY id LIMIT 1</code> 有 user_id 索引，但计划却是 <code>Limit → Index Scan using orders_pkey</code>，Filter: (user_id = 42)，实际耗时 40 ms。只查 <code>user_id = 999</code>（该用户没有订单）时更是要几百毫秒。解释规划器的想法和问题所在，给出两种修复。</p><details><summary>查看参考答案</summary><div><p>规划器的推理：按主键顺序扫描，第一条满足 user_id = 42 的行就能结束。它估计 42 号用户有 111 行、均匀分布在 10 万行中，平均扫描 100000 / 111 ≈ 900 行就会遇到一个，代价很低，还省掉了排序。</p><p>问题在“均匀分布”的假设：如果 42 号用户的订单都是最近才产生的（id 很大），就要扫描几乎整个表才能遇到第一条；没有订单的用户则会扫完全表。LIMIT 让规划器对“提前结束”过于乐观。</p><p>修复一（推荐）：建复合索引 <code>(user_id, id)</code>，直接定位 user_id = 42 并按 id 有序，读一个条目就结束，任何用户都很快。修复二：改写让规划器不能用 pkey 的顺序，例如 <code>ORDER BY id + 0</code>，或先在 CTE/子查询中取出该用户的行（PostgreSQL 12+ 需加 <code>MATERIALIZED</code>），代价是需要排序。修复一更稳定。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>一条查询依次经过：<b>解析</b>（语法树）→ <b>分析/重写</b>（解析名字、展开视图和规则）→ <b>规划</b>（生成候选路径，估代价，选最便宜的）→ <b>执行</b>（按计划树从上到下拉取行）。</li><li>计划是一棵树，从最里层（缩进最深）的节点开始读。每个节点向父节点逐行提供数据。<code>cost=启动代价..总代价</code>，单位是抽象的“顺序读一页”的倍数；<code>rows</code> 是估算的输出行数，<code>width</code> 是平均行宽。</li><li>代价参数：<code>seq_page_cost = 1</code>、<code>random_page_cost = 4</code>（SSD 上通常调到 1.1–1.5）、<code>cpu_tuple_cost = 0.01</code>、<code>cpu_operator_cost = 0.0025</code>。Seq Scan 代价 ≈ 页数 × 1 + 行数 × 0.01 + 过滤条件的运算代价。</li><li><code>EXPLAIN ANALYZE</code> 会<b>真正执行</b>语句（对 UPDATE/DELETE 要放在 BEGIN … ROLLBACK 中）。<code>actual time=首行..末行</code> 毫秒，按每次循环计；<code>loops</code> 是执行次数，总耗时 ≈ 时间 × loops。PostgreSQL 18 的 EXPLAIN ANALYZE 默认带 BUFFERS。</li><li>先比较每个节点的<b>估算 rows 与实际 rows</b>：相差 10 倍以上，后续的连接方式和顺序就可能选错。常见原因：统计信息过期、多列相关、表达式或函数无法估算（第 13 课）。</li><li>不要用 <code>enable_seqscan = off</code> 这类开关“修复”生产查询，它们只用于诊断：确认另一种计划确实更快后，去解决估算或索引问题。PostgreSQL 没有内置的查询提示（hint）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 13</div><a class="big" href="l13.html">统计信息、连接算法与慢查询 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l12.js"></script>
+</body></html>
