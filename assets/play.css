@@ -137,3 +137,4 @@ details{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}summar
 .bl{display:grid;grid-template-columns:1fr 90px;gap:4px 12px;font:400 13px/1.6 var(--m)}.bl .c{color:var(--ok)}.bl .r{color:var(--sig)}.bl .x{color:var(--bad)}
 .tot{font:700 28px/1 var(--f);letter-spacing:-.02em;margin-top:14px}
 .grp{font:500 12px/1 var(--m);letter-spacing:.1em;color:var(--sig);padding:40px 0 14px;border-bottom:1px solid var(--line);list-style:none}
+.blk{flex-direction:column;line-height:1.35}
