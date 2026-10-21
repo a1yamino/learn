@@ -1,0 +1,86 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 24 课 · 可观测性：日志、指标与追踪</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 24 课</span><span class="sp"></span><a href="l23.html">← 第 23 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 24 课</div><h1>可观测性：日志、指标与追踪</h1>
+<p>出问题时要能回答：哪里慢、哪里错、从什么时候开始。本课讲 Kubernetes 中的三类信号：日志怎么从容器收集到中心、Prometheus 如何发现和抓取指标、PromQL 的计数器与 rate，以及用 OpenTelemetry 做分布式追踪。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">三类信号从哪里来</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Prometheus 如何找到目标</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：计数器与 rate</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>三类信号从哪里来</h2><div class="goal">日志、指标、追踪在集群里的流向。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Prometheus 如何找到目标</h2><div class="goal">服务发现、ServiceMonitor 与抓取。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：计数器与 rate</h2><div class="goal">两个 api Pod 的 <code>http_requests_total</code> 每 30 秒采样一次，其中 Pod b 在 13:02 重启过。选择查询，看 PromQL 如何计算。</div></div></div>
+<div class="chal"><pre class="log" id="ps" style="height:auto;margin:0 0 12px;white-space:pre;overflow-x:auto"></pre><div class="cmds" id="pq"></div><pre class="log" id="pr" style="height:auto;min-height:90px;white-space:pre-wrap"></pre><div class="msg" id="pm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">在集群里查看三类信号。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 kube-prometheus-stack 一次装好 Prometheus、Grafana、Alertmanager、kube-state-metrics 和 node-exporter。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>安装。</p><pre class="cmd">helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install mon prometheus-community/kube-prometheus-stack -n monitoring --create-namespace
+kubectl -n monitoring get pods</pre><pre class="out">NAME                                               READY   STATUS
+alertmanager-mon-kube-prometheus-st-alertmanager-0  2/2     Running
+mon-grafana-6f9c8d7b5-x2kq9                        3/3     Running
+mon-kube-state-metrics-5c8d9f7b6-p4lz8             1/1     Running
+mon-prometheus-node-exporter-7xk2p                 1/1     Running
+prometheus-mon-kube-prometheus-st-prometheus-0     2/2     Running</pre></div></div><div class="st"><span class="n">02</span><div><p>打开 Prometheus，看抓取目标。</p><pre class="cmd">kubectl -n monitoring port-forward svc/mon-kube-prometheus-st-prometheus 9090
+# 浏览器打开 http://localhost:9090/targets</pre><pre class="out">serviceMonitor/monitoring/mon-kube-prometheus-st-apiserver/0   (1/1 up)
+serviceMonitor/monitoring/mon-kube-state-metrics/0               (1/1 up)
+serviceMonitor/monitoring/mon-prometheus-node-exporter/0         (3/3 up)</pre></div></div><div class="st"><span class="n">03</span><div><p>用 API 查询：每个命名空间的容器重启次数（kube-state-metrics）。</p><pre class="cmd">curl -s localhost:9090/api/v1/query --data-urlencode &#x27;query=sum by (namespace) (kube_pod_container_status_restarts_total)&#x27; | jq -r &#x27;.data.result[] | &quot;\(.metric.namespace) \(.value[1])&quot;&#x27;</pre><pre class="out">default 4
+kube-system 0
+monitoring 0</pre></div></div><div class="st"><span class="n">04</span><div><p>每个 Pod 的 CPU 使用（cAdvisor 指标是计数器，所以用 rate）。</p><pre class="cmd">curl -s localhost:9090/api/v1/query --data-urlencode &#x27;query=topk(3, sum by (pod) (rate(container_cpu_usage_seconds_total{container!=&quot;&quot;}[5m])))&#x27; | jq -r &#x27;.data.result[] | &quot;\(.metric.pod) \(.value[1])&quot;&#x27;</pre><pre class="out">prometheus-mon-kube-prometheus-st-prometheus-0 0.0412
+kube-apiserver-learn-control-plane 0.0387
+etcd-learn-control-plane 0.0211</pre></div></div><div class="st"><span class="n">05</span><div><p>打开 Grafana（用户 admin，密码在 Secret 里），内置仪表板 Kubernetes / Compute Resources / Namespace (Pods)。</p><pre class="cmd">kubectl -n monitoring get secret mon-grafana -o jsonpath=&quot;{.data.admin-password}&quot; | base64 -d; echo
+kubectl -n monitoring port-forward svc/mon-grafana 3000:80</pre><pre class="out">Forwarding from 127.0.0.1:3000 -&gt; 3000</pre></div></div><div class="st"><span class="n">06</span><div><p>节点上的原始日志文件，以及已删除容器的上一次日志。</p><pre class="cmd">docker exec learn-worker ls /var/log/pods | head -3
+kubectl logs deploy/web --previous 2&gt;&amp;1 | tail -1</pre><pre class="out">default_web-6d4b9-x2k9l_3f1e…
+kube-system_kindnet-7xk2p_9a8c…
+kube-system_kube-proxy-4lz8q_b2d1…
+Error from server (BadRequest): previous terminated container &quot;nginx&quot; in pod &quot;web-6d4b9-x2k9l&quot; not found</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一条告警</h3><p>为 shop 命名空间的 api 写一条 PrometheusRule：过去 5 分钟内 5xx 错误率超过 5%，且持续 10 分钟，就发出 severity=page 的告警；请求量很小时（每秒少于 1 个）不要告警。指标为 <code>http_requests_total{namespace, service, code}</code>。说明为什么用 rate 而不是 increase 都可以，以及 for 的作用。</p><details><summary>查看参考答案</summary><div><pre class="cmd">apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: api-errors
+  namespace: shop
+  labels: {release: mon}
+spec:
+  groups:
+  - name: api
+    rules:
+    - alert: ApiHighErrorRate
+      expr: |
+        (
+          sum(rate(http_requests_total{namespace="shop",service="api",code=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total{namespace="shop",service="api"}[5m]))
+        ) &gt; 0.05
+        and
+        sum(rate(http_requests_total{namespace="shop",service="api"}[5m])) &gt; 1
+      for: 10m
+      labels: {severity: page}
+      annotations:
+        summary: "api 5xx 错误率 {{ $value | humanizePercentage }}"</pre><pre class="out">kubectl -n shop get prometheusrule
+NAME         AGE
+api-errors   5s</pre><p>错误率是两个速率之比：rate 和 increase 在同一窗口上只差一个常数倍（窗口秒数），比值相同。先 sum 再相除，得到整个服务的比例；不要先算每个 Pod 的比例再平均。<code>and … &gt; 1</code> 避免流量很小时一两个错误就触发。<code>for: 10m</code> 要求条件连续 10 分钟成立才从 pending 变为 firing，过滤短暂抖动。<code>labels.release: mon</code> 让 kube-prometheus-stack 的 Prometheus 选中这条规则。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>日志</b>：容器写 stdout/stderr，运行时存到节点的 <code>/var/log/pods/</code>，kubelet 负责轮转。DaemonSet 形式的采集器（Fluent Bit、Vector、Alloy）读取这些文件，加上 Pod 元数据，发送到 Loki、Elasticsearch 等。Pod 删除后 <code>kubectl logs</code> 就看不到了。</li><li><b>指标</b>：Prometheus 定期抓取各目标的 <code>/metrics</code>。在 Kubernetes 中通过服务发现找目标；Prometheus Operator 用 <code>ServiceMonitor</code> / <code>PodMonitor</code> 按标签选择。kube-state-metrics 把对象状态（副本数、重启次数）变成指标，node-exporter 提供节点指标。</li><li>计数器（counter）只增不减，进程重启时归零。要看速率用 <code>rate(x[5m])</code>，它会处理重置；不要直接对原始值求差。gauge（当前值，如内存）可以直接看。</li><li>延迟用直方图：<code>histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))</code>。先聚合 bucket 再算分位数，不能对各 Pod 的 p99 求平均。</li><li>标签基数：每个标签值组合是一条时间序列。把用户 ID、请求 ID、完整 URL 放进标签会让 Prometheus 内存爆炸。</li><li><b>追踪</b>：OpenTelemetry SDK 在请求经过的每个服务里生成 span，通过 traceparent 头传递上下文，经 OTel Collector 发送到 Tempo、Jaeger。日志里带上 trace_id，三类信号就能互相跳转。告警基于症状（错误率、延迟、SLO 消耗），而不是基于原因（CPU 高）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 25</div><a class="big" href="l25.html">生产排障 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l24.js"></script>
+</body></html>
