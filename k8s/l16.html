@@ -1,0 +1,57 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kubernetes 第 16 课 · 存储原理：CSI 与卷的生命周期</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kubernetes</a><span class="crumb">第 16 课</span><span class="sp"></span><a href="l15.html">← 第 15 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kubernetes · 第 16 课</div><h1>存储原理：CSI 与卷的生命周期</h1>
+<p>第 7 课从使用者角度讲了 PVC。本课看下面发生了什么：CSI 驱动的组成、动态供应、Attach / Mount 的分工、WaitForFirstConsumer 为什么重要，以及卷扩容和快照。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">CSI 的组成</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">从 PVC 到容器里的目录</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：绑定模式与可用区</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>CSI 的组成</h2><div class="goal">谁在监听什么，调用什么。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>从 PVC 到容器里的目录</h2><div class="goal">一块云盘的四个阶段。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：绑定模式与可用区</h2><div class="goal">集群有可用区 a、b 两个节点，a 节点资源已满，Pod 只能调度到 b。选择 StorageClass 的绑定模式，看会发生什么。</div></div></div>
+<div class="chal"><div class="cmds" id="bm"></div><div class="log" id="bl" style="height:auto;min-height:120px"></div><div class="msg" id="bmm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">从 API 对象和节点两个层面看卷。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">kind 自带的 local-path-provisioner 不是 CSI 驱动，但同样走动态供应和 WaitForFirstConsumer，适合观察流程。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>默认 StorageClass 的绑定模式。</p><pre class="cmd">kubectl get storageclass</pre><pre class="out">NAME                 PROVISIONER             RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION
+standard (default)   rancher.io/local-path   Delete          WaitForFirstConsumer   false</pre></div></div><div class="st"><span class="n">02</span><div><p>只创建 PVC：保持 Pending，等待使用者。</p><pre class="cmd">kubectl apply -f - &lt;&lt;EOT
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: data}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+EOT
+kubectl describe pvc data | tail -1</pre><pre class="out">  Normal  WaitForFirstConsumer  3s    persistentvolume-controller  waiting for first consumer to be created before binding</pre></div></div><div class="st"><span class="n">03</span><div><p>创建 Pod 后，调度器先选节点，provisioner 在该节点上创建卷。</p><pre class="cmd">kubectl run u --image=busybox --overrides=&#x27;{&quot;spec&quot;:{&quot;containers&quot;:[{&quot;name&quot;:&quot;u&quot;,&quot;image&quot;:&quot;busybox&quot;,&quot;command&quot;:[&quot;sleep&quot;,&quot;3600&quot;],&quot;volumeMounts&quot;:[{&quot;name&quot;:&quot;d&quot;,&quot;mountPath&quot;:&quot;/data&quot;}]}],&quot;volumes&quot;:[{&quot;name&quot;:&quot;d&quot;,&quot;persistentVolumeClaim&quot;:{&quot;claimName&quot;:&quot;data&quot;}}]}}&#x27;
+kubectl wait --for=condition=Ready pod/u
+kubectl get pv -o custom-columns=PV:.metadata.name,NODE:.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]</pre><pre class="out">PV                                         NODE
+pvc-6b1d2a8e-4c1f-4a8e-9a77-0f3c2d1e5b90   learn-worker</pre></div></div><div class="st"><span class="n">04</span><div><p>卷在节点上的真实位置，以及 PV 的节点亲和性（Pod 以后只能调度到这个节点）。</p><pre class="cmd">kubectl exec u -- sh -c &quot;echo hi &gt; /data/f&quot;
+docker exec learn-worker ls /var/local-path-provisioner/</pre><pre class="out">pvc-6b1d2a8e-4c1f-4a8e-9a77-0f3c2d1e5b90_default_data</pre></div></div><div class="st"><span class="n">05</span><div><p>删除 PVC，回收策略 Delete 会把目录一起删掉。</p><pre class="cmd">kubectl delete pod u --now; kubectl delete pvc data
+sleep 5; docker exec learn-worker ls /var/local-path-provisioner/ | wc -l</pre><pre class="out">0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>节点坏了，数据卷怎么办</h3><p>上面的 Pod 用的是 local-path 卷。假设 learn-worker 永久损坏，Pod 被删除后重建会怎样？如果换成云盘（如 EBS 的 CSI 驱动，RWO），重建的 Pod 又会经历什么？各自需要什么人工处理？</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl describe pod u   # 重建后</pre><pre class="out">Warning  FailedScheduling  0/3 nodes are available: 1 node(s) had volume node affinity conflict, …</pre><p>local-path：PV 带节点亲和性，绑死在 learn-worker 上。节点没了，Pod 一直 Pending，数据随节点丢失；只能删 PVC 重新建（空卷）并从备份恢复。所以本地卷只适合自带复制的系统（如数据库副本、Kafka）。</p><p>云盘：数据在网络存储上，可以挂到同可用区的其他节点。但旧节点失联时 VolumeAttachment 还在，新 Pod 会报 <code>Multi-Attach error</code>，约 6 分钟后 attach-detach 控制器强制解除挂载才能继续；确认旧节点已关机时，可给节点加 <code>node.kubernetes.io/out-of-service</code> 污点立即释放。云盘只在一个可用区内，可用区整体故障时仍需要快照或跨区复制。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>CSI（Container Storage Interface）是存储厂商实现的 gRPC 接口。驱动分两部分：<b>controller</b>（Deployment，负责创建/删除/挂接云盘）和 <b>node</b>（DaemonSet，负责在节点上格式化和挂载）。</li><li>Kubernetes 社区提供的 sidecar 把 API 对象翻译成 CSI 调用：external-provisioner（PVC → CreateVolume）、external-attacher（VolumeAttachment → ControllerPublish）、external-resizer、external-snapshotter。</li><li>一块卷的生命周期：<b>Provision</b> 创建磁盘并生成 PV → <b>Attach</b> 把磁盘挂到节点（块设备出现）→ <b>Stage</b> 在节点上格式化并挂载到全局目录 → <b>Publish</b> bind mount 到 Pod 目录。删除时倒序。</li><li><code>volumeBindingMode: WaitForFirstConsumer</code>：等 Pod 调度后，在 Pod 所在的可用区创建磁盘。用 <code>Immediate</code> 时磁盘可能建在别的可用区，Pod 永远调度不上去。</li><li>扩容：StorageClass 设 <code>allowVolumeExpansion: true</code> 后修改 PVC 的 requests；只能变大。快照：VolumeSnapshot / VolumeSnapshotClass，可以从快照创建新 PVC（dataSource）。</li><li>local PV 和 hostPath 没有 attach，数据绑定在一个节点上；节点坏了数据就不可用。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 17</div><a class="big" href="l17.html">有状态与批处理：StatefulSet、DaemonSet、Job、CronJob →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l16.js"></script>
+</body></html>
