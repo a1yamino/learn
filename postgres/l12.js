@@ -22,7 +22,7 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
 [' Planning Time: 0.120 ms','规划耗时。复杂查询（很多表连接）这里可能很大。'],
 [' Execution Time: 25.912 ms','总执行时间，不包括把结果发送给客户端的网络时间。']];
  const q=document.getElementById('hq'),p=document.getElementById('hp'),m=document.getElementById('hm');q.style.flexDirection='column';q.style.alignItems='stretch';
- L.forEach(([t],i)=>{const b=document.createElement('button');b.className='btn';b.style.cssText='text-align:left;font-family:var(--mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;border-radius:8px';b.textContent=t;b.addEventListener('click',()=>{q.querySelectorAll('.btn').forEach(x=>x.classList.toggle('pri',x===b));p.textContent='EXPLAIN ANALYZE SELECT * FROM orders WHERE amount > 900 ORDER BY amount DESC;\n\n'+t.trim();m.className='msg '+(L[i][2]||'');m.innerHTML=L[i][1]});q.appendChild(b)});
+ L.forEach(([t],i)=>{const b=document.createElement('button');b.className='btn';b.style.cssText='height:auto;min-height:36px;padding:8px 12px;line-height:1.45;text-align:left;font-family:var(--mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;border-radius:8px';b.textContent=t;b.addEventListener('click',()=>{q.querySelectorAll('.btn').forEach(x=>x.classList.toggle('pri',x===b));p.textContent='EXPLAIN ANALYZE SELECT * FROM orders WHERE amount > 900 ORDER BY amount DESC;\n\n'+t.trim();m.className='msg '+(L[i][2]||'');m.innerHTML=L[i][1]});q.appendChild(b)});
  m.className='msg';m.innerHTML='EXPLAIN ANALYZE SELECT * FROM orders WHERE amount &gt; 900 ORDER BY amount DESC;'})();
 Term(document.getElementById('t4'),[
 ['EXPLAIN (ANALYZE, BUFFERS, VERBOSE, SETTINGS) SELECT …;','…','VERBOSE 显示输出列和 schema；SETTINGS 列出与默认值不同、影响规划的参数。'],
