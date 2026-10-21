@@ -10,6 +10,7 @@
 |---|---|---|
 | [Docker](https://a1yamino.github.io/learn/docker/) | 初级后端工程师 | 已完成（25 课） |
 | [Kubernetes](https://a1yamino.github.io/learn/k8s/) | 学完 Docker 的工程师 | 已完成（27 课） |
+| [PostgreSQL](https://a1yamino.github.io/learn/postgres/) | 初级后端工程师 | 更新中（26 课） |
 
 ### Docker 课程大纲
 基础：1 为什么需要 Docker · 2 容器生命周期与核心命令 · 3 Dockerfile 与构建缓存 · 4 实战：把后端 API 打包成镜像 · 5 多阶段构建与镜像瘦身 · 6 数据卷与持久化 · 7 网络与端口映射 · 8 Docker Compose 入门 · 9 配置、环境变量与密钥 · 10 镜像仓库、标签与推送
@@ -31,6 +32,19 @@
 
 综合项目：27 从零到生产
 
+### PostgreSQL 课程大纲
+基础：1 PostgreSQL 是什么：进程、连接与 psql · 2 表、数据类型与约束 · 3 查询基础：连接、聚合与窗口函数 · 4 索引入门：什么时候用、怎么建 · 5 事务基础：ACID 与 BEGIN / COMMIT · 6 从应用连接：驱动、参数化查询与连接池
+
+存储与日志：7 存储：页、堆元组与 TOAST · 8 WAL：预写日志与检查点 · 9 缓冲区与 I/O：shared_buffers 与操作系统缓存
+
+索引与查询：10 B-tree 索引内部 · 11 GIN、GiST、BRIN 与表达式、部分索引 · 12 查询规划器与 EXPLAIN · 13 统计信息、连接算法与慢查询
+
+并发：14 事务隔离级别 · 15 MVCC：元组版本与快照可见性 · 16 VACUUM、autovacuum 与事务 ID 回卷 · 17 锁：行锁、表锁与死锁
+
+生产：18 复制：流复制与逻辑复制 · 19 高可用与故障切换 · 20 分区表 · 21 连接池：PgBouncer · 22 性能调优：配置、监控与 pg_stat_statements · 23 备份与时间点恢复（PITR） · 24 安全：角色、权限与行级安全 · 25 模式变更与在线迁移
+
+综合项目：26 综合项目：一个生产级数据库从设计到运维
+
 ## 每一课都有 / What's in each lesson
 - 讲解和自动播放的图解动画
 - 少量动手操作（只在动手比看更容易理解的地方）
@@ -43,6 +57,8 @@ index.html        学习中心首页 / hub
 assets/           所有课程共享的样式与脚本 / shared CSS & JS
 docker/           Docker 课程（index.html + lNN.html）
 k8s/              Kubernetes 课程
+postgres/         PostgreSQL 课程
+_src/             课程生成器源文件 / generator sources
 ```
 纯静态 HTML，无需构建；克隆后直接用浏览器打开 `index.html` 即可。
 *Pure static HTML, no build step.*
