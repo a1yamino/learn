@@ -1,0 +1,24 @@
+TITLE='声明式 API 与控制循环';DESC='Kubernetes 的设计核心：对象存储期望状态，控制器不断调和（reconcile）。本课讲为什么控制器是“水平触发”的、resourceVersion 与乐观并发、server-side apply 的字段所有权，以及 finalizer 和级联删除。';NEXT='kubelet、CRI 与 Pod 的一生';MIN=50
+SUM=['控制循环：读取期望状态（spec）和实际状态 → 计算差异 → 执行一步 → 写回 status → 重复。每次都从<b>当前完整状态</b>出发，而不是依赖“发生了什么事件”。',
+'<b>水平触发</b>（level-triggered）：错过事件也没关系，下次调和看到的仍是正确的差异。控制器重启、网络中断后能自动恢复。',
+'每个对象有 <code>resourceVersion</code>。更新时带上读到的版本，如果期间有人改过，API Server 返回 <b>409 Conflict</b>，客户端重新读取再试（乐观并发）。',
+'<b>Server-side apply</b>（<code>kubectl apply --server-side</code>）：API Server 记录每个字段由谁管理（<code>managedFields</code>）。两个管理者改同一字段会报冲突，避免互相覆盖（如 HPA 管 replicas、你管镜像）。',
+'<code>metadata.generation</code> 在 spec 变化时增加；控制器处理后写 <code>status.observedGeneration</code>。两者相等才说明“最新的期望已被处理”。',
+'删除：带 <b>finalizer</b> 的对象先被标记 <code>deletionTimestamp</code>，等负责的控制器完成清理并移除 finalizer 后才真正删除。所属对象由垃圾回收器按 ownerReferences 级联删除。']
+def secs(prac,E):
+    return [
+('控制循环','观察 → 比较 → 行动。','<div id="p1"></div>'),
+('并发写入：resourceVersion','两个客户端同时修改同一个对象。','<div id="p2"></div>'),
+('动手：错过的事件','控制器要让副本数等于期望。下面会发生一串变化，其中一段时间控制器断线了。比较两种实现方式。','<div class="chal"><div class="cmds" id="ct"></div><div class="log" id="cl2" style="height:auto;min-height:150px"></div><div class="msg" id="cm2"></div></div>'),
+('相关命令','观察对象的元数据。','<div id="t4"></div>'),
+('在你的电脑上练习','看到 generation、resourceVersion、managedFields 和 finalizer。',prac([
+ ('generation 和 observedGeneration。','kubectl create deployment g --image=nginx:alpine\nkubectl get deploy g -o jsonpath="{.metadata.generation} {.status.observedGeneration}{\'\\n\'}"\nkubectl set image deploy g nginx=nginx:1.27-alpine\nkubectl get deploy g -o jsonpath="{.metadata.generation} {.status.observedGeneration}{\'\\n\'}"','1 1\n2 2'),
+ ('resourceVersion 每次写入都变化。','kubectl get deploy g -o jsonpath="{.metadata.resourceVersion}{\'\\n\'}"; kubectl annotate deploy g note=x; kubectl get deploy g -o jsonpath="{.metadata.resourceVersion}{\'\\n\'}"','4821\ndeployment.apps/g annotated\n4833'),
+ ('制造一次冲突：用旧的 resourceVersion 更新。','kubectl get deploy g -o json > old.json\nkubectl annotate deploy g note=y --overwrite\nkubectl replace -f old.json','Error from server (Conflict): error when replacing "old.json": Operation cannot be fulfilled on deployments.apps "g": the object has been modified; please apply your changes to the latest version and try again'),
+ ('server-side apply 的字段所有权。','kubectl create deployment ssa --image=nginx:alpine --dry-run=client -o yaml > ssa.yaml\nkubectl apply --server-side -f ssa.yaml\nkubectl scale deploy ssa --replicas=3\nkubectl apply --server-side -f ssa.yaml','deployment.apps/ssa serverside-applied\ndeployment.apps/ssa scaled\nerror: Apply failed with 1 conflict: conflict with "kubectl-scale" using apps/v1: .spec.replicas'),
+ ('看谁管理哪些字段。','kubectl get deploy ssa --show-managed-fields -o yaml | grep -E "manager:|f:replicas"','    manager: kubectl\n    manager: kubectl-scale\n        f:replicas: {}'),
+ ('finalizer 阻止删除。','kubectl create configmap fin\nkubectl patch configmap fin -p \'{"metadata":{"finalizers":["example.com/cleanup"]}}\'\nkubectl delete configmap fin --wait=false\nkubectl get configmap fin -o jsonpath="{.metadata.deletionTimestamp}{\'\\n\'}"','configmap "fin" deleted\n2026-10-21T12:05:33Z'),
+ ('对象还在，只是被标记为删除中。移除 finalizer 后才消失。','kubectl patch configmap fin --type=json -p=\'[{"op":"remove","path":"/metadata/finalizers"}]\'\nkubectl get configmap fin','configmap/fin patched\nError from server (NotFound): configmaps "fin" not found')],
+ ('写一个最小的控制器','用 shell 写一个控制循环：确保每个带 <code>replicas-of</code> 注解（值为一个数字 N）的 ConfigMap，都有 N 个名为 <code>&lt;名字&gt;-0..N-1</code>、带 <code>owner=&lt;名字&gt;</code> 标签的 ConfigMap。多余的删除，缺的补上。要求水平触发：每轮都从当前完整状态计算。',
+ '<pre class="cmd">while true; do\n  for src in $(kubectl get cm -o jsonpath=\'{range .items[?(@.metadata.annotations.replicas-of)]}{.metadata.name}{"\\n"}{end}\'); do\n    want=$(kubectl get cm $src -o jsonpath=\'{.metadata.annotations.replicas-of}\')\n    have=$(kubectl get cm -l owner=$src -o name | sed \'s#.*/##\' | sort)\n    for i in $(seq 0 $((want-1))); do\n      echo "$have" | grep -qx "$src-$i" || kubectl create cm $src-$i &amp;&amp; kubectl label cm $src-$i owner=$src --overwrite &gt;/dev/null\n    done\n    for n in $have; do\n      idx=${n##*-}; [ "$idx" -ge "$want" ] &amp;&amp; kubectl delete cm $n\n    done\n  done\n  sleep 3\ndone</pre><pre class="cmd"># 另一个终端\nkubectl create cm demo &amp;&amp; kubectl annotate cm demo replicas-of=3\nkubectl get cm -l owner=demo        # demo-0 demo-1 demo-2\nkubectl delete cm demo-1            # 下一轮被补回\nkubectl annotate cm demo replicas-of=1 --overwrite   # demo-1、demo-2 被删除</pre><p>它不关心“发生了什么事件”，每轮只比较期望（注解）和实际（列表）。即使循环停了一阵子、期间改了好几次，恢复后第一轮就能收敛。真实控制器用 watch + 本地缓存（informer）代替轮询以减少负载，再加上 ownerReferences 让删除 demo 时级联清理，但核心就是这个循环（第 19 课用 Operator 框架实现）。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]

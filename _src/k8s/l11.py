@@ -1,0 +1,23 @@
+TITLE='控制平面：API Server、etcd、调度器、控制器';DESC='打开控制平面：一个请求在 API Server 里经过哪些步骤，etcd 如何保存状态并保持一致，调度器如何选节点，控制器如何通过 watch 协作。最后完整追踪一次 kubectl apply。';NEXT='声明式 API 与控制循环';MIN=50
+SUM=['API Server 处理请求：<b>认证</b>（你是谁）→ <b>授权</b>（RBAC）→ <b>准入</b>（变更型，然后校验型 webhook）→ 结构校验 → 写入 etcd。它是唯一直接访问 etcd 的组件。',
+'etcd 是基于 <b>Raft</b> 的强一致键值存储。写入需要多数成员确认：3 个成员容忍 1 个故障，5 个容忍 2 个。etcd 是集群唯一的状态来源，必须备份（第 26 课）。',
+'组件之间不直接调用，而是通过 API Server 的 <b>watch</b>：订阅某类对象的变化，收到事件后各自行动。',
+'调度器：为每个未调度的 Pod，先<b>过滤</b>（资源够吗、污点、亲和性），再<b>打分</b>（均衡、镜像已存在…），选最高分节点，写入 <code>spec.nodeName</code>（绑定）。',
+'kube-controller-manager 里运行着几十个控制器：Deployment、ReplicaSet、Node、Endpoint、Job、ServiceAccount、垃圾回收……每个只负责一件事。',
+'kubeadm 集群里，控制平面组件本身是 <b>静态 Pod</b>：kubelet 直接读取 <code>/etc/kubernetes/manifests/</code> 里的 YAML 运行它们。']
+def secs(prac,E):
+    return [
+('请求在 API Server 里的旅程','从收到请求到写入 etcd。','<div id="p1"></div>'),
+('watch：组件如何协作','没有组件直接调用另一个组件。','<div id="p2"></div>'),
+('动手：追踪一次部署','执行了 <code>kubectl apply -f web.yaml</code>（一个 2 副本的 Deployment）。按发生的先后顺序点击下面的步骤。','<div class="chal"><div class="cmds" id="steps"></div><div class="log" id="seq" style="height:auto;min-height:60px"></div><div class="msg" id="sm"></div></div>'),
+('相关命令','看看控制平面里有什么。','<div id="t4"></div>'),
+('在你的电脑上练习','kind 用 kubeadm 搭建控制平面，可以直接看到每个组件。',prac([
+ ('控制平面组件都是 kube-system 里的 Pod。','kubectl get pods -n kube-system -o wide | grep control-plane','etcd-learn-control-plane                      1/1   Running   learn-control-plane\nkube-apiserver-learn-control-plane            1/1   Running   learn-control-plane\nkube-controller-manager-learn-control-plane   1/1   Running   learn-control-plane\nkube-scheduler-learn-control-plane            1/1   Running   learn-control-plane'),
+ ('它们是静态 Pod：定义在节点的文件里。','docker exec learn-control-plane ls /etc/kubernetes/manifests','etcd.yaml\nkube-apiserver.yaml\nkube-controller-manager.yaml\nkube-scheduler.yaml'),
+ ('API Server 的启动参数：准入插件、etcd 地址。','docker exec learn-control-plane grep -E "admission-plugins|etcd-servers|authorization-mode" /etc/kubernetes/manifests/kube-apiserver.yaml','    - --authorization-mode=Node,RBAC\n    - --enable-admission-plugins=NodeRestriction\n    - --etcd-servers=https://127.0.0.1:2379'),
+ ('直接看 etcd 里存的键（需要证书）。','kubectl -n kube-system exec etcd-learn-control-plane -- etcdctl --cacert /etc/kubernetes/pki/etcd/ca.crt --cert /etc/kubernetes/pki/etcd/server.crt --key /etc/kubernetes/pki/etcd/server.key get /registry/deployments --prefix --keys-only','/registry/deployments/kube-system/coredns\n/registry/deployments/local-path-storage/local-path-provisioner'),
+ ('用 watch 观察事件流（另开终端执行第 2 条）。','kubectl get pods -w --output-watch-events\n# 另一个终端：kubectl create deployment w --image=nginx:alpine --replicas=2','EVENT    NAME                READY   STATUS\nADDED    w-6f9c7d8b5-4kq2x   0/1     Pending\nADDED    w-6f9c7d8b5-tq9ps   0/1     Pending\nMODIFIED w-6f9c7d8b5-4kq2x   0/1     Pending\nMODIFIED w-6f9c7d8b5-4kq2x   0/1     ContainerCreating\nMODIFIED w-6f9c7d8b5-4kq2x   1/1     Running'),
+ ('按时间顺序看各组件留下的事件。','kubectl get events --sort-by=.metadata.creationTimestamp -o custom-columns=FROM:.source.component,REASON:.reason,OBJ:.involvedObject.name | tail -6','deployment-controller   ScalingReplicaSet   w\nreplicaset-controller   SuccessfulCreate    w-6f9c7d8b5\nreplicaset-controller   SuccessfulCreate    w-6f9c7d8b5\ndefault-scheduler       Scheduled           w-6f9c7d8b5-4kq2x\nkubelet                 Pulled              w-6f9c7d8b5-4kq2x\nkubelet                 Started             w-6f9c7d8b5-4kq2x')],
+ ('停掉调度器','把调度器的静态 Pod 文件移出 manifests 目录（kubelet 会停止它），然后创建一个 Deployment。观察 Pod 的状态，再把文件移回去。解释你看到的现象说明了什么。',
+ '<pre class="cmd">docker exec learn-control-plane mv /etc/kubernetes/manifests/kube-scheduler.yaml /tmp/\nsleep 20; kubectl get pods -n kube-system | grep scheduler   # 消失\nkubectl create deployment nosched --image=nginx:alpine --replicas=2\nkubectl get pods -l app=nosched -o wide\ndocker exec learn-control-plane mv /tmp/kube-scheduler.yaml /etc/kubernetes/manifests/\nsleep 30; kubectl get pods -l app=nosched -o wide</pre><pre class="out">NAME                       READY   STATUS    NODE\nnosched-7d8f9c6b5-2kq8x    0/1     Pending   &lt;none&gt;\nnosched-7d8f9c6b5-x7k2p    0/1     Pending   &lt;none&gt;\n…（调度器恢复后）\nnosched-7d8f9c6b5-2kq8x    1/1     Running   learn-worker\nnosched-7d8f9c6b5-x7k2p    1/1     Running   learn-worker2</pre><p>API Server 和控制器都正常：Deployment、ReplicaSet、Pod 对象都被创建了。只是没有人给 Pod 填写 <code>nodeName</code>，所以停在 Pending，kubelet 也不会认领。调度器回来后，它 watch 到这些未调度的 Pod，立刻处理。这说明每个组件独立工作，通过 API Server 里的对象状态衔接；任何一个暂时缺席，其余部分照常运行，恢复后自动补上。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]

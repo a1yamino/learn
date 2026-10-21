@@ -1,7 +1,13 @@
-import sys,importlib;sys.path.insert(0,__file__.rsplit('/',1)[0])
-from page import page,prac,E
-OUT='/workspace/learn/k8s'
+import sys;sys.path.insert(0,'/workspace/k8s-course');from page import page
+from html import escape as E
+def prac(steps,chal=None):
+    h='<div class="prac">'
+    for i,(p,c,o) in enumerate(steps):
+        h+=f'<div class="st"><span class="n">{i+1:02d}</span><div><p>{p}</p>'+(f'<pre class="cmd">{E(c)}</pre>' if c else '')+(f'<pre class="out">{E(o)}</pre>' if o else '')+'</div></div>'
+    h+='</div>'
+    if chal:t,d,a=chal;h+=f'<div class="task2"><div class="k">挑战</div><h3>{t}</h3><p>{d}</p><details><summary>查看参考答案</summary><div>{a}</div></details></div>'
+    return h
+import importlib
 for n in sys.argv[1:]:
     m=importlib.import_module(f'l{int(n):02d}')
-    open(f'{OUT}/l{int(n):02d}.html','w').write(page(int(n),m.TITLE,m.DESC,m.secs(prac,E),m.SUM,m.NEXT,m.MIN))
-    print('ok',n)
+    open(f'/workspace/learn/k8s/l{int(n):02d}.html','w').write(page(int(n),m.TITLE,m.DESC,m.secs(prac,E),m.SUM,m.NEXT,m.MIN))

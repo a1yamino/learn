@@ -1,1 +1,3 @@
-Generator sources for /k8s/ lessons (19+). page.py/build.py rebuilt from live HTML; earlier lessons are edited as HTML directly.
+# K8s course sources
+
+page.py / build.py / index.py generate /k8s/lNN.html from lNN.py (python3 build.py N ...; python3 index.py LIVE). test/kt.js = puppeteer check (desktop+mobile).
