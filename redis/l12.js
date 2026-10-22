@@ -1,5 +1,5 @@
 const P=(t,c='sig')=>({cls:'pill '+c,html:t});const B=(t,s,c='',w=120)=>({w,h:44,cls:'blk '+c,html:`${t}<br><span style="font-size:11px;opacity:.7">${s}</span>`});
-const bits=(s,hi)=>({w:520,h:44,cls:'frame',html:'<span style="font-family:monospace;letter-spacing:4px">'+[...s].map((c,i)=>hi&&hi.includes(i)?`<b style="color:var(--acc)">${c}</b>`:c).join('')+'</span>'});
+const bits=(s,hi)=>({w:520,h:44,cls:'frame',html:'<span style="font-family:monospace;letter-spacing:4px">'+[...s].map((c,i)=>hi&&hi.includes(i)?`<b style="color:var(--ac)">${c}</b>`:c).join('')+'</span>'});
 const e={d1:bits('00000000000000000000'),d2:bits('00000000000000000000'),l1:P('10-21'),l2:P('10-22'),r:bits('00000000000000000000'),lr:P('AND'),m:P('','sig')};
 Player(document.getElementById('p1'),{els:e,scenes:[
  {t:'SETBIT',p:'用户 3、7、12 在 10-21 活跃：把对应位置设为 1。',set:{l1:[0,10],d1:[80,0,bits('00010001000010000000',[3,7,12])]}},
