@@ -61,9 +61,13 @@ class T(unittest.TestCase):
         self.assertEqual([plumage(b) for b in B], [&quot;average&quot;, &quot;tired&quot;, &quot;scorched&quot;, &quot;beautiful&quot;])
     def test_speed(self):
         self.assertEqual([speed(b) for b in B], [35, 34, 30.0, 0])
-unittest.main(argv=[&quot;x&quot;], exit=False, verbosity=0)
+if __name__ == &quot;__main__&quot;:
+    unittest.main(argv=[&quot;x&quot;], verbosity=0)
 EOF
-python3 test_birds.py 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div></div><div class="st"><span class="n">02</span><div><p>第 1 步：创建类层次与工厂，旧函数委托给对象。测试仍然通过。</p><pre class="cmd">cat &gt; birds.py &lt;&lt;&#x27;EOF&#x27;
+python3 test_birds.py</pre><pre class="out">----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK</pre></div></div><div class="st"><span class="n">02</span><div><p>第 1 步：创建类层次与工厂，旧函数委托给对象。测试仍然通过。</p><pre class="cmd">cat &gt; birds.py &lt;&lt;&#x27;EOF&#x27;
 class Bird:
     def __init__(self, data):
         self._data = data
@@ -109,7 +113,10 @@ def plumage(data):
 def speed(data):
     return create_bird(data).speed
 EOF
-python3 test_birds.py 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div></div><div class="st"><span class="n">03</span><div><p>“一个 switch 原则”：类型选择只剩工厂里的一处（这里是查表）。新增一种鸟只需一个类和一行注册。</p><pre class="cmd">grep -c &quot;kind&quot; birds.py; python3 -c &quot;from birds import create_bird; b = create_bird({&#x27;kind&#x27;: &#x27;african&#x27;, &#x27;coconuts&#x27;: 1}); print(type(b).__name__, b.plumage, b.speed)&quot;</pre><pre class="out">1
+python3 test_birds.py</pre><pre class="out">----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK</pre></div></div><div class="st"><span class="n">03</span><div><p>“一个 switch 原则”：类型选择只剩工厂里的一处（这里是查表）。新增一种鸟只需一个类和一行注册。</p><pre class="cmd">grep -c &quot;kind&quot; birds.py; python3 -c &quot;from birds import create_bird; b = create_bird({&#x27;kind&#x27;: &#x27;african&#x27;, &#x27;coconuts&#x27;: 1}); print(type(b).__name__, b.plumage, b.speed)&quot;</pre><pre class="out">1
 African average 38</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计重构步骤</h3><p>下面的函数既解析又计算，并且对类型有条件分支。写出一个由小步组成的重构计划（每一步都能保持测试通过）：<pre class="cmd">def price(order_text, products):
     # 格式："SKU-数量"，如 "kettle-3"
     sku, qty = order_text.split("-")
