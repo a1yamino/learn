@@ -49,14 +49,14 @@ kind: Cluster
 metadata: {name: db}
 spec:
   instances: 3
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {memory: 512Mi}
   storage: {size: 1Gi}
 EOT
+kubectl -n shop get cluster db</pre><pre class="out">cluster 已创建；默认拒绝策略下暂不要求 Ready，先完成下一步网络放行。</pre></div></div><div class="st"><span class="n">03</span><div><p>先编写并应用网络策略（第 21 课）：DNS、数据库副本互通、Operator → db 的管理端口、db → API Server，以及 web → api → db 的双向规则。默认拒绝同时限制入站和出站，两端都须放行。策略生效后再等待数据库就绪。</p><pre class="cmd">kubectl -n shop apply -f netpol.yaml
 kubectl -n shop wait --for=condition=Ready cluster/db --timeout=300s
-kubectl -n shop get pods -l cnpg.io/cluster=db -L role</pre><pre class="out">cluster.postgresql.cnpg.io/db condition met
-NAME   READY   STATUS    ROLE
-db-1   1/1     Running   primary
-db-2   1/1     Running   replica
-db-3   1/1     Running   replica</pre></div></div><div class="st"><span class="n">03</span><div><p>放行 api → db 和 DNS，以及 Operator → db（第 21 课）。</p><pre class="cmd">kubectl -n shop apply -f netpol.yaml   # allow-dns、api-to-db、db-from-api、db-from-operator、db-replication
+kubectl -n shop get pods -l cnpg.io/cluster=db -L role
 kubectl -n shop get netpol -o name</pre><pre class="out">networkpolicy.networking.k8s.io/allow-dns
 networkpolicy.networking.k8s.io/api-to-db
 networkpolicy.networking.k8s.io/db-from-api
