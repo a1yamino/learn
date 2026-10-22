@@ -1,0 +1,187 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 2 课 · 一次对话的生命周期：从输入到回复</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 2 课</span><span class="sp"></span><a href="l01.html">← 第 1 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 2 课</div><h1>一次对话的生命周期：从输入到回复</h1>
+<p>在深入每一层之前，先完整地跟踪一次请求：用户在编辑器里按下回车，文本经过扩展命令、输入钩子、技能与提示模板展开，进入 AgentSession；会话检查模型与凭据后启动一次 agent 运行；agent 循环构造请求、流式接收模型回复、执行工具、把结果写回上下文，直到模型不再调用工具；每条完成的消息通过事件被持久化到会话文件，并被渲染到终端。本课建立这张“全景图”，并写一个后续各课都会用到的练习工具 <code>faux-session.ts</code>。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次回车之后</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这段输入会怎样？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码：AgentSession.prompt 与持久化</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">事件流</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次回车之后</h2><div class="goal">从编辑器到模型，再回到屏幕。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这段输入会怎样？</h2><div class="goal">pi 对不同输入的处理路径不同。选择一种输入。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码：AgentSession.prompt 与持久化</h2><div class="goal">两个关键位置：输入如何进入 agent；完成的消息如何写入会话。</div></div></div>
+<p>输入处理，按顺序：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/agent-session.ts#L2099-L2108" target="_blank" rel="noopener">packages/coding-agent/src/core/agent-session.ts  L2099–2108, L2116–2134, L2136–2150, L2172–2174 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// Handle extension commands first (execute immediately, even during streaming)
+// Extension commands manage their own LLM interaction via pi.sendMessage()
+if (expandPromptTemplates &amp;&amp; text.startsWith(&quot;/&quot;)) {
+  const handled = await this._tryExecuteExtensionCommand(text);
+  if (handled) {
+    // Extension command executed, no prompt to send
+    preflightResult?.(&quot;handled&quot;);
+    return;
+  }
+}
+  // …
+// Emit input event for extension interception (before skill/template expansion)
+const processedInput = await this._runInputHandlers(
+  text,
+  options?.images,
+  options?.source ?? &quot;interactive&quot;,
+  this.isStreaming ? options?.streamingBehavior : undefined,
+);
+if (!processedInput) {
+  preflightResult?.(&quot;handled&quot;);
+  return;
+}
+const { text: currentText, images: currentImages } = processedInput;
+
+// Expand skill commands (/skill:name args) and prompt templates (/template args)
+let expandedText = currentText;
+if (expandPromptTemplates) {
+  expandedText = this._expandSkillCommand(expandedText);
+  expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+}
+  // …
+// If streaming, queue via steer() or followUp() based on option
+if (this.isStreaming) {
+  if (!options?.streamingBehavior) {
+    throw new Error(
+      &quot;Agent is already processing. Specify streamingBehavior (&#x27;steer&#x27; or &#x27;followUp&#x27;) to queue the message.&quot;,
+    );
+  }
+  if (options.streamingBehavior === &quot;followUp&quot;) {
+    await this._queueFollowUp(expandedText, currentImages);
+  } else {
+    await this._queueSteer(expandedText, currentImages);
+  }
+  preflightResult?.(&quot;queued&quot;);
+  return;
+}
+  // …
+await this._startRun({ messageType: &quot;user&quot;, prompt: expandedText, images: currentImages }, () =&gt;
+  preflightResult?.(&quot;started&quot;),
+);</pre><p>持久化不是循环的职责，而是事件的订阅者：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/agent-session.ts#L1142-L1144" target="_blank" rel="noopener">packages/coding-agent/src/core/agent-session.ts  L1142–1144, L1146–1147, L1158–1166 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// Emit to extensions first, then notify public listeners.
+await this._emitExtensionEvent(event);
+this._emit(event.type === &quot;agent_end&quot; ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
+  // …
+// Handle session persistence
+if (event.type === &quot;message_end&quot;) {
+  // …
+} else if (
+  event.message.role === &quot;system&quot; ||
+  event.message.role === &quot;user&quot; ||
+  event.message.role === &quot;assistant&quot; ||
+  event.message.role === &quot;toolResult&quot;
+) {
+  // Regular LLM message - persist as SessionMessageEntry
+  entryId = this.sessionManager.appendMessage(event.message);
+}</pre><p>注意顺序：先通知扩展，再通知公共订阅者（例如 TUI），最后持久化。循环本身完全不知道“会话文件”的存在——这正是 agent-core 可以被其他应用复用的原因。</p><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 把这条通路做成了显式的<b>提交队列 / 事件队列</b>协议：界面提交 <code>Op</code>（如 <code>UserInput</code>），核心发出 <code>Event</code>，二者可以在不同进程甚至不同机器上。见 <a href="../codex/l02.html">Codex 第 2 课 · 一次 turn 的生命周期</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>事件流</h2><div class="goal">运行练习脚本后，用订阅打印出的事件。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">写一个后续各课都会复用的工具：用 faux 模型创建真实的 <code>AgentSession</code>（使用真实的内置工具、真实的会话逻辑），然后跟踪一次完整的请求。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p><code>scratch/faux-session.ts</code>：注册 faux provider，把它登记到 <code>ModelRuntime</code>（这样会话的凭据检查能通过），再用 SDK 的 <code>createAgentSession</code> 创建会话。工作目录是一个临时目录。</p><pre class="cmd">cat &gt; pi-mono/scratch/faux-session.ts &lt;&lt;&#x27;EOF&#x27;
+// 课程练习用的小工具：用 faux 模型创建一个真实的 AgentSession（无需 API key）。
+import { type FauxResponseStep, registerFauxProvider } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { type CreateAgentSessionOptions, createAgentSession, ModelRuntime, SessionManager, SettingsManager } from &quot;@earendil-works/pi-coding-agent&quot;;
+import { mkdirSync, mkdtempSync, writeFileSync } from &quot;node:fs&quot;;
+import { tmpdir } from &quot;node:os&quot;;
+import { dirname, join } from &quot;node:path&quot;;
+
+export async function fauxSession(
+  responses: FauxResponseStep[],
+  options: { files?: Record&lt;string, string&gt;; settings?: object; extra?: Partial&lt;CreateAgentSessionOptions&gt; } = {},
+) {
+  const dir = mkdtempSync(join(tmpdir(), &quot;pi-course-&quot;));
+  for (const [name, text] of Object.entries(options.files ?? {})) {
+    mkdirSync(dirname(join(dir, name)), { recursive: true });
+    writeFileSync(join(dir, name), text);
+  }
+  const faux = registerFauxProvider();
+  faux.setResponses(responses);
+  const model = faux.getModel();
+  const modelRuntime = await ModelRuntime.create({ authPath: join(dir, &quot;.auth.json&quot;), modelsPath: null, allowModelNetwork: false });
+  modelRuntime.registerProvider(model.provider, {
+    baseUrl: model.baseUrl, apiKey: &quot;faux-key&quot;, api: faux.api,
+    models: faux.models.map((m) =&gt; ({ id: m.id, name: m.name, api: m.api, reasoning: m.reasoning, input: m.input,
+      cost: m.cost, contextWindow: m.contextWindow, maxTokens: m.maxTokens, baseUrl: m.baseUrl })),
+  });
+  const { session } = await createAgentSession({
+    cwd: dir, agentDir: join(dir, &quot;.pi-agent&quot;), model, thinkingLevel: &quot;off&quot;, modelRuntime,
+    sessionManager: SessionManager.inMemory(dir), settingsManager: SettingsManager.inMemory(options.settings ?? {}),
+    ...options.extra,
+  });
+  return { session, dir, faux };
+}
+
+export function show(messages: readonly any[]) {
+  for (const m of messages) {
+    const c = m.role === &quot;system&quot;
+      ? `sections=${Object.keys(m.sections ?? {}).join(&quot;,&quot;)} tools=${(m.toolsAdded ?? []).map((t: any) =&gt; t.name).join(&quot;,&quot;)}`
+      : typeof m.content === &quot;string&quot; ? m.content : JSON.stringify(m.content ?? &quot;&quot;);
+    console.log(m.role.padEnd(11), c.replace(/\s+/g, &quot; &quot;).slice(0, 90));
+  }
+}
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>跟踪一次请求：脚本化的模型先调用真实的 <code>read</code> 工具，再回答。</p><pre class="cmd">cat &gt; pi-mono/scratch/l02.ts &lt;&lt;&#x27;EOF&#x27;
+import { fauxAssistantMessage, fauxToolCall } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { fauxSession, show } from &quot;./faux-session.ts&quot;;
+
+const { session } = await fauxSession(
+  [fauxAssistantMessage([fauxToolCall(&quot;read&quot;, { path: &quot;hello.txt&quot; })], { stopReason: &quot;toolUse&quot; }), fauxAssistantMessage(&quot;文件里写着：你好，pi&quot;)],
+  { files: { &quot;hello.txt&quot;: &quot;你好，pi\n&quot; } },
+);
+session.subscribe((e) =&gt; {
+  if (e.type === &quot;tool_execution_start&quot;) console.log(`[工具开始] ${e.toolName} ${JSON.stringify(e.args)}`);
+  if (e.type === &quot;turn_end&quot;) console.log(`[turn_end] 本轮工具结果 ${e.toolResults.length} 个`);
+  if (e.type === &quot;agent_settled&quot;) console.log(&quot;[agent_settled]&quot;);
+});
+await session.prompt(&quot;读一下 hello.txt&quot;);
+show(session.messages);
+session.dispose();
+EOF
+cd pi-mono/scratch &amp;&amp; node l02.ts</pre><pre class="out">[工具开始] read {&quot;path&quot;:&quot;hello.txt&quot;}
+[turn_end] 本轮工具结果 1 个
+[turn_end] 本轮工具结果 0 个
+[agent_settled]
+system      sections=preamble,tools,rules,docs,skills,cwd tools=read,bash,edit,write
+user        [{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;读一下 hello.txt&quot;}]
+assistant   [{&quot;type&quot;:&quot;toolCall&quot;,&quot;id&quot;:&quot;tool:1792663049910:vsecmit8n5i&quot;,&quot;name&quot;:&quot;read&quot;,&quot;arguments&quot;:{&quot;path
+toolResult  [{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;你好，pi\n&quot;}]
+assistant   [{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;文件里写着：你好，pi&quot;}]</pre></div></div><div class="st"><span class="n">03</span><div><p>读一下真实的系统提示的开头（它来自 coding-agent 的 system-prompt.ts，第 12 课详解）。</p><pre class="cmd">cd pi-mono/scratch &amp;&amp; cat &gt; sp.ts &lt;&lt;&#x27;EOF&#x27;
+import { fauxAssistantMessage } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { fauxSession } from &quot;./faux-session.ts&quot;;
+const { session } = await fauxSession([fauxAssistantMessage(&quot;ok&quot;)]);
+console.log(session.systemPrompt.split(&quot;\n&quot;).slice(0, 8).join(&quot;\n&quot;));
+session.dispose();
+EOF
+node sp.ts</pre><pre class="out">You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+
+&lt;tools&gt;
+- read: Read file contents
+- bash: Execute bash commands (ls, grep, find, etc.)
+- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call
+- write: Create or overwrite files</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>steer 与 followUp</h3><p>修改 <code>l02.ts</code>：在收到第一个 <code>tool_execution_start</code> 事件时调用 <code>session.steer("另外也看看 notes.txt")</code>，并为 faux 模型多准备一条回复。预测并验证：转录中这条 user 消息出现在哪里？如果改用 <code>session.followUp(...)</code> 呢？</p><details><summary>查看参考答案</summary><div><p><b>steer</b>：消息在当前 turn 的工具执行完成之后、下一次模型调用之前进入转录。顺序是：system、user、assistant(read)、toolResult、<b>user(另外也看看…)</b>、assistant(…)。</p><p><b>followUp</b>：等 agent 本来要停下（模型回复没有工具调用、也没有 steering 消息）时才进入，因此出现在最终回复<b>之后</b>，并触发新的一轮：…、assistant(文件里写着…)、<b>user(另外也看看…)</b>、assistant(…)。</p><p>对应的代码在 <code>agent-loop.ts</code> 的 <code>runLoop</code>：内层循环每个 turn 结束后读取 <code>getSteeringMessages()</code>；外层循环在要退出前读取 <code>getFollowUpMessages()</code>（第 6 课逐行讲解）。别忘了给 faux 模型准备足够的回复，否则会报 “No more faux responses queued”。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>三个层次的对象</b>：<code>AgentSession</code>（coding-agent：输入处理、会话持久化、压缩、扩展、重试）包着 <code>Agent</code>（agent-core：状态与事件）；<code>Agent</code> 运行 <code>runLoop</code>（agent-core：循环本身）；循环通过 <code>streamFn</code> 调用 pi-ai。</li><li><b>输入处理顺序</b>（<code>AgentSession.prompt</code>）：扩展命令（<code>/name</code>，立即执行，不进入模型）→ 输入事件（扩展可拦截或改写）→ 技能命令 <code>/skill:name</code> 展开 → 提示模板展开 → 若正在运行则按 steer / followUp 排队 → 校验模型和凭据 → 启动运行。</li><li><b>一次运行 = 若干个 turn</b>：每个 turn 是“一次模型回复 + 执行它请求的全部工具”。模型的回复里有工具调用，就需要下一个 turn 把结果交给模型；没有工具调用（也没有排队的消息）时，运行结束。</li><li><b>事件驱动</b>：循环只发出事件（<code>agent_start</code>、<code>turn_start</code>、<code>message_start/update/end</code>、<code>tool_execution_*</code>、<code>turn_end</code>、<code>agent_end</code>），界面渲染、会话持久化、扩展钩子都是事件的订阅者。<code>AgentSession</code> 在 <code>message_end</code> 时把完成的消息追加到会话。</li><li><b>agent_end 与 agent_settled</b>：<code>agent_end</code> 表示一次底层运行结束；之后可能还有自动重试、自动压缩或排队的消息。<code>agent_settled</code> 才表示 pi 不会再自动继续。</li><li><b>系统消息也是消息</b>：pi 把系统提示与工具声明作为转录中的第一条 <code>system</code> 消息（带命名的 sections 与 toolsAdded），后续的变化以新的系统消息追加——第 3 课详述。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 03</div><a class="big" href="l03.html">统一的消息模型与流式事件 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l02.js"></script>
+</body></html>
