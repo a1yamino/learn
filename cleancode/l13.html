@@ -112,7 +112,11 @@ if __name__ == &quot;__main__&quot;:
     unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;])
 EOF
 python3 test_orders.py</pre><pre class="out">test_placing_order_saves_and_notifies (__main__.OrderServiceTest.test_placing_order_saves_and_notifies) ... ok
-Ran 1 test in 0.000s</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>找出隐式依赖</h3><p>下面的函数有几个隐式依赖？重写它，使所有依赖都显式：<pre class="cmd">def send_daily_digest():
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>找出隐式依赖</h3><p>下面的函数有几个隐式依赖？重写它，使所有依赖都显式：<pre class="cmd">def send_daily_digest():
     users = User.objects.filter(subscribed=True)
     today = datetime.date.today()
     for u in users:
