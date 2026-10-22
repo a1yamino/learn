@@ -19,7 +19,7 @@ Term(document.getElementById('t4'),[
 ['SET lock:k 7f3c NX PX 30000','OK','加锁。'],
 ['EVAL "if redis.call(\'GET\',KEYS[1])==ARGV[1] then return redis.call(\'DEL\',KEYS[1]) end return 0" 1 lock:k 7f3c','(integer) 1','解锁。'],
 ['HINCRBY rlock:k 7f3c:t1 1\nPEXPIRE rlock:k 30000','(integer) 2\n(integer) 1','可重入锁：哈希记录持有者与重入次数（Redisson 的做法，需放进同一个脚本）。'],
-['INCR lock:k:token','(integer) 35','fencing token。'],
+['INCR lock:k:token','(integer) 35','仅演示编号递增；令牌必须与授锁绑定且跨故障不回退，普通 Redis INCR 不提供这个保证。'],
 ['WAIT 1 100','(integer) 1','加锁后等待副本确认，减少切换丢锁的概率。']]);
 Quiz(document.getElementById('qs'),[
 ['为什么不能 SETNX 后再 EXPIRE？',['太慢','中间崩溃会留下永不过期的锁','EXPIRE 不支持'],1,''],
