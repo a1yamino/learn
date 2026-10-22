@@ -45,10 +45,10 @@ x.inc(3); y.inc(2); x.merge(y); y.merge(x); x.merge(y)   # 重复合并也没关
 print(&quot;计数器：&quot;, x.value(), y.value())
 
 # 3) OR-Set：添加带唯一标签，删除只删除自己看到的标签 → 并发的“添加”胜出
-import itertools; tag = itertools.count()
+import uuid  # 跨设备添加也必须使用唯一标签
 class ORSet:
     def __init__(self): self.adds, self.removes = set(), set()
-    def add(self, e): self.adds.add((e, next(tag)))
+    def add(self, e): self.adds.add((e, uuid.uuid4().hex))
     def remove(self, e): self.removes |= {t for t in self.adds if t[0] == e}
     def merge(self, o): self.adds |= o.adds; self.removes |= o.removes
     def value(self): return sorted({e for e, t in self.adds - self.removes})
@@ -61,7 +61,7 @@ print(&quot;购物清单：&quot;, s1.value(), s2.value())</pre><pre class="out"
 计数器： 5 5
 购物清单： [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;] [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;]</pre></div></div><div class="st"><span class="n">02</span><div><p>思考：为什么 OR-Set 中“牛奶”还在？因为 A 删除时只删除了自己看到过的那个标签，B 后来添加的牛奶带有新标签，A 从未见过。这种语义叫“添加胜出”。如果你需要“删除胜出”，就要用另一种 CRDT。</p></div></div><div class="st"><span class="n">03</span><div><p>改一改：把 G-Counter 合并时的 max 换成相加，重复合并两次，看看计数为什么会出错（合并不再幂等）。</p><pre class="cmd">sed -i &#x27;s/max(self.c.get(k, 0), v)/self.c.get(k, 0) + v/&#x27; crdt.py &amp;&amp; python3 crdt.py</pre><pre class="out">LWW 合并： 标题：周例会 （副本 A 的修改丢失）
 计数器： 12 7
-购物清单： [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;] [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;]</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个离线优先的待办应用选择数据结构</h3><p>功能：待办列表（可以增删、重排）、每项有标题、完成状态、截止日期；同一用户的手机与电脑可能都离线修改几天。请为每种操作选择冲突解决语义，并说明哪些可以用现成的 CRDT、哪些需要提示用户。</p><details><summary>查看参考答案</summary><div><ol><li><b>列表成员（增删）</b>：OR-Set（添加胜出）——一个设备删除、另一个设备在同一项上修改时，保留该项更安全；或者用“删除标记 + 修改时自动复活”。</li><li><b>顺序</b>：列表 CRDT（如 RGA，或 Automerge/Yjs 的 list），每项有稳定的位置标识；或者给每项一个分数位置（fractional index），重排时只改被移动项的位置，冲突时以 LWW 解决该项的位置。</li><li><b>标题</b>：短文本可用 LWW 寄存器（按 Lamport 时间戳 + 设备 ID 打破平局，而不是墙上时钟）；若希望保留两边的编辑，用文本 CRDT 或多值寄存器，把冲突显示给用户选择。</li><li><b>完成状态</b>：LWW 寄存器即可；或者“完成胜出”的标志。</li><li><b>截止日期</b>：LWW 寄存器；如果两个设备都改了，可以在同步后提示“该项在另一设备上也被修改了”。</li><li>整体：用 Automerge/Yjs 之类的库，文档存在本地（IndexedDB/SQLite），同步服务器只转发和存储变更，不需要理解冲突。</li></ol></div></details></div>
+购物清单： [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;] [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;]</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个离线优先的待办应用选择数据结构</h3><p>功能：待办列表（可以增删、重排）、每项有标题、完成状态、截止日期；同一用户的手机与电脑可能都离线修改几天。请为每种操作选择冲突解决语义，并说明哪些可以用现成的 CRDT、哪些需要提示用户。</p><details><summary>查看参考答案</summary><div><ol><li><b>列表成员（增删）</b>：OR-Set（添加胜出）保证并发的“添加”胜过删除；只修改标题等字段不会自动重新添加成员，因此不能推出“删除与编辑并发时保留该项”。若产品需要编辑使条目复活，编辑操作必须显式产生新的添加标签，或采用带删除标记的复活策略；还要把字段合并与成员关系分别定义。</li><li><b>顺序</b>：列表 CRDT（如 RGA，或 Automerge/Yjs 的 list），每项有稳定的位置标识；或者给每项一个分数位置（fractional index），重排时只改被移动项的位置，冲突时以 LWW 解决该项的位置。</li><li><b>标题</b>：短文本可用 LWW 寄存器（按 Lamport 时间戳 + 设备 ID 打破平局，而不是墙上时钟）；若希望保留两边的编辑，用文本 CRDT 或多值寄存器，把冲突显示给用户选择。</li><li><b>完成状态</b>：LWW 寄存器即可；或者“完成胜出”的标志。</li><li><b>截止日期</b>：LWW 寄存器；如果两个设备都改了，可以在同步后提示“该项在另一设备上也被修改了”。</li><li>整体：用 Automerge/Yjs 之类的库，文档存在本地（IndexedDB/SQLite），同步服务器只转发和存储变更，不需要理解冲突。</li></ol></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
