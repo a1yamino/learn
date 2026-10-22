@@ -50,7 +50,7 @@ throttled_usec 7989310</pre><p>每 100ms 一个周期，容器只能用 20ms。�
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li>cgroups（控制组）是内核功能：把进程分组，限制和统计每组的资源。现代发行版使用 cgroup v2，挂载在 <code>/sys/fs/cgroup</code>。</li><li><code>--memory 256m</code> 写入 <code>memory.max</code>。超出后内核 OOM killer 杀死进程，容器退出码 <b>137</b>，<code>OOMKilled: true</code>。</li><li><code>--cpus 0.5</code> 写入 <code>cpu.max</code>（每 100ms 周期最多 50ms）。超出不会被杀，而是被<b>限流</b>（throttled），表现为变慢。</li><li><code>--pids-limit</code> 限制进程数，防止 fork 炸弹拖垮宿主机。</li><li>不设限制时，一个容器可以用光整台机器的内存和 CPU。生产环境的每个容器都应该设置限制。</li></ol></section>
+<ol class="sum"><li>cgroups（控制组）是内核功能：把进程分组，限制和统计每组的资源。现代发行版使用 cgroup v2，挂载在 <code>/sys/fs/cgroup</code>。</li><li><code>--memory 256m</code> 写入 <code>memory.max</code>。达到上限后先尝试回收；是否使用 swap 取决于配置。回收仍不足时可能触发 cgroup OOM。主进程被杀才会使容器退出为 137；只杀子进程时容器可能继续运行。</li><li><code>--cpus 0.5</code> 写入 <code>cpu.max</code>（每 100ms 周期最多 50ms）。超出不会被杀，而是被<b>限流</b>（throttled），表现为变慢。</li><li><code>--pids-limit</code> 限制进程数，防止 fork 炸弹拖垮宿主机。</li><li>不设限制时，一个容器可以用光整台机器的内存和 CPU。生产环境的每个容器都应该设置限制。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 13</div><a class="big" href="l13.html">镜像与文件系统：OverlayFS 和 OCI 镜像规范 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
