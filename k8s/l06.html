@@ -67,17 +67,18 @@ configMapGenerator:
 - name: app
   literals: [LOG_LEVEL=info]
 EOF
-kubectl create deployment web --image=busybox --dry-run=client -o yaml -- sleep 3600 > deploy.yaml
+kubectl create deployment cfg-web --image=busybox --dry-run=client -o yaml -- sleep 3600 > deploy.yaml
 # 在 deploy.yaml 的容器下加入：envFrom: [{ configMapRef: { name: app } }]
 kubectl apply -k . &amp;&amp; kubectl get cm | grep app-
 sed -i.bak "s/LOG_LEVEL=info/LOG_LEVEL=debug/" kustomization.yaml
-kubectl apply -k . &amp;&amp; kubectl rollout status deploy web
+kubectl apply -k . &amp;&amp; kubectl rollout status deploy cfg-web
 kubectl get cm | grep app-
-kubectl rollout undo deploy web
-kubectl exec deploy/web -- printenv LOG_LEVEL</pre><pre class="out">app-g7hk2m9c5f   1      3s
+kubectl rollout undo deploy cfg-web
+kubectl rollout status deploy cfg-web
+kubectl exec deploy/cfg-web -- printenv LOG_LEVEL</pre><pre class="out">app-g7hk2m9c5f   1      3s
 configmap/app-5c8b6tf2d4 created
-deployment.apps/web configured
-deployment "web" successfully rolled out
+deployment.apps/cfg-web configured
+deployment "cfg-web" successfully rolled out
 app-5c8b6tf2d4   1      5s
 app-g7hk2m9c5f   1      40s
 info</pre><p>名字里的哈希由内容计算。内容变了 → 名字变了 → Deployment 的 Pod 模板引用了新名字 → 模板变化 → 滚动更新（第 4 课）。旧 ConfigMap 仍在，所以 undo 后旧 ReplicaSet 引用的旧配置依然有效。这比原地修改 ConfigMap 更可控。</p></div></details></div>
