@@ -26,7 +26,7 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">前半部分在有 sudo 权限的 Linux 实验机执行；Mac / Windows 用户请连接 Linux 虚拟机。后半部分需要 Docker、Python 3 和 tar，并启用 containerd 镜像存储以得到示例的 OCI 布局。旧存储后端导出的 archive 可能只有 manifest.json 和 layer.tar，不能直接套用 index.json 步骤。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">前半部分在有 sudo 权限的 Linux 实验机执行；Mac / Windows 用户请连接 Linux 虚拟机。后半部分需要 Docker 25+、Python 3 和 tar。Docker 25 起，无论经典存储还是 containerd 镜像存储，<code>docker save</code> 都输出 OCI 布局（index.json）；containerd 存储下 index.json 里还会嵌套一层 index，所以下面用递归脚本解析。Docker 25 之前的版本只导出 manifest.json 和 layer.tar，不能直接套用 index.json 步骤。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>手动创建一个 overlay。</p><pre class="cmd">mkdir -p /tmp/ov/{lower,upper,work,merged} &amp;&amp; cd /tmp/ov
 echo base &gt; lower/a.txt; echo keep &gt; lower/b.txt
 sudo mount -t overlay overlay -o lowerdir=lower,upperdir=upper,workdir=work merged
