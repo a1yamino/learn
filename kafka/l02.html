@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka 第 2 课 · 动手：命令行工具与第一个主题</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kafka</a><span class="crumb">第 2 课</span><span class="sp"></span><a href="l01.html">← 第 1 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kafka · 第 2 课</div><h1>动手：命令行工具与第一个主题</h1>
+<p>本课在 Docker 中搭一个三节点的 KRaft 集群，用 Kafka 自带的命令行工具完成一遍完整流程：创建主题、修改配置、生产和消费消息、查看消费者组的进度与积压，以及停掉一个 Broker 后观察 Leader 切换。后面的课都会用到这些命令。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">三节点集群</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：读懂 describe 的输出</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">消费者组的 LAG</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>三节点集群</h2><div class="goal">每个节点既是 Broker 也是控制器（组合模式，适合学习）。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：读懂 describe 的输出</h2><div class="goal">主题 orders：3 个分区、副本因子 3。点击事件，看 describe 结果如何变化。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:100px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>消费者组的 LAG</h2><div class="goal">积压是最重要的消费指标。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">常用参数。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 docker compose 启动三节点集群。把下面内容保存为 compose.yaml。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>compose.yaml（k1 的配置，k2、k3 只需把 1 改成 2、3，端口改成 9093、9094）。</p><pre class="cmd">services:
+  k1:
+    image: apache/kafka:4.4.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://k1:19092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@k1:9093,2@k2:9093,3@k3:9093
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    ports: [&quot;9092:9092&quot;]</pre><pre class="out">（保存文件）</pre></div></div><div class="st"><span class="n">02</span><div><p>启动并进入 k1。</p><pre class="cmd">docker rm -f kafka; docker compose up -d
+docker compose exec k1 bash
+cd /opt/kafka; B=&quot;--bootstrap-server k1:19092&quot;</pre><pre class="out">[+] Running 3/3 …</pre></div></div><div class="st"><span class="n">03</span><div><p>创建副本因子 3 的主题并查看。</p><pre class="cmd">bin/kafka-topics.sh $B --create --topic orders --partitions 3 --replication-factor 3
+bin/kafka-topics.sh $B --describe --topic orders</pre><pre class="out">Created topic orders.
+Topic: orders	Partition: 0	Leader: 2	Replicas: 2,3,1	Isr: 2,3,1
+	Topic: orders	Partition: 1	Leader: 3	Replicas: 3,1,2	Isr: 3,1,2
+	Topic: orders	Partition: 2	Leader: 1	Replicas: 1,2,3	Isr: 1,2,3</pre></div></div><div class="st"><span class="n">04</span><div><p>生产 1000 条测试消息。</p><pre class="cmd">bin/kafka-producer-perf-test.sh --topic orders --num-records 1000 --record-size 100 --throughput -1 --producer-props bootstrap.servers=k1:19092</pre><pre class="out">1000 records sent, … records/sec …</pre></div></div><div class="st"><span class="n">05</span><div><p>以组 g1 消费一部分，然后看积压。</p><pre class="cmd">bin/kafka-console-consumer.sh $B --topic orders --group g1 --max-messages 300 &gt; /dev/null
+bin/kafka-consumer-groups.sh $B --describe --group g1</pre><pre class="out">GROUP TOPIC  PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG …
+g1    orders 0         300            334            34
+g1    orders 1         0              329            329
+g1    orders 2         0              337            337</pre></div></div><div class="st"><span class="n">06</span><div><p>在宿主机停掉 k2，再看 describe。</p><pre class="cmd">docker compose stop k2
+docker compose exec k1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server k1:19092 --describe --topic orders</pre><pre class="out">	Topic: orders	Partition: 0	Leader: 3	Replicas: 2,3,1	Isr: 3,1
+…</pre></div></div><div class="st"><span class="n">07</span><div><p>修改主题配置。</p><pre class="cmd">bin/kafka-configs.sh $B --entity-type topics --entity-name orders --alter --add-config retention.ms=86400000
+bin/kafka-configs.sh $B --entity-type topics --entity-name orders --describe</pre><pre class="out">Completed updating config for topic orders.
+Dynamic configs for topic orders are:
+  retention.ms=86400000 sensitive=false …</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>诊断一个消费者组</h3><p>某天告警：组 <code>billing</code> 的 LAG 持续上升。下面是 describe 输出（节选）：分区 0–3 的 CONSUMER-ID 都是 <code>c-1</code>，分区 4–5 的 CONSUMER-ID 为 <code>-</code>；分区 0–3 的 LAG 约为 50，分区 4–5 的 LAG 为 12 万且在增长。说明可能的原因、你会运行哪些命令进一步确认，以及修复思路。</p><details><summary>查看参考答案</summary><div><ul><li>分区 4、5 没有分配到任何消费者（CONSUMER-ID 为 <code>-</code>），所以积压只增不减；分区 0–3 由 c-1 正常消费。</li><li>常见原因：组里本来有两个实例，c-2 已经退出或卡住，而组还没有把它的分区重新分配给 c-1——在新协议下这通常意味着分配正在进行或 c-1 订阅的主题列表不同；也可能是分区数刚从 4 扩到 6，而消费者使用固定的 <code>assign()</code> 手动分配，没有感知新分区。</li><li>确认：<code>kafka-consumer-groups.sh --describe --group billing --members --verbose</code> 看成员和各自分配的分区；<code>--state</code> 看组的状态；<code>kafka-topics.sh --describe</code> 看分区数是否刚变化；查应用日志里的再平衡和异常。</li><li>修复：恢复或扩容实例；手动分配的消费者改为 <code>subscribe()</code>；为消费者的存活和 LAG 设置告警。</li></ul></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>所有工具都在 <code>/opt/kafka/bin</code>，都通过 <code>--bootstrap-server</code> 连接任意一个 Broker，客户端从它获取整个集群的元数据后再直接连接各分区的 Leader。</li><li><code>kafka-topics.sh</code>：<code>--create</code>（分区数、副本因子、<code>--config</code>）、<code>--describe</code>、<code>--alter --partitions</code>（只能增加，且会改变 key 到分区的映射）、<code>--delete</code>。</li><li><code>kafka-configs.sh</code>：查看与动态修改主题、Broker、客户端配置，例如 <code>--entity-type topics --entity-name orders --alter --add-config retention.ms=86400000</code>，无需重启。</li><li><code>kafka-console-producer.sh</code> / <code>kafka-console-consumer.sh</code>：调试用的生产者和消费者，<code>--group</code> 指定消费者组，<code>--property print.key=true</code> 等显示元数据。</li><li><code>kafka-consumer-groups.sh --describe --group g</code> 显示每个分区的 <code>CURRENT-OFFSET</code>（组已提交的位置）、<code>LOG-END-OFFSET</code>（分区末尾）和 <code>LAG</code>（二者之差，即积压）。<code>--reset-offsets</code> 修改组的位置（第 8 课）。</li><li>副本因子 3 的主题在一个 Broker 宕机后，受影响分区的 Leader 会自动切换到其他 Broker 上的同步副本，客户端自动重连；Broker 恢复后重新追上数据并回到 ISR。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 03</div><a class="big" href="l03.html">日志存储：分区、段与索引 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l02.js"></script>
+</body></html>
