@@ -42,7 +42,15 @@ docker exec -u postgres pitr pg_basebackup -D /tmp/base -Ft -z -X none -P</pre><
 WAL=$(docker exec -u postgres pitr psql -Atc &quot;SELECT pg_walfile_name(pg_current_wal_lsn())&quot;)
 docker exec -u postgres pitr psql -c &quot;SELECT pg_switch_wal()&quot;
 # 归档异步进行，确认含恢复点的 WAL 段已经出现在共享归档卷
-until docker exec pitr test -f &quot;/archive/$WAL&quot;; do sleep 1; done</pre><pre class="out">INSERT 0 1000
+ARCHIVED=f
+for attempt in $(seq 1 60); do
+  docker exec pitr test -f &quot;/archive/$WAL&quot; &amp;&amp; { ARCHIVED=t; break; }
+  sleep 1
+done
+if [ &quot;$ARCHIVED&quot; != t ]; then
+  printf &#x27;%s\n&#x27; &#x27;60 秒内没有看到归档文件，请检查 archive_command 和 docker logs pitr，不要继续下一步。&#x27; &gt;&amp;2
+  false
+fi</pre><pre class="out">INSERT 0 1000
  pg_create_restore_point
 -------------------------
  0/3000148
