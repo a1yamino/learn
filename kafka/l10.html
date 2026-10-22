@@ -39,9 +39,11 @@ CurrentVoters: [{&quot;id&quot;: 1 …}, {&quot;id&quot;: 2 …}, {&quot;id&quot
 3      …           1290         0   …                  …                     Follower</pre></div></div><div class="st"><span class="n">03</span><div><p>停掉活跃控制器所在节点（这里是 k2），再看。</p><pre class="cmd">docker compose stop k2
 bin/kafka-metadata-quorum.sh $B describe --status | head -n 3</pre><pre class="out">ClusterId: …
 LeaderId: 3
-LeaderEpoch: 4</pre></div></div><div class="st"><span class="n">04</span><div><p>浏览已经生成的元数据快照（交互式 shell）；先确认目录中存在 .checkpoint 文件，没有时等待快照生成，不要把 .log 当快照。</p><pre class="cmd">ls /tmp/kafka-logs/__cluster_metadata-0/*.checkpoint
-# 把下面路径替换为上一条列出的一个实际快照文件：
-bin/kafka-metadata-shell.sh --snapshot /tmp/kafka-logs/__cluster_metadata-0/&lt;实际快照名&gt;.checkpoint
+LeaderEpoch: 4</pre></div></div><div class="st"><span class="n">04</span><div><p>浏览已经生成的元数据快照（交互式 shell）。先确认目录中存在 .checkpoint 文件，不要把 .log 当快照；控制器默认在元数据日志累计约 20 MB（metadata.log.max.record.bytes.between.snapshots）或距上次快照 1 小时（metadata.log.max.snapshot.interval.ms）时才生成快照，新集群可能要等一会儿。把快照复制到独立目录再打开，避免工具读到正在写入的元数据目录。</p><pre class="cmd">ls /tmp/kafka-logs/__cluster_metadata-0/*.checkpoint
+mkdir -p /tmp/snap/__cluster_metadata-0
+# 把下面的文件名替换为上一条列出的一个实际快照：
+cp /tmp/kafka-logs/__cluster_metadata-0/&lt;实际快照名&gt;.checkpoint /tmp/snap/__cluster_metadata-0/
+bin/kafka-metadata-shell.sh --snapshot /tmp/snap/__cluster_metadata-0/&lt;实际快照名&gt;.checkpoint
 ls /
 ls image/topics/byName</pre><pre class="out">&gt;&gt; ls /
 image  local
