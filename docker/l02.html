@@ -53,7 +53,7 @@ sleep 30; docker inspect -f '{{.RestartCount}} {{.State.Status}}' flaky</pre><pr
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li>容器有五种状态：created、running、paused、exited，以及被删除。<code>docker run</code> = <code>create</code> + <code>start</code>。</li><li><code>docker stop</code> 先发 SIGTERM，默认 10 秒后发 SIGKILL；<code>docker kill</code> 直接发 SIGKILL。</li><li>停止的容器还在，可写层的数据也还在；<code>docker rm</code> 之后才真正删除。运行中的容器要先停止或用 <code>rm -f</code>。</li><li><code>-d</code> 后台运行；<code>-it</code> 分配终端并保持输入，用于交互式程序。</li><li><code>docker logs</code> 读容器主进程的 stdout/stderr；<code>docker exec</code> 在运行中的容器里再启动一个进程。</li></ol></section>
+<ol class="sum"><li>容器有五种状态：created、running、paused、exited，以及被删除。<code>docker run</code> = <code>create</code> + <code>start</code>。</li><li><code>docker stop</code> 先发配置的停止信号，未配置时为 SIGTERM；Linux 容器默认等待 10 秒，仍未退出才发 SIGKILL。镜像的 <code>STOPSIGNAL</code> 或运行时的 <code>--stop-signal</code> 可以覆盖信号；本课 nginx 使用 SIGQUIT。<code>docker kill</code> 默认直接发 SIGKILL。</li><li>停止的容器还在，可写层的数据也还在；<code>docker rm</code> 之后才真正删除。运行中的容器要先停止或用 <code>rm -f</code>。</li><li><code>-d</code> 后台运行；<code>-it</code> 分配终端并保持输入，用于交互式程序。</li><li><code>docker logs</code> 读容器主进程的 stdout/stderr；<code>docker exec</code> 在运行中的容器里再启动一个进程。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 03</div><a class="big" href="l03.html">Dockerfile 与构建缓存 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>

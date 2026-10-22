@@ -9,7 +9,7 @@ Player(document.getElementById('p1'),{els:{C:box('created','已创建'),R:box('r
  {t:'docker create',p:'按镜像创建容器：分配可写层和配置，但还没有启动进程。状态是 <b>created</b>。',set:{...base,...tok('C','docker create --name web nginx')}},
  {t:'docker start',p:'启动容器的主进程（PID 1）。状态变为 <b>running</b>。<code>docker run</code> 等于 create + start。',set:{...base,...tok('R','docker start web')}},
  {t:'docker pause / unpause',p:'冻结容器里的所有进程（cgroup freezer），内存保留。<code>unpause</code> 后从原处继续。',set:{...base,...tok('A','docker pause web')}},
- {t:'docker stop',p:'先给主进程发 <b>SIGTERM</b>，让它自己退出；10 秒后还没退出就发 <b>SIGKILL</b>。状态变为 <b>exited</b>。',d:3800,set:{...base,...tok('X','docker stop web')}},
+ {t:'docker stop',p:'先给主进程发配置的停止信号（未配置时为 <b>SIGTERM</b>；本例 nginx 镜像为 SIGQUIT），让它自己退出；Linux 容器默认等待 10 秒，超时再发 <b>SIGKILL</b>。状态变为 <b>exited</b>。',d:3800,set:{...base,...tok('X','docker stop web')}},
  {t:'再次 docker start',p:'停止的容器还在，可写层里的文件也还在，可以重新启动。',set:{...base,...tok('R','docker start web')}},
  {t:'docker rm',p:'删除容器和它的可写层。运行中的容器不能直接删，要先 stop，或者用 <code>rm -f</code>。',d:3800,set:{...base,...tok('D','docker rm -f web')}}]});
 /* 02 lifecycle console */
@@ -57,5 +57,5 @@ PID   USER     COMMAND
 7c1f4a2e9b3d   web    0.00%   7.3MiB / 7.7GiB       1.2kB / 0B`,'实时资源使用。不加 <code>--no-stream</code> 会持续刷新。没有设置内存限制时，LIMIT 显示宿主机的全部内存。']]);
 Quiz(document.getElementById('qs'),[
 ['执行 docker stop 后，容器可写层里的文件会怎样？',['被删除','保留，直到 docker rm','写回镜像'],1,'stop 只停止进程。rm 才删除容器和可写层。'],
-['docker stop 默认怎样停止容器？',['立即 SIGKILL','先 SIGTERM，10 秒后 SIGKILL','发送 Ctrl+C 到终端'],1,'给应用一个优雅退出的机会。时长用 -t 修改。'],
+['未配置停止信号和超时的 Linux 容器，docker stop 怎样停止它？',['立即 SIGKILL','先 SIGTERM，10 秒后仍未退出则 SIGKILL','发送 Ctrl+C 到终端'],1,'STOPSIGNAL 或 --stop-signal 可改停止信号，-t 可改等待时长。nginx 镜像使用 SIGQUIT。'],
 ['想在一个运行中的容器里查看进程，应该用？',['docker run -it 同一个镜像','docker exec -it 容器名 sh','docker attach 后输入命令'],1,'run 会新建另一个容器；exec 进入的是现有容器。']]);
