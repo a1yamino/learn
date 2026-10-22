@@ -1,0 +1,151 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 17 课 · MCP：接入外部工具服务器</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 17 课</span><span class="sp"></span><a href="l16.html">← 第 16 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 17 课</div><h1>MCP：接入外部工具服务器</h1>
+<p>pi 刻意不内置 MCP，而是让扩展自己注册工具（第 15 课）。Codex 内置 MCP 客户端：在 <code>config.toml</code> 的 <code>[mcp_servers.名字]</code> 中配置一个 stdio 或 HTTP 服务器，Codex 启动它、执行 <code>tools/list</code>，把工具以 <code>mcp__名字</code> 命名空间暴露给模型，并在调用前按<b>工具注解</b>与配置决定是否需要审批。本课写一个 30 行的 MCP 服务器，亲手触发这三条分支。（注：在固定的这个提交中，<code>codex</code> 没有 <code>mcp-server</code> 子命令；把 Codex 嵌入其他程序走 app-server，见第 23 课。）约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次 MCP 调用</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这次调用要不要审批？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次 MCP 调用</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这次调用要不要审批？</h2><div class="goal">approval_mode 为默认 auto。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/mcp_tool_call.rs#L2535-L2566" target="_blank" rel="noopener">codex-rs/core/src/mcp_tool_call.rs  L2535–2566 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">fn requires_mcp_tool_approval(annotations: Option&lt;&amp;ToolAnnotations&gt;) -&gt; bool {
+    let destructive_hint = annotations.and_then(|annotations| annotations.destructive_hint);
+    if destructive_hint == Some(true) {
+        return true;
+    }
+
+    let read_only_hint = annotations
+        .and_then(|annotations| annotations.read_only_hint)
+        .unwrap_or(false);
+    if read_only_hint {
+        return false;
+    }
+
+    destructive_hint.unwrap_or(true)
+        || annotations
+            .and_then(|annotations| annotations.open_world_hint)
+            .unwrap_or(true)
+}
+
+fn requires_mcp_tool_approval_for_mode(
+    annotations: Option&lt;&amp;ToolAnnotations&gt;,
+    approval_mode: AppToolApproval,
+) -&gt; bool {
+    match approval_mode {
+        AppToolApproval::Auto =&gt; requires_mcp_tool_approval(annotations),
+        AppToolApproval::Prompt =&gt; true,
+        AppToolApproval::Writes =&gt; !annotations
+            .and_then(|annotations| annotations.read_only_hint)
+            .unwrap_or(false),
+        AppToolApproval::Approve =&gt; false,
+    }
+}</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/mcp_tool_exposure.rs#L158-L162" target="_blank" rel="noopener">codex-rs/core/src/mcp_tool_exposure.rs  L158–162 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">let exposure = if search_tool_enabled {
+    ToolExposure::Deferred
+} else {
+    ToolExposure::Direct
+};</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/tools/spec_plan.rs#L151-L158" target="_blank" rel="noopener">codex-rs/core/src/tools/spec_plan.rs  L151–158 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">let registered_mcp_tools = session.services.mcp_handler_cache.append_mcp_tools(
+    mcp,
+    &amp;turn_context.config,
+    apps_enabled,
+    &amp;mcp.config().mcp_server_catalog,
+    model_info.supports_search_tool,
+    session.services.mcp_manager.shared_definitions(),
+    &amp;mut registry,</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/rmcp-client/src/utils.rs#L163-L168" target="_blank" rel="noopener">codex-rs/rmcp-client/src/utils.rs  L163–168 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub(crate) const DEFAULT_ENV_VARS: &amp;[&amp;str] = &amp;[
+    &quot;HOME&quot;,
+    &quot;LOGNAME&quot;,
+    &quot;PATH&quot;,
+    &quot;SHELL&quot;,
+    &quot;USER&quot;,</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l15.html">pi 第 15 课 · 扩展系统：工具、命令与事件钩子</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>一个最小的 MCP 服务器。</p><pre class="cmd">cat &gt; codex/scratch/mini_mcp.py &lt;&lt;&#x27;EOF&#x27;
+# 最小的 stdio MCP 服务端：一个 add 工具（JSON-RPC，每行一条消息）
+import json, os, sys
+READONLY = &quot;--readonly&quot; in sys.argv  # 是否声明 readOnlyHint
+def send(o): sys.stdout.write(json.dumps(o) + &quot;\n&quot;); sys.stdout.flush()
+for line in sys.stdin:
+    m = json.loads(line); mid = m.get(&quot;id&quot;); meth = m.get(&quot;method&quot;)
+    if meth == &quot;initialize&quot;:
+        send({&quot;jsonrpc&quot;: &quot;2.0&quot;, &quot;id&quot;: mid, &quot;result&quot;: {&quot;protocolVersion&quot;: m[&quot;params&quot;][&quot;protocolVersion&quot;],
+              &quot;capabilities&quot;: {&quot;tools&quot;: {}}, &quot;serverInfo&quot;: {&quot;name&quot;: &quot;mini&quot;, &quot;version&quot;: &quot;0.1&quot;}}})
+    elif meth == &quot;tools/list&quot;:
+        send({&quot;jsonrpc&quot;: &quot;2.0&quot;, &quot;id&quot;: mid, &quot;result&quot;: {&quot;tools&quot;: [{&quot;name&quot;: &quot;add&quot;, &quot;description&quot;: &quot;两数相加&quot;,
+              &quot;inputSchema&quot;: {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {&quot;a&quot;: {&quot;type&quot;: &quot;number&quot;}, &quot;b&quot;: {&quot;type&quot;: &quot;number&quot;}}, &quot;required&quot;: [&quot;a&quot;, &quot;b&quot;]},
+              **({&quot;annotations&quot;: {&quot;readOnlyHint&quot;: True}} if READONLY else {})}]}})
+    elif meth == &quot;tools/call&quot;:
+        a = m[&quot;params&quot;][&quot;arguments&quot;]; print(f&quot;[mini] add{a}&quot;, file=sys.stderr)
+        send({&quot;jsonrpc&quot;: &quot;2.0&quot;, &quot;id&quot;: mid, &quot;result&quot;: {&quot;content&quot;: [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: str(a[&quot;a&quot;] + a[&quot;b&quot;])}]}})
+    elif mid is not None:
+        send({&quot;jsonrpc&quot;: &quot;2.0&quot;, &quot;id&quot;: mid, &quot;result&quot;: {}})
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>剧本：调用 mcp__mini 中的 add。</p><pre class="cmd">cat &gt; codex/scratch/s_mcp.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：在 namespace 工具里找到 MCP 服务器 mini 的 add 并调用
+def reply(n, body):
+    if n == 1:
+        ns = [t for t in body.get(&quot;tools&quot;, []) if t.get(&quot;type&quot;) == &quot;namespace&quot; and t[&quot;name&quot;].startswith(&quot;mcp__&quot;)]
+        for t in ns: print(&quot;[mock] namespace&quot;, t[&quot;name&quot;], &quot;→&quot;, [x[&quot;name&quot;] for x in t[&quot;tools&quot;]], flush=True)
+        c = call(&quot;add&quot;, {&quot;a&quot;: 2, &quot;b&quot;: 40}, &quot;c1&quot;); c[&quot;namespace&quot;] = &quot;mcp__mini&quot;
+        return [c]
+    out = [i[&quot;output&quot;] for i in body[&quot;input&quot;] if i.get(&quot;type&quot;) == &quot;function_call_output&quot;]
+    return [msg(f&quot;MCP 返回：{out[-1]}&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>三种审批情形。</p><pre class="cmd">cat &gt; codex/scratch/l17.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# Codex 作为 MCP 客户端：配置一个 stdio 服务器，看工具如何暴露、何时需要审批
+S=$(pwd); export CODEX_HOME=$(mktemp -d); cd $(mktemp -d)
+export MODEL=my-model   # 未知模型：supports_search_tool=false，MCP 工具直接暴露
+run() { RO=$2; CFG=&#x27;[mcp_servers.mini]
+command = &quot;python3&quot;
+args = [&quot;&#x27;$S&#x27;/mini_mcp.py&quot;&#x27;$RO&#x27;]&#x27;; EXTRA_CONFIG=&quot;$CFG$1&quot; bash $S/run.sh $S/s_mcp.py --json &quot;算 2+40&quot; 2&gt;/dev/null | python3 -c &quot;
+import json,sys
+for l in sys.stdin:
+    if not l.startswith(&#x27;{&#x27;): print(&#x27; &#x27;,l.strip()); continue
+    it=json.loads(l).get(&#x27;item&#x27;,{})
+    if it.get(&#x27;type&#x27;)==&#x27;mcp_tool_call&#x27; and it.get(&#x27;status&#x27;)!=&#x27;in_progress&#x27;:
+        print(&#x27;  mcp_tool_call&#x27;, it[&#x27;status&#x27;], it.get(&#x27;result&#x27;) and it[&#x27;result&#x27;][&#x27;content&#x27;][0][&#x27;text&#x27;] or it[&#x27;error&#x27;][&#x27;message&#x27;])&quot;; }
+echo &quot;== 1. 服务器没有声明注解（approval_policy=never）&quot;; run &quot;&quot;
+echo &quot;== 2. 工具声明 readOnlyHint=true&quot;; run &quot;&quot; &#x27;, &quot;--readonly&quot;&#x27;
+echo &quot;== 3. 无注解，但配置 approval_mode=\&quot;approve\&quot;&quot;; run &#x27;
+[mcp_servers.mini.tools.add]
+approval_mode = &quot;approve&quot;&#x27;
+echo &quot;== codex mcp list&quot;; codex mcp list
+EOF
+cd codex/scratch &amp;&amp; bash l17.sh</pre><pre class="out">== 1. 服务器没有声明注解（approval_policy=never）
+  [mock] namespace mcp__mini → [&#x27;add&#x27;]
+  mcp_tool_call failed MCP tool call requires approval, but approval policy is never
+== 2. 工具声明 readOnlyHint=true
+  [mock] namespace mcp__mini → [&#x27;add&#x27;]
+  mcp_tool_call completed 42
+== 3. 无注解，但配置 approval_mode=&quot;approve&quot;
+  [mock] namespace mcp__mini → [&#x27;add&#x27;]
+  mcp_tool_call completed 42
+== codex mcp list
+Name  Command  Args                                                Env  Cwd  Status   Auth       
+mini  python3  codex/scratch/mini_mcp.py  -    -    enabled  Unsupported</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>看 Deferred 模式</h3><p>把 <code>MODEL</code> 改回 gpt-5.5 运行情形 3，查看 req01 的工具列表：<code>mcp__mini</code> 还在吗？模型要如何拿到 add？</p><details><summary>查看参考答案</summary><div><p>不在了。gpt-5.5 的 <code>supports_search_tool</code> 为真，MCP 工具变为 Deferred：工具列表中多了 <code>{"type":"tool_search","execution":"client",…}</code>，其描述写着可搜索的来源（“- mini”）。模型需要先发出 <code>tool_search_call</code>（参数 query），Codex 在本地用 BM25 搜索延迟加载的工具元数据，把匹配的工具放进 <code>tool_search_output</code>，下一次请求中模型才能调用 add。工具很多时，这能显著缩短每次请求的工具列表。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>配置</b>：<code>[mcp_servers.mini] command/args/env</code>（stdio）或 <code>url</code>（streamable HTTP）。<code>codex mcp list/get/add/remove/login</code> 管理它们。</li><li><b>环境变量白名单</b>：stdio 服务器只继承 <code>HOME/LOGNAME/PATH/SHELL/USER…</code> 等默认变量（<code>rmcp-client/src/utils.rs</code> 的 <code>DEFAULT_ENV_VARS</code>），其余要在 <code>env</code> 或 <code>env_vars</code> 中显式给出——作者第一次用环境变量传参时就因此失败。</li><li><b>暴露方式</b>（<code>mcp_tool_exposure.rs</code>）：模型的 <code>supports_search_tool</code> 为真（如 gpt-5.5）时，MCP 工具是 <b>Deferred</b>：请求里只有一个 <code>tool_search</code>，模型先搜索再加载；否则 <b>Direct</b>：作为 <code>{"type":"namespace","name":"mcp__mini","tools":[…]}</code> 直接给出。模型调用时带上 <code>namespace</code> 字段。</li><li><b>审批判定</b>（<code>mcp_tool_call.rs</code>）：<code>approval_mode</code> 为 approve → 不问；prompt → 总是问；writes → 非只读就问；auto（默认）→ <code>destructiveHint=true</code> 要问，<code>readOnlyHint=true</code> 不问，否则看 destructive/openWorld（缺省都视为 true）——即<b>未注解的工具默认需要审批</b>。</li><li><b>never 策略</b>：需要审批而 <code>approval_policy=never</code> 时直接拒绝（“MCP tool call requires approval, but approval policy is never”），结果作为工具输出返回给模型。</li><li><b>事件</b>：exec 的 JSONL 中是 <code>mcp_tool_call</code> 条目，带 server/tool/arguments/result/error/status。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 18</div><a class="big" href="l18.html">斜杠命令 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l17.js"></script>
+</body></html>

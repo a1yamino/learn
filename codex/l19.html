@@ -1,0 +1,159 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 19 课 · /plan 与 update_plan</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 19 课</span><span class="sp"></span><a href="l18.html">← 第 18 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 19 课</div><h1>/plan 与 update_plan</h1>
+<p>Codex 里有两个都叫“plan”、却完全不同的东西。<b>/plan</b> 切换到 Plan <b>协作模式</b>：换一段开发者指令（<code>plan.md</code>，128 行），让模型只探索、提问，最后输出一个 <code>&lt;proposed_plan&gt;</code> 块，客户端把它渲染成计划条目。<b>update_plan</b> 是一个 TODO 清单工具：模型调用它，客户端收到 <code>turn/plan/updated</code> 并显示进度。pi 刻意不内置计划模式（第 19 课）。本课用 app-server 在同一线程中分别以两种模式各跑一个回合。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">两个“plan”</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：会得到什么？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>两个“plan”</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：会得到什么？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/tools/handlers/plan.rs#L86-L98" target="_blank" rel="noopener">codex-rs/core/src/tools/handlers/plan.rs  L86–98 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">
+if turn.mode() == ModeKind::Plan {
+    return Err(FunctionCallError::RespondToModel(
+        &quot;update_plan is a TODO/checklist tool and is not allowed in Plan mode&quot;.to_string(),
+    ));
+}
+
+let args = parse_update_plan_arguments(&amp;arguments)?;
+session
+    .send_event(turn.as_ref(), EventMsg::PlanUpdate(args))
+    .await;
+
+Ok(boxed_tool_output(PlanToolOutput))</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/config/mod.rs#L2791-L2797" target="_blank" rel="noopener">codex-rs/core/src/config/mod.rs  L2791–2797 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">fn resolve_update_plan_enabled(config_toml: &amp;ConfigToml) -&gt; bool {
+    config_toml
+        .tools
+        .as_ref()
+        .and_then(|tools| tools.update_plan.as_ref())
+        .is_some_and(|config| config.enabled)
+}</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/tui/src/chatwidget/slash_dispatch.rs#L87-L105" target="_blank" rel="noopener">codex-rs/tui/src/chatwidget/slash_dispatch.rs  L87–105 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">fn apply_plan_slash_command(&amp;mut self) -&gt; bool {
+    if !self.collaboration_modes_enabled() {
+        self.add_info_message(
+            &quot;Collaboration modes are disabled.&quot;.to_string(),
+            Some(&quot;Enable collaboration modes to use /plan.&quot;.to_string()),
+        );
+        return false;
+    }
+    if let Some(mask) = collaboration_modes::plan_mask(self.model_catalog.as_ref()) {
+        self.set_collaboration_mask_from_user_action(mask);
+        true
+    } else {
+        self.add_info_message(
+            &quot;Plan mode unavailable right now.&quot;.to_string(),
+            /*hint*/ None,
+        );
+        false
+    }
+}</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/prompts/src/model_messages/collaboration.rs#L15-L22" target="_blank" rel="noopener">codex-rs/prompts/src/model_messages/collaboration.rs  L15–22 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">impl&lt;&#x27;a&gt; ResolvedCollaborationModeMessages&lt;&#x27;a&gt; {
+    pub(crate) fn new(messages: Option&lt;&amp;&#x27;a CollaborationModeMessages&gt;) -&gt; Self {
+        Self {
+            default: ResolvedMessage::new(messages.and_then(|m| m.default.as_deref()), DEFAULT),
+            plan: ResolvedMessage::new(messages.and_then(|m| m.plan.as_deref()), PLAN),
+        }
+    }
+}</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/collaboration-mode-templates/templates/plan.md#L13-L19" target="_blank" rel="noopener">codex-rs/collaboration-mode-templates/templates/plan.md  L13–19, L96–108 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">Plan Mode is a collaboration mode that can involve requesting user input and eventually issuing a `&lt;proposed_plan&gt;` block.
+
+Separately, `update_plan` is a checklist/progress/TODOs tool; it does not enter or exit Plan Mode. Do not confuse it with Plan mode or try to use it while in Plan mode. If you try to use `update_plan` in Plan mode, it will return an error.
+
+## Execution vs. mutation in Plan Mode
+
+You may explore and execute **non-mutating** actions that improve the plan. You must not perform **mutating** actions.
+  // …
+When you present the official plan, wrap it in a `&lt;proposed_plan&gt;` block so the client can render it specially:
+
+1) The opening tag must be on its own line.
+2) Start the plan content on the next line (no text on the same line as the tag).
+3) The closing tag must be on its own line.
+4) Use Markdown inside the block.
+5) Keep the tags exactly as `&lt;proposed_plan&gt;` and `&lt;/proposed_plan&gt;` (do not translate or rename them), even if the plan content is in another language.
+
+Example:
+
+&lt;proposed_plan&gt;
+plan content
+&lt;/proposed_plan&gt;</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/session/turn.rs#L2451-L2455" target="_blank" rel="noopener">codex-rs/core/src/session/turn.rs  L2451–2455 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">if let Some(plan_text) = extract_proposed_plan_text(&amp;text) {
+    let (plan_text, _citations) = strip_citations(&amp;plan_text);
+    if !state.plan_item_state.started {
+        state.plan_item_state.start(sess, turn_context).await;
+    }</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l19.html">pi 第 19 课 · 信任边界：pi 刻意不做什么</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>剧本：先 update_plan，再按模式回答。</p><pre class="cmd">cat &gt; codex/scratch/s_plan.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：每个回合先调 update_plan；看到工具输出后，Plan 模式下给出 &lt;proposed_plan&gt;，否则普通回答
+import json
+def reply(n, body):
+    dev = &quot; &quot;.join(c.get(&quot;text&quot;, &quot;&quot;) for i in body[&quot;input&quot;] if i.get(&quot;role&quot;) == &quot;developer&quot; for c in i[&quot;content&quot;])
+    plan_mode = &quot;Plan Mode (Conversational)&quot; in dev
+    last = body[&quot;input&quot;][-1]
+    if last.get(&quot;type&quot;) != &quot;function_call_output&quot;:
+        return [call(&quot;update_plan&quot;, {&quot;plan&quot;: [{&quot;step&quot;: &quot;读代码&quot;, &quot;status&quot;: &quot;completed&quot;},
+                                             {&quot;step&quot;: &quot;写测试&quot;, &quot;status&quot;: &quot;in_progress&quot;}]}, f&quot;p{n}&quot;)]
+    print(f&quot;[mock] req{n:02d} Plan 模式={plan_mode}  update_plan 的输出：{last[&#x27;output&#x27;][:60]!r}&quot;, flush=True)
+    if plan_mode:
+        return [msg(&quot;&lt;proposed_plan&gt;\n1. 为 parse() 补测试\n2. 修复空输入\n&lt;/proposed_plan&gt;&quot;)]
+    return [msg(&quot;已更新清单&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>app-server 客户端：两种模式各一回合。</p><pre class="cmd">cat &gt; codex/scratch/l19.py &lt;&lt;&#x27;EOF&#x27;
+# /plan 与 update_plan：同一个线程，先默认模式、再 Plan 模式各跑一个回合
+import os, sys; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from apc import AppServer, text
+a = AppServer(cwd=os.getcwd())
+a.request(&quot;initialize&quot;, {&quot;clientInfo&quot;: {&quot;name&quot;: &quot;course&quot;, &quot;title&quot;: None, &quot;version&quot;: &quot;0&quot;},
+                         &quot;capabilities&quot;: {&quot;experimentalApi&quot;: True}}); a.notify(&quot;initialized&quot;)
+modes = a.request(&quot;collaborationMode/list&quot;, {})[&quot;data&quot;]
+print(&quot;collaborationMode/list：&quot;, [(m[&quot;name&quot;], m[&quot;mode&quot;]) for m in modes])
+tid = a.request(&quot;thread/start&quot;, {&quot;cwd&quot;: os.getcwd()})[&quot;thread&quot;][&quot;id&quot;]
+def show(m):
+    p = m.get(&quot;params&quot;, {})
+    if m[&quot;method&quot;] == &quot;turn/plan/updated&quot;: print(&quot;  turn/plan/updated：&quot;, [(s[&quot;step&quot;], s[&quot;status&quot;]) for s in p[&quot;plan&quot;]])
+    if m[&quot;method&quot;] == &quot;item/completed&quot; and p[&quot;item&quot;][&quot;type&quot;] in (&quot;plan&quot;, &quot;agentMessage&quot;):
+        print(f&quot;  item {p[&#x27;item&#x27;][&#x27;type&#x27;]}：{p[&#x27;item&#x27;][&#x27;text&#x27;]!r}&quot;)
+for mode in (&quot;default&quot;, &quot;plan&quot;):
+    print(f&quot;== 回合：mode={mode}&quot;)
+    a.request(&quot;turn/start&quot;, {&quot;threadId&quot;: tid, &quot;input&quot;: text(&quot;修一下 parse()&quot;), &quot;collaborationMode&quot;:
+              {&quot;mode&quot;: mode, &quot;settings&quot;: {&quot;model&quot;: &quot;gpt-5.5&quot;, &quot;reasoning_effort&quot;: None, &quot;developer_instructions&quot;: None}}})
+    a.wait(&quot;turn/completed&quot;, show=show)
+a.close()
+EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>运行。</p><pre class="cmd">cat &gt; codex/scratch/l19.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# update_plan 默认关闭：用 [tools.update_plan] enabled=true 打开
+S=$(pwd); export CODEX_HOME=$(mktemp -d); cd $(mktemp -d)
+EXTRA_CONFIG=&#x27;[tools.update_plan]
+enabled = true&#x27; RUN=&quot;python3 $S/l19.py&quot; bash $S/run.sh $S/s_plan.py 2&gt;&amp;1
+EOF
+cd codex/scratch &amp;&amp; bash l19.sh</pre><pre class="out">collaborationMode/list： [(&#x27;Plan&#x27;, &#x27;plan&#x27;), (&#x27;Default&#x27;, &#x27;default&#x27;)]
+== 回合：mode=default
+  turn/plan/updated： [(&#x27;读代码&#x27;, &#x27;completed&#x27;), (&#x27;写测试&#x27;, &#x27;inProgress&#x27;)]
+[mock] req02 Plan 模式=False  update_plan 的输出：&#x27;Plan updated&#x27;
+  item agentMessage：&#x27;已更新清单&#x27;
+== 回合：mode=plan
+[mock] req04 Plan 模式=True  update_plan 的输出：&#x27;update_plan is a TODO/checklist tool and is not allowed in P&#x27;
+  item plan：&#x27;1. 为 parse() 补测试\n2. 修复空输入\n&#x27;</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>关掉 update_plan</h3><p>去掉 <code>l19.sh</code> 中的 <code>[tools.update_plan]</code> 配置再运行。模型调用一个不存在的工具会怎样？在 req01 的工具列表里验证。</p><details><summary>查看参考答案</summary><div><p>工具列表中不再有 <code>update_plan</code>；模型仍然调用它时，路由器找不到处理器，工具输出是 <code>unsupported call: update_plan</code>（作者实测，两种模式都一样），回合继续，不会崩溃。客户端不会收到 <code>turn/plan/updated</code>。可以用 <code>python3 -c "import json;print([t.get('name') for t in json.load(open('…/req01.json'))['body']['tools']])"</code> 检查。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>update_plan 默认关闭</b>：<code>config/mod.rs</code> 的 <code>resolve_update_plan_enabled</code> 读 <code>[tools.update_plan] enabled</code>，缺省为 false。打开后处理器（<code>tools/handlers/plan.rs</code>）解析参数，发出 <code>EventMsg::PlanUpdate</code>，返回 “Plan updated”。app-server 把它转成 <code>turn/plan/updated</code>（状态 inProgress 等为驼峰式）。</li><li><b>Plan 模式拒绝 update_plan</b>：同一处理器在 <code>turn.mode() == ModeKind::Plan</code> 时返回错误 “update_plan is a TODO/checklist tool and is not allowed in Plan mode”，作为工具输出交给模型；<code>plan.md</code> 第 15 行也预先告诉模型这一点。</li><li><b>/plan 的实现</b>：<code>slash_dispatch.rs</code> 的 <code>apply_plan_slash_command</code>：协作模式未启用时提示 “Collaboration modes are disabled.”；否则取 <code>collaboration_modes::plan_mask</code> 并 <code>set_collaboration_mask_from_user_action</code>。之后每个回合的 <code>collaborationMode</code> 都是 plan。</li><li><b>指令从哪来</b>：<code>prompts/src/model_messages/collaboration.rs</code>：模型目录若带有 <code>collaboration_mode_messages</code> 就用它，否则用内置 <code>PLAN</code>/<code>DEFAULT</code> 模板；<code>context/world_state/collaboration_mode.rs</code> 按 <code>ModeKind</code> 选择并放入 developer 消息。</li><li><b>&lt;proposed_plan&gt;</b>：<code>session/turn.rs</code> 用 <code>extract_proposed_plan_text</code> 从助手文本中取出计划，发出 plan 条目（及 <code>item/plan/delta</code>）；<code>strip_proposed_plan_blocks</code> 把它从普通消息文本中去掉。实验中 Plan 回合只得到一个 <code>plan</code> 条目。</li><li><b>“不修改”靠提示</b>：<code>plan.md</code> 要求只做非修改性操作；在核心代码中，Plan 模式的分支只出现在 update_plan 拒绝、<code>request_user_input</code> 变为阻塞、计划块解析等少数几处，并没有为它换一个更严的沙箱。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 20</div><a class="big" href="l20.html">/goal：长时间运行的目标 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l19.js"></script>
+</body></html>

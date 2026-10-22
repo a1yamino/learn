@@ -1,0 +1,203 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 18 课 · 斜杠命令</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 18 课</span><span class="sp"></span><a href="l17.html">← 第 17 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 18 课</div><h1>斜杠命令</h1>
+<p>pi 的斜杠命令来自扩展与提示模板（第 16 课）；Codex 的斜杠命令是 TUI 中一个<b>枚举</b> <code>SlashCommand</code>：枚举顺序就是弹窗顺序，每个命令有描述、是否接受行内参数、任务进行中是否可用等属性，再由 <code>slash_dispatch.rs</code> 分派。有的命令只改界面状态，有的调用 app-server 方法，还有的（如 <code>/init</code>）只是把一段内置提示当作普通用户消息提交。本课在伪终端中驱动真实的 TUI。约 35 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">从按键到动作</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：回合进行中能用吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>从按键到动作</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：回合进行中能用吗？</h2><div class="goal">依据 available_during_task()。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/tui/src/slash_command.rs#L12-L16" target="_blank" rel="noopener">codex-rs/tui/src/slash_command.rs  L12–16, L172–186, L249–258 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub enum SlashCommand {
+    // DO NOT ALPHA-SORT! Enum order is presentation order in the popup, so
+    // more frequently used commands should be listed first.
+    Model,
+    Presets,
+  // …
+pub fn supports_inline_args(self) -&gt; bool {
+    matches!(
+        self,
+        SlashCommand::Review
+            | SlashCommand::Model
+            | SlashCommand::Permissions
+            | SlashCommand::Title
+            | SlashCommand::Statusline
+            | SlashCommand::Rename
+            | SlashCommand::New
+            | SlashCommand::Clear
+            | SlashCommand::Fork
+            | SlashCommand::Plan
+            | SlashCommand::Goal
+            | SlashCommand::Voice
+  // …
+pub fn available_during_task(self) -&gt; bool {
+    match self {
+        SlashCommand::New
+        | SlashCommand::Delete
+        | SlashCommand::Fork
+        | SlashCommand::Worktree
+        | SlashCommand::Init
+        | SlashCommand::Compact
+        | SlashCommand::Recap
+        | SlashCommand::Export</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/tui/src/bottom_pane/slash_commands.rs#L72-L79" target="_blank" rel="noopener">codex-rs/tui/src/bottom_pane/slash_commands.rs  L72–79, L118–123 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub(crate) fn builtins_for_input(flags: BuiltinCommandFlags) -&gt; Vec&lt;(&amp;&#x27;static str, SlashCommand)&gt; {
+    built_in_slash_commands()
+        .into_iter()
+        .filter(|(_, cmd)| flags.allow_elevate_sandbox || *cmd != SlashCommand::ElevateSandbox)
+        .filter(|(_, cmd)| flags.collaboration_modes_enabled || *cmd != SlashCommand::Plan)
+        .filter(|(_, cmd)| flags.connectors_enabled || *cmd != SlashCommand::Apps)
+        .filter(|(_, cmd)| flags.plugins_command_enabled || *cmd != SlashCommand::Plugins)
+        .filter(|(_, cmd)| flags.token_activity_command_enabled || *cmd != SlashCommand::Usage)
+  // …
+pub(crate) fn find_builtin_command(name: &amp;str, flags: BuiltinCommandFlags) -&gt; Option&lt;SlashCommand&gt; {
+    let cmd = SlashCommand::from_str(name).ok().or_else(|| {
+        let repeated_os = name.strip_prefix(&#x27;g&#x27;)?.strip_suffix(&quot;al&quot;)?;
+        (!repeated_os.is_empty() &amp;&amp; repeated_os.bytes().all(|byte| byte == b&#x27;o&#x27;))
+            .then_some(SlashCommand::Goal)
+    })?;</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/tui/src/chatwidget/slash_dispatch.rs#L328-L331" target="_blank" rel="noopener">codex-rs/tui/src/chatwidget/slash_dispatch.rs  L328–331 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">SlashCommand::Init =&gt; {
+    const INIT_PROMPT: &amp;str = include_str!(&quot;../../assets/prompt_for_init_command.md&quot;);
+    self.submit_user_message(INIT_PROMPT.to_string().into());
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l16.html">pi 第 16 课 · 斜杠命令与提示模板</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。<p><code>tui.py</code> 在伪终端中启动 codex，回应终端查询，并用一个极简的屏幕模拟器还原画面。</p></div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>伪终端驱动器。</p><pre class="cmd">cat &gt; codex/scratch/tui.py &lt;&lt;&#x27;EOF&#x27;
+# tui.py &quot;按键1&quot; &quot;按键2&quot; …：在伪终端中运行交互式 codex，依次输入按键（每步间隔 2 秒），
+# 回应终端查询，最后打印去掉 ANSI 控制序列后的屏幕文字（尾部）
+import fcntl, os, pty, re, select, struct, sys, termios, time
+pid, fd = pty.fork()
+if pid == 0:
+    os.environ[&quot;TERM&quot;] = &quot;xterm-256color&quot;
+    os.execvp(&quot;codex&quot;, [&quot;codex&quot;, &quot;-c&quot;, &quot;approval_policy=never&quot;])
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack(&quot;HHHH&quot;, 40, 110, 0, 0))  # 40 行 × 110 列
+buf = b&quot;&quot;
+def pump(sec):
+    global buf
+    end = time.time() + sec
+    while time.time() &lt; end:
+        r, _, _ = select.select([fd], [], [], 0.1)
+        if not r: continue
+        try: d = os.read(fd, 65536)
+        except OSError: return
+        buf += d
+        if b&quot;\x1b[6n&quot; in d: os.write(fd, b&quot;\x1b[1;1R&quot;)      # 光标位置查询
+        if b&quot;\x1b[c&quot; in d: os.write(fd, b&quot;\x1b[?62;c&quot;)       # 设备属性查询
+        if b&quot;\x1b]10;?&quot; in d: os.write(fd, b&quot;\x1b]10;rgb:ffff/ffff/ffff\x1b\\&quot;)  # 前景色查询
+        if b&quot;\x1b]11;?&quot; in d: os.write(fd, b&quot;\x1b]11;rgb:0000/0000/0000\x1b\\&quot;)  # 背景色查询
+        if b&quot;\x1b[?u&quot; in d: os.write(fd, b&quot;\x1b[?0u&quot;)       # 键盘增强查询
+pump(3)
+for k in sys.argv[1:]:
+    for ch in k.encode().decode(&quot;unicode_escape&quot;).encode(): os.write(fd, bytes([ch])); pump(0.05)
+    pump(2)
+os.kill(pid, 9)
+if os.environ.get(&quot;RAW&quot;): print(repr(buf[:1500]))
+# 极简终端模拟：只处理光标定位、清屏/清行与文字，足以还原 ratatui 画出的屏幕
+import unicodedata
+R, C = 40, 110; scr = [[&quot; &quot;] * C for _ in range(R)]; y = x = 0
+alt = buf.rfind(b&quot;\x1b[?1049h&quot;); data = buf[alt:] if alt &gt;= 0 else buf
+for m in re.finditer(rb&quot;\x1b\[([0-9;?&gt;]*)([A-Za-z@])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Z0-9]|\x1b[=&gt;78]|([\r\n\b])|([^\x1b\r\n\b]+)&quot;, data):
+    a, cmd, ctl, txt = m.group(1), m.group(2), m.group(3), m.group(4)
+    if cmd:
+        ps = [int(v) if v.isdigit() else 0 for v in a.decode().lstrip(&quot;?&gt;&quot;).split(&quot;;&quot;)] if a else []
+        if cmd in b&quot;Hf&quot;: y = (ps[0] if ps and ps[0] else 1) - 1; x = (ps[1] if len(ps) &gt; 1 and ps[1] else 1) - 1
+        elif cmd == b&quot;K&quot;: scr[y][x:] = [&quot; &quot;] * (C - x)
+        elif cmd == b&quot;J&quot; and ps[:1] == [2]: scr = [[&quot; &quot;] * C for _ in range(R)]
+        elif cmd == b&quot;C&quot;: x += ps[0] if ps else 1
+        elif cmd == b&quot;G&quot;: x = (ps[0] if ps else 1) - 1
+    elif ctl == b&quot;\r&quot;: x = 0
+    elif ctl == b&quot;\n&quot;: y = min(y + 1, R - 1)
+    elif txt:
+        for ch in txt.decode(&quot;utf-8&quot;, &quot;replace&quot;):
+            if ch &lt; &quot; &quot;: continue
+            w = 2 if unicodedata.east_asian_width(ch) in &quot;WF&quot; else 1
+            if 0 &lt;= y &lt; R and x &lt; C:
+                scr[y][x] = ch
+                if w == 2 and x + 1 &lt; C: scr[y][x + 1] = &quot;&quot;
+            x += w
+lines = [&quot;&quot;.join(r).rstrip() for r in scr]
+while lines and not lines[-1]: lines.pop()
+print(&quot;\n&quot;.join(l for l in lines if l.strip()))
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>三个实验。</p><pre class="cmd">cat &gt; codex/scratch/l18.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 在伪终端里驱动真实的 codex TUI：看斜杠命令弹窗、过滤与 /init 的效果
+S=$(pwd)
+tui() { export CODEX_HOME=$(mktemp -d); D=$(mktemp -d); cd $D; git init -q
+  EXTRA_CONFIG=&quot;[projects.\&quot;$D\&quot;]
+trust_level = \&quot;trusted\&quot;&quot; RUN=&quot;python3 $S/tui.py&quot; bash $S/run.sh $S/s_once.py &quot;2&quot; &quot;$@&quot; 2&gt;/dev/null | python3 -c &quot;
+import sys; print(&#x27;\n&#x27;.join(&#x27;  &#x27;+l[:100] for l in sys.stdin.read().splitlines()[1:]))&quot;; cd $S; }
+echo &quot;== 1. 输入 /（弹出全部命令，按呈现顺序）&quot;; tui &quot;/&quot;
+echo &quot;== 2. 输入 /co（模糊过滤）&quot;; tui &quot;/co&quot;
+echo &quot;== 3. /init 回车：把内置提示作为一条普通用户消息提交&quot;; tui &quot;/init\r&quot;
+python3 -c &quot;
+import json,glob; b=json.load(open(sorted(glob.glob(&#x27;$CODEX_HOME/requests/req*.json&#x27;))[0]))[&#x27;body&#x27;]
+print(&#x27;   模型收到的最后一条用户消息：&#x27;, b[&#x27;input&#x27;][-1][&#x27;content&#x27;][0][&#x27;text&#x27;][:70].replace(chr(10),&#x27; ⏎ &#x27;))&quot;
+EOF
+cd codex/scratch &amp;&amp; bash l18.sh</pre><pre class="out">== 1. 输入 /（弹出全部命令，按呈现顺序）
+       /tmp/tmp.NhlLovLEbp
+  › /model          choose what model and reasoning effort to use
+    /fast           1.5x speed, increased usage
+    /presets        run or save reusable prompts and slash commands
+    /ide            include current selection, open files, and other context from your IDE
+    /permissions    choose what Codex is allowed to do
+    /keymap         remap TUI shortcuts
+    /vim            toggle Vim mode for the composer
+    /experimental   toggle experimental features
+  › /
+    GPT-5.5 default · /tmp/tmp.NhlLovLEbp
+== 2. 输入 /co（模糊过滤）
+       /tmp/tmp.a0JKvsBw8n
+  › /compact  summarize conversation to prevent hitting the context limit
+    /config   configure Codex preferences
+    /copy     copy the last response or part of it
+  › /co
+    GPT-5.5 default · /tmp/tmp.a0JKvsBw8n
+== 3. /init 回车：把内置提示作为一条普通用户消息提交
+    Project Structure &amp; Module Organization
+    - Outline the project structure, including where the source code, tests, and assets are located.
+    Build, Test, and Development Commands
+    - List key commands for building, testing, and running locally (e.g., npm test, make build).
+    - Briefly explain what each command does.
+    Coding Style &amp; Naming Conventions
+    - Specify indentation rules, language-specific style preferences, and naming patterns.
+    - Include any formatting or linting tools used.
+    Testing Guidelines
+    - Identify testing frameworks and coverage requirements.
+    - State test naming conventions and how to run tests.
+    Commit &amp; Pull Request Guidelines
+    - Summarize commit message conventions found in the project’s Git history.
+    - Outline pull request requirements (descriptions, linked issues, screenshots, etc.).
+    (Optional) Add other sections if relevant, such as Security &amp; Configuration Tips, Architecture Ove
+    Agent-Specific Instructions.
+  • 好的
+    Worked for &lt;1s • 19:02
+  › Ask Codex to do anything
+    GPT-5.5 default · /tmp/tmp.tMHUXLi4MK
+    ? for shortcuts                                                                    ⚠ 1 warning · f
+   模型收到的最后一条用户消息： Generate a file named AGENTS.md that serves as a contributor guide for</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>任务中按 /compact</h3><p>写一个剧本让模型执行 <code>sleep 5</code>，在 TUI 中提交消息后立刻输入 <code>/compact</code> 回车。会发生什么？在源码中找到给出提示的位置。</p><details><summary>查看参考答案</summary><div><p>命令被拒绝，界面显示 <code>'/compact' is disabled while a task is in progress.</code>。这一检查在输入框层：<code>bottom_pane/chat_composer.rs</code> 的 <code>reject_slash_command_if_unavailable</code>（任务运行中且 <code>available_during_task()</code> 为 false 时拒绝；需要 <code>requires_dispatch_validation</code> 的命令如 /review 交给分派层）。分派层 <code>slash_dispatch.rs</code> L142 起还有一道同样的检查，覆盖回合正在启动、审阅模式等情况。用 <code>tui.py</code> 时按键序列可写成 <code>"跑一下\r" "/compact\r"</code>。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>定义</b>：<code>tui/src/slash_command.rs</code> 的 <code>enum SlashCommand</code>（注释写着“DO NOT ALPHA-SORT! Enum order is presentation order”），strum 负责名字与别名（如 <code>/pwd</code> 别名 <code>/cwd</code>，<code>/stop</code> 别名 <code>/clean</code>）。</li><li><b>属性</b>：<code>description()</code>；<code>supports_inline_args()</code>（如 <code>/plan 文本</code>、<code>/goal 目标</code>）；<code>available_during_task()</code>——<code>/compact</code>、<code>/plan</code>、<code>/new</code> 等在回合进行中被拒绝；<code>available_in_side_conversation()</code>。</li><li><b>可见性</b>（<code>bottom_pane/slash_commands.rs</code>）：<code>builtins_for_input</code> 按特性开关过滤：没有协作模式就没有 <code>/plan</code>，没有 Goals 特性就没有 <code>/goal</code>，<code>/apps</code>、<code>/plugins</code>、<code>/worktree</code> 等同理。服务档位命令（如 <code>/fast</code>）是动态插入在 <code>/model</code> 之后的 <code>ServiceTier</code> 条目。</li><li><b>查找</b>：<code>find_builtin_command</code> 先 <code>from_str</code>，还接受 <code>/goooal</code> 这种多个 o 的写法——仍解析为 <code>/goal</code>。</li><li><b>分派</b>（<code>chatwidget/slash_dispatch.rs</code>）：<code>/init</code> = 提交 <code>assets/prompt_for_init_command.md</code>；<code>/compact</code> 设置状态栏后请求压缩；<code>/plan</code> 切换协作模式（下一课）。</li><li><b>与 exec 的关系</b>：斜杠命令只存在于 TUI；<code>codex exec "/init"</code> 只会把字面量“/init”发给模型。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 19</div><a class="big" href="l19.html">/plan 与 update_plan →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l18.js"></script>
+</body></html>
