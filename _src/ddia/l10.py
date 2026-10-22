@@ -1,0 +1,24 @@
+LOSE_='import json\ndb = {"u1": json.dumps({"name": "lin", "email": "lin@example.com"})}   # 新版本写入，带 email\n\nclass OldUser:                       # 旧版本的模型类：不知道 email\n    def __init__(self, d): self.name = d["name"]\n    def to_dict(self): return {"name": self.name}\n\nu = OldUser(json.loads(db["u1"]))    # 旧代码读出、改名、写回\nu.name = "Lin"\ndb["u1"] = json.dumps(u.to_dict())\nprint("旧代码写回后：", db["u1"])\n\ndef safe_update(raw, changes):        # 正确做法：保留不认识的字段\n    d = json.loads(raw); d.update(changes); return json.dumps(d)\ndb["u2"] = json.dumps({"name": "wang", "email": "w@example.com"})\ndb["u2"] = safe_update(db["u2"], {"name": "Wang"})\nprint("保留未知字段：", db["u2"])'
+WF_='import json, os\nJOURNAL = "journal.json"\njournal = json.load(open(JOURNAL)) if os.path.exists(JOURNAL) else {}\n\ndef step(name, fn):\n    """持久化执行：已完成的步骤直接返回记录的结果，不再执行"""\n    if name in journal:\n        print(f"  {name}: 重放（{journal[name]}）"); return journal[name]\n    result = fn()\n    journal[name] = result; json.dump(journal, open(JOURNAL, "w"))\n    print(f"  {name}: 执行 → {result}"); return result\n\ndef charge():\n    return "charge-ok"\ndef ship():\n    if not os.path.exists("crashed"):           # 第一次运行时在这里崩溃\n        open("crashed", "w").close(); raise SystemExit("  ship: 进程崩溃！")\n    return "shipped"\n\nprint("运行工作流：")\nstep("reserve", lambda: "reserved")\nstep("charge", charge)\nstep("ship", ship)\nprint("完成")'
+TITLE='数据流的模式：数据库、服务、工作流与事件';DESC='第 5 章后半部分：编码后的数据从一个进程流向另一个进程，有几种基本方式。经过数据库（写入者与将来的读取者，“数据比代码活得久”）；经过服务调用（REST 与 RPC，以及 RPC 与本地调用的本质区别）；经过持久化执行与工作流引擎；经过消息与事件（消息代理、Actor）。每种方式下兼容性问题出现在不同的地方。';NEXT='单主复制';MIN=55
+SUM=['<b>经过数据库</b>：写入数据库就像给未来的自己发消息。滚动升级时，新代码写的数据可能被旧代码读取并<b>写回</b>——如果旧代码把记录解码成只认识部分字段的对象再整体写回，新字段就会丢失。要保留不认识的字段。<b>数据比代码活得久</b>：五年前写入的行仍按当年的格式存放，除非做迁移；添加带默认值的新列通常不需要重写旧数据。归档与导出（转成 Parquet 等）是一次性重新编码的好时机。',
+'<b>经过服务</b>：客户端与服务端独立部署，通常先升级服务端，所以请求需要向后兼容、响应需要向前兼容。REST 用 HTTP 的语义（URL、方法、状态码、缓存），常配 OpenAPI 描述；gRPC 用 Protobuf 定义接口。API 版本可以放在 URL、请求头中，或按 API 密钥记录版本。',
+'<b>RPC 不是本地调用</b>：网络请求可能丢失、超时（不知道对方是否执行了）、重试可能导致重复执行（需要幂等键）、延迟不可预测、参数要编码、两端可能是不同语言。把远程调用伪装成本地函数会掩盖这些问题——要显式处理它们。服务发现、负载均衡、超时与重试通常由服务网格或客户端库处理。',
+'<b>持久化执行与工作流</b>（Temporal、Restate 等）：把一个跨多个服务的业务流程写成普通代码，框架把每一步的结果记录到持久日志；进程崩溃后在另一台机器上重新执行代码，已完成的步骤直接返回记录的结果，从中断处继续。要求工作流代码是<b>确定性</b>的（不直接读时钟、随机数，这些也要经由框架记录），并且修改代码时要兼容正在运行的旧工作流。',
+'<b>事件驱动</b>：发送方把消息交给<b>消息代理</b>（Kafka、RabbitMQ），不需要知道接收方是谁、是否在线。好处：缓冲接收方的不可用与过载、自动重投、一条消息可以发给多个订阅者、发送方与接收方解耦。消息是单向的，需要回复时用另一个通道。<b>Actor 模型</b>把逻辑封装为各自处理消息的 Actor，分布式 Actor 框架（Akka、Orleans）在节点间透明地传递消息，滚动升级时同样要考虑消息格式的兼容。',
+'四种模式都在后面的课程中展开：复制（第 11 课起）本质是经过日志的数据流，第 26 课讲基于日志的消息代理，第 27 课讲用数据流组织整个应用。']
+def secs(prac,E):
+    return [
+('旧代码写回丢失新字段','经过数据库的数据流中最常见的兼容性陷阱。','<div id="p1"></div>'),
+('动手：选择数据流方式','对每个场景，选择最合适的数据流方式。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre-wrap"></pre><div class="msg" id="hm"></div></div>'),
+('持久化执行','崩溃后从中断处继续。','<div id="p2"></div>'),
+('RPC 的不确定结果','超时后，请求到底执行了没有？','<div id="t4"></div>'),
+('在你的电脑上练习','只需要 Python 3。',prac([
+ ('保存为 <code>lose.py</code>：旧代码读出再写回，丢掉了新字段。',LOSE_,'旧代码写回后： {"name": "Lin"}\n保留未知字段： {"name": "Wang", "email": "w@example.com"}'),
+ ('在 PostgreSQL 中，只更新需要修改的列（而不是整行写回）可以避免这个问题。','docker exec pg psql -U postgres -c "CREATE TABLE u(id int PRIMARY KEY, name text, email text); INSERT INTO u VALUES (1,\'lin\',\'lin@example.com\'); UPDATE u SET name = \'Lin\' WHERE id = 1; SELECT * FROM u;"','CREATE TABLE\nINSERT 0 1\nUPDATE 1\n id | name |      email\n----+------+-----------------\n  1 | Lin  | lin@example.com'),
+ ('保存为 <code>wf.py</code>：一个极简的持久化执行引擎。',WF_,''),
+ ('第一次运行：在 ship 步骤崩溃。','rm -f journal.json crashed; python3 wf.py','运行工作流：\n  reserve: 执行 → reserved\n  charge: 执行 → charge-ok\n  ship: 进程崩溃！'),
+ ('再次运行：已完成的步骤被重放而不是重复执行，没有重复扣款。','python3 wf.py; cat journal.json','运行工作流：\n  reserve: 重放（reserved）\n  charge: 重放（charge-ok）\n  ship: 执行 → shipped\n完成\n{"reserve": "reserved", "charge": "charge-ok", "ship": "shipped"}')],
+ ('让一次支付调用可以安全重试','订单服务通过 HTTP 调用支付服务 <code>POST /charges {order_id, amount}</code>，超时 2 秒后重试最多 3 次。线上发现极少数订单被扣款两次。请：① 解释重复扣款是如何发生的；② 设计幂等方案（接口与存储）；③ 说明为什么持久化执行框架也需要这个幂等键。',
+ '<ol><li>第一次请求在支付服务端已执行（扣款成功），但响应在网络中丢失或超过 2 秒才返回；订单服务认为失败并重试，支付服务把它当作新请求再扣一次。超时只说明“不知道结果”，不说明“失败了”。</li><li>客户端为每个逻辑操作生成一个<b>幂等键</b>（例如 <code>Idempotency-Key: order-1001-charge</code>，或直接用订单号），重试时使用同一个键。支付服务：<pre style="overflow-x:auto">CREATE TABLE charges(idem_key text PRIMARY KEY, order_id bigint, amount_cents bigint, status text, response jsonb);\n-- 在同一个事务中：\nINSERT INTO charges(idem_key, …) VALUES ($1, …) ON CONFLICT (idem_key) DO NOTHING RETURNING …;\n-- 插入成功 → 执行扣款并保存响应；冲突 → 返回已保存的响应</pre>还要校验同一个键的请求参数一致，键保留足够长的时间。</li><li>持久化执行只保证“步骤完成后不再执行”；如果在调用支付服务<b>之后</b>、记录结果<b>之前</b>崩溃，这一步会被再次执行。所以对外部系统的调用仍需幂等键（通常由框架提供稳定的步骤 ID 作为键）。</li></ol>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
