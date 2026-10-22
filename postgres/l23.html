@@ -26,25 +26,29 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在一个新的容器 pgb2 中开启归档，做一次完整的 PITR。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>启动一个开启归档的实例，归档到容器内的 /archive（实际中应是对象存储）。</p><pre class="cmd">docker run -d --name pitr -e POSTGRES_PASSWORD=pg postgres:18 \
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在一个新的容器 pitr 中开启归档，做一次完整的 PITR。使用独立练习实例和命名卷；本练习恢复前会清空它的数据目录。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>启动一个开启归档的实例，归档到命名卷 /archive，让停止实例后的恢复 helper 也能读取备份（生产中应使用独立对象存储）。</p><pre class="cmd">docker run -d --name pitr -e POSTGRES_PASSWORD=pg -v pitr-data:/var/lib/postgresql -v pitr-archive:/archive postgres:18 \
   -c archive_mode=on -c archive_command=&#x27;test ! -f /archive/%f &amp;&amp; cp %p /archive/%f&#x27; -c archive_timeout=60
 docker exec pitr bash -c &quot;mkdir -p /archive &amp;&amp; chown postgres /archive&quot;</pre><pre class="out">…</pre></div></div><div class="st"><span class="n">02</span><div><p>建表、写入，做一个基础备份。</p><pre class="cmd">docker exec -u postgres pitr psql -c &quot;CREATE TABLE t (id int, at timestamptz DEFAULT now())&quot; -c &quot;INSERT INTO t SELECT generate_series(1,1000)&quot;
 docker exec -u postgres pitr pg_basebackup -D /tmp/base -Ft -z -X none -P</pre><pre class="out">INSERT 0 1000
-…/… kB (100%), 1/1 tablespace</pre></div></div><div class="st"><span class="n">03</span><div><p>继续写入，记下时间，然后“误删”。</p><pre class="cmd">docker exec -u postgres pitr psql -c &quot;INSERT INTO t SELECT generate_series(1001,2000)&quot; -c &quot;SELECT now()&quot; -c &quot;DROP TABLE t&quot; -c &quot;SELECT pg_switch_wal()&quot;</pre><pre class="out">INSERT 0 1000
-              now
--------------------------------
- 2026-10-22 14:29:03.512+08
+…/… kB (100%), 1/1 tablespace</pre></div></div><div class="st"><span class="n">03</span><div><p>继续写入，创建命名恢复点，然后“误删”。恢复点位于第二批数据提交之后、DROP 之前，避免手抄时间或截断小数秒造成偏差。</p><pre class="cmd">docker exec -u postgres pitr psql -c &quot;INSERT INTO t SELECT generate_series(1001,2000)&quot; -c &quot;SELECT pg_create_restore_point(&#x27;before_drop&#x27;)&quot; -c &quot;DROP TABLE t&quot;
+WAL=$(docker exec -u postgres pitr psql -Atc &quot;SELECT pg_walfile_name(pg_current_wal_lsn())&quot;)
+docker exec -u postgres pitr psql -c &quot;SELECT pg_switch_wal()&quot;
+# 归档异步进行，确认含恢复点的 WAL 段已经出现在共享归档卷
+until docker exec pitr test -f &quot;/archive/$WAL&quot;; do sleep 1; done</pre><pre class="out">INSERT 0 1000
+ pg_create_restore_point
+-------------------------
+ 0/3000148
 DROP TABLE</pre></div></div><div class="st"><span class="n">04</span><div><p>恢复：停止实例，清空数据目录，解压基础备份。</p><pre class="cmd">docker exec pitr bash -c &quot;cp -r /tmp/base /archive/base&quot;
 docker stop pitr
 docker run --rm --volumes-from pitr -u postgres postgres:18 bash -c &quot;
   rm -rf /var/lib/postgresql/18/docker/* &amp;&amp; cd /var/lib/postgresql/18/docker &amp;&amp; tar xzf /archive/base/base.tar.gz&quot;</pre></div></div><div class="st"><span class="n">05</span><div><p>设置恢复目标并启动。</p><pre class="cmd">docker run --rm --volumes-from pitr -u postgres postgres:18 bash -c &quot;cd /var/lib/postgresql/18/docker &amp;&amp;
   echo \&quot;restore_command = &#x27;cp /archive/%f %p&#x27;\&quot; &gt;&gt; postgresql.auto.conf &amp;&amp;
-  echo \&quot;recovery_target_time = &#x27;2026-10-22 14:29:03+08&#x27;\&quot; &gt;&gt; postgresql.auto.conf &amp;&amp;
+  echo \&quot;recovery_target_name = &#x27;before_drop&#x27;\&quot; &gt;&gt; postgresql.auto.conf &amp;&amp;
   echo \&quot;recovery_target_action = &#x27;promote&#x27;\&quot; &gt;&gt; postgresql.auto.conf &amp;&amp; touch recovery.signal&quot;
-docker start pitr &amp;&amp; docker logs pitr 2&gt;&amp;1 | tail -4</pre><pre class="out">LOG:  starting point-in-time recovery to 2026-10-22 14:29:03+08
+docker start pitr &amp;&amp; docker logs pitr 2&gt;&amp;1 | tail -4</pre><pre class="out">LOG:  starting point-in-time recovery to &quot;before_drop&quot;
 LOG:  restored log file &quot;000000010000000000000003&quot; from archive
-LOG:  recovery stopping before commit of transaction 755, time 2026-10-22 14:29:03.6+08
+LOG:  recovery stopping at restore point &quot;before_drop&quot;
 LOG:  database system is ready to accept connections</pre></div></div><div class="st"><span class="n">06</span><div><p>表回来了，2000 行都在。</p><pre class="cmd">docker exec -u postgres pitr psql -c &quot;SELECT count(*) FROM t&quot;</pre><pre class="out"> count
 -------
   2000</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>制定备份策略</h3><p>一个 2 TB 的生产库，每天产生约 200 GB WAL。要求：RPO ≤ 1 分钟（对误删等逻辑错误）、恢复时间 ≤ 2 小时、保留 30 天内任意时间点。用 pgBackRest 给出备份类型和频率、归档配置、存储位置，并估算恢复耗时的组成。</p><details><summary>查看参考答案</summary><div><ul><li><b>归档</b>：<code>archive_command = 'pgbackrest --stanza=main archive-push %p'</code>，开启异步归档（<code>archive-async=y</code>）和压缩（zstd）。<code>archive_timeout = 60s</code> 保证低流量时最多丢 1 分钟。用 pgBackRest 的仓库（S3 等对象存储，另一个区域，开启对象锁定/版本，凭据与生产隔离）。</li><li><b>备份</b>：每周日全量；其他每天差异备份（相对上一次全量）；可选每 6 小时增量。从备库执行（<code>backup-standby=y</code>）减轻主库负担。保留 <code>repo1-retention-full=5</code>（5 周，覆盖 30 天）。</li><li><b>恢复耗时</b> ≈ 下载并解压最近的全量 + 差异（2 TB，并行 <code>process-max=16</code>，~1 GB/s 时约 35 分钟；<code>--delta</code> 在已有数据目录上只拉取变化的文件）+ 重放最多 1 天的 WAL（200 GB，重放约 100–200 MB/s，20–30 分钟）+ 检查与切换。用每日差异备份是为了限制需要重放的 WAL 量。</li></ul><p>最重要的一条：每周自动恢复一次到临时实例并跑校验，测得的时间才是真实的 RTO。并且保留 <code>pg_dump</code> 作为不依赖物理格式的第二种备份（例如每周一次关键表），防备工具本身的问题。</p></div></details></div>
