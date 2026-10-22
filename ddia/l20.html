@@ -46,10 +46,15 @@ SELECT * FROM acct ORDER BY id;</pre><pre class="out">COMMIT PREPARED
 ----+---------
   1 |      70
   2 |       0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计一个跨两个数据库的转账</h3><p>账户分布在两个 PostgreSQL 分片上（A 库、B 库）。用 PREPARE TRANSACTION 实现跨库转账：① 写出协调者的伪代码，包括它自己需要持久化什么；② 协调者在每一步崩溃后如何恢复；③ 为什么生产环境中更推荐其他方案，有哪些替代方案？</p><details><summary>查看参考答案</summary><div><pre style="overflow-x:auto">def transfer(txid, from_db, to_db, amt):
+    if amt &lt;= 0: raise ValueError("金额必须为正")
+    A, B = from_db, to_db
     log.write(txid, "started")                         # 协调者自己的持久日志
     try:
-        A.exec("BEGIN; UPDATE acct SET balance = balance - %s WHERE id = … AND balance &gt;= %s", amt, amt)
-        B.exec("BEGIN; UPDATE acct SET balance = balance + %s WHERE id = …", amt)
+        A.begin(); B.begin()
+        debited = A.exec("UPDATE acct SET balance = balance - %s WHERE id = … AND balance &gt;= %s", amt, amt)
+        if debited.rowcount != 1: raise ValueError("付款账户不存在或余额不足")
+        credited = B.exec("UPDATE acct SET balance = balance + %s WHERE id = …", amt)
+        if credited.rowcount != 1: raise ValueError("收款账户不存在")
         A.exec(f"PREPARE TRANSACTION '{txid}-a'")
         B.exec(f"PREPARE TRANSACTION '{txid}-b'")
     except Exception:
@@ -61,7 +66,7 @@ SELECT * FROM acct ORDER BY id;</pre><pre class="out">COMMIT PREPARED
 def recover():                   # 协调者重启时
     for txid, state in log.unfinished():
         if state == "commit": commit_all(txid)      # 必须提交
-        else: rollback_all(txid)                   # started 或 abort：ROLLBACK PREPARED（若存在）</pre><ol><li>崩溃在提交点之前：恢复时中止，各库上可能存在的已准备事务被 <code>ROLLBACK PREPARED</code>。崩溃在提交点之后：恢复时必须重试 <code>COMMIT PREPARED</code> 直到两边都成功。协调者日志丢失 = 存疑事务无人能决定，只能人工处理。</li><li>不推荐：协调者是单点且带持久状态，存疑期间锁住账户；还需要监控 <code>pg_prepared_xacts</code> 中的“孤儿”事务。</li><li>替代方案：① 把同一笔转账涉及的账户放在同一分片（按客户分片）；② 使用内部实现了分布式事务的数据库（CockroachDB、YugabyteDB、Citus 的 2PC 由数据库自身管理）；③ Saga：A 库扣款并通过 outbox 发出事件，B 库幂等入账，失败时发补偿事件退款——放弃原子性的中间状态，换取无阻塞（第 27 课）。</li></ol></div></details></div>
+        else: rollback_all(txid)                   # started 或 abort：回滚已准备事务及仍存活连接上的普通事务</pre><ol><li>2PC 只保证各参与者共同提交或中止，不会自动检查“扣款是否真的发生”。UPDATE 影响 0 行不是 SQL 错误，必须在 PREPARE 前检查两边各更新 1 行；否则余额不足仍可能凭空入账。中止时，对已经 PREPARE 的参与者执行 ROLLBACK PREPARED，对尚未 PREPARE 的连接执行 ROLLBACK。提交与恢复操作还应能识别已完成的参与者，避免把重复 COMMIT PREPARED 的“事务不存在”误当成未提交。崩溃在提交点之前：恢复时中止，各库上可能存在的已准备事务被 <code>ROLLBACK PREPARED</code>。崩溃在提交点之后：恢复时必须重试 <code>COMMIT PREPARED</code> 直到两边都成功。协调者日志丢失 = 存疑事务无人能决定，只能人工处理。</li><li>不推荐：协调者是单点且带持久状态，存疑期间锁住账户；还需要监控 <code>pg_prepared_xacts</code> 中的“孤儿”事务。</li><li>替代方案：① 把同一笔转账涉及的账户放在同一分片（按客户分片）；② 使用内部实现了分布式事务的数据库（CockroachDB、YugabyteDB、Citus 的 2PC 由数据库自身管理）；③ Saga：A 库扣款并通过 outbox 发出事件，B 库幂等入账，失败时发补偿事件退款——放弃原子性的中间状态，换取无阻塞（第 27 课）。</li></ol></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
