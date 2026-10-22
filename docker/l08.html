@@ -74,20 +74,20 @@ EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>启动。C
 compose-demo-cache-1 cache Up 3 seconds</pre></div></div><div class="st"><span class="n">07</span><div><p>彻底清理，包括数据卷。</p><pre class="cmd">docker compose down -v</pre><pre class="out"> ✔ Container compose-demo-api-1     Removed
  ✔ Container compose-demo-cache-1   Removed
  ✔ Volume compose-demo_redisdata    Removed
- ✔ Network compose-demo_default     Removed</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>等数据库真正就绪</h3><p>把 cache 换成 PostgreSQL（<code>postgres:16</code>）作为新服务 db，让 api 在 db <b>能接受连接之后</b>才启动。用 <code>docker compose up -d</code> 的输出证明顺序。</p><details><summary>查看参考答案</summary><div><pre class="cmd">  db:
-    image: postgres:16
-    environment:
-      POSTGRES_PASSWORD: dev
+ ✔ Network compose-demo_default     Removed</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>等数据库真正就绪</h3><p>保留本课的 Redis 计数 API，给 cache 添加健康检查，让 api 等到 Redis 能接受命令后才启动。不要直接把 Redis 换成 PostgreSQL：两者的协议和客户端不同。用 <code>docker compose up -d</code> 的输出证明顺序。</p><details><summary>查看参考答案</summary><div><pre class="cmd">  cache:
+    image: redis:7
+    command: [&quot;redis-server&quot;, &quot;--appendonly&quot;, &quot;yes&quot;]
+    volumes: [redisdata:/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [&quot;CMD&quot;, &quot;redis-cli&quot;, &quot;ping&quot;]
       interval: 2s
       timeout: 3s
       retries: 15
   api:
     depends_on:
-      db:
-        condition: service_healthy</pre><pre class="out"> ✔ Container compose-demo-db-1    Healthy
- ✔ Container compose-demo-api-1   Started</pre><p>api 会等到 db 的状态变成 <b>Healthy</b> 才启动。应用本身仍然应该在连接失败时重试：数据库在运行中也可能重启。</p></div></details></div>
+      cache:
+        condition: service_healthy</pre><pre class="out"> ✔ Container compose-demo-cache-1 Healthy
+ ✔ Container compose-demo-api-1   Started</pre><p>把上面的片段合并到原有 compose.yaml，保留 api 的 build、ports、environment 和顶层 redisdata 卷声明。api 会等到 cache 变成 Healthy 才启动。启动后再请求计数接口，确认仍能递增；应用也应处理运行中的连接失败，启动顺序不能代替重连。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
