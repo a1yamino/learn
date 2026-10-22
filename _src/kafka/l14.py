@@ -4,7 +4,7 @@ SUM=['<b>Connector</b> 是一个插件：<b>Source</b> 从外部系统读出数�
 'Sink 连接器本质上是一个消费者组（<code>connect-&lt;连接器名&gt;</code>），偏移量存在 <code>__consumer_offsets</code>；Source 的“外部偏移量”（binlog 位置、文件行号、自增 ID）存在 offset 主题。',
 '<b>转换器</b>（Converter，<code>key.converter</code>/<code>value.converter</code>）在 Connect 的内部数据格式与 Kafka 字节之间转换：<code>JsonConverter</code>（<code>schemas.enable</code> 决定是否附带 schema）、<code>StringConverter</code>、Avro/Protobuf 转换器（配合 Schema Registry）。',
 '<b>单消息转换（SMT）</b>：在 Source 写入前或 Sink 写出前对每条记录做轻量修改，如 <code>InsertField</code>、<code>ReplaceField</code>、<code>MaskField</code>、<code>TimestampRouter</code>、<code>RegexRouter</code>、<code>ExtractField</code>；配合<b>谓词</b>只对部分记录生效。复杂的处理（关联、聚合）应该放到 Kafka Streams 或 Flink 中。',
-'<b>错误处理</b>：<code>errors.tolerance=all</code> 跳过转换器、HeaderConverter 或 SMT 阶段无法处理的记录；Sink 写入外部系统的异常由插件自己的重试和错误报告机制处理，<code>errors.deadletterqueue.topic.name</code> 把它们写入死信主题（只适用于 Sink），<code>errors.deadletterqueue.context.headers.enable=true</code> 在 header 中记录错误原因，<code>errors.log.enable</code> 记录日志；<code>errors.retry.timeout</code> 控制可重试错误的重试时长。']
+'<b>错误处理</b>：<code>errors.tolerance=all</code> 跳过转换器、HeaderConverter 或 SMT 阶段无法处理的记录；<code>errors.deadletterqueue.topic.name</code> 把这些转换/SMT 失败的记录，以及插件通过 ErrantRecordReporter 主动上报的记录写入死信主题（只适用于 Sink）；Sink 写入外部系统的异常由插件自己的重试机制处理（SinkTask 抛出 RetriableException 时，框架会重新投递这批记录），<code>errors.deadletterqueue.context.headers.enable=true</code> 在 header 中记录错误原因，<code>errors.log.enable</code> 记录日志；<code>errors.retry.timeout</code> 控制可重试错误的重试时长。']
 def secs(prac,E):
     return [
 ('Worker、Connector 与 Task','分布式模式下的三个 Worker。','<div id="p1"></div>'),
