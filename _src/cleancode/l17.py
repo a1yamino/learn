@@ -10,7 +10,7 @@ S1=('一次重构的节奏','每一步都很小，测试一直是绿的。')
 A1=[('起点','测试绿。一个 30 行的函数，三层嵌套。',[('t','测试 ✓','ok',0,0,120),('c','pay_amount()  三层嵌套','bad',160,0,240)]),
 ('卫语句','把“已离职”“已退休”的特殊情况提前返回。测试 ✓，提交。',[('t','测试 ✓','ok',0,0,120),('c','pay_amount()  一层','sig',160,0,240),('g','git commit','',160,60,140)]),
 ('提取函数','把计算普通工资的部分提取为 normal_pay()。测试 ✓，提交。',[('t','测试 ✓','ok',0,0,120),('c','pay_amount()','ok',160,0,240),('n','normal_pay()','ok',160,60,240)]),
-('出错了？','某一步测试变红：先查看 diff，确认本次改动已有可回退的基线；只还原本次练习文件，再换一种做法。不要清空整个工作区。',[('t','测试 ✗','bad',0,0,120),('r','git restore -- birds.py','sig',160,0,240),('t2','测试 ✓','ok',160,60,120)])]
+('出错了？','某一步测试变红：先查看 diff，确认本次改动已有可回退的基线；只还原本次练习文件，再换一种做法。不要清空整个工作区。',[('t','测试 ✗','bad',0,0,120),('r','git restore -- &lt;本步改的文件&gt;','sig',160,0,260),('t2','测试 ✓','ok',160,60,120)])]
 S2=('动手：之前 / 之后','选择一种手法，看重构前后的代码。')
 CHI=[('卫语句','# 之前\ndef pay_amount(e):\n    if e.is_separated:\n        result = 0\n    else:\n        if e.is_retired:\n            result = e.pension\n        else:\n            result = normal_pay(e)\n    return result\n\n# 之后\ndef pay_amount(e):\n    if e.is_separated:\n        return 0\n    if e.is_retired:\n        return e.pension\n    return normal_pay(e)','ok','特殊情况提前返回，正常路径不再缩进。'),
 ('提取变量','# 之前\nreturn order.qty * order.price - max(0, order.qty - 500) * order.price * 0.05 + min(order.qty * order.price * 0.1, 100)\n\n# 之后\nbase_price = order.qty * order.price\nquantity_discount = max(0, order.qty - 500) * order.price * 0.05\nshipping = min(base_price * 0.1, 100)\nreturn base_price - quantity_discount + shipping','ok','给表达式的各个部分命名。'),
