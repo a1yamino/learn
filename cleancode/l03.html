@@ -42,7 +42,11 @@ def function_lengths(path):
             yield node.end_lineno - node.lineno + 1, f&quot;{path}:{node.name}&quot;
 
 if __name__ == &quot;__main__&quot;:
-    found = [f for p in sys.argv[1:] for f in function_lengths(p)]
+    paths = []
+    for arg in sys.argv[1:]:
+        p = pathlib.Path(arg)
+        paths.extend(sorted(p.rglob(&quot;*.py&quot;)) if p.is_dir() else [p])
+    found = [f for p in paths for f in function_lengths(p)]
     for length, where in sorted(found, reverse=True):
         print(f&quot;{length:4}  {where}&quot;)
 EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>一个混合层级的函数。</p><pre class="cmd">cat &gt; report.py &lt;&lt;&#x27;EOF&#x27;
@@ -68,24 +72,25 @@ EOF
 cat &gt; test_report.py &lt;&lt;&#x27;EOF&#x27;
 import unittest
 from report import monthly_report
-ROWS = [&quot;north,paid,123456\n&quot;, &quot;south,paid,99\n&quot;, &quot;north,refunded,500\n&quot;, &quot;bad line\n&quot;, &quot;north,paid,1000\n&quot;]
+ROWS = [&quot;north,paid,123456\n&quot;, &quot;south,paid,99\n&quot;, &quot;north,refunded,not-a-number\n&quot;, &quot;bad line\n&quot;, &quot;north,paid,1000\n&quot;]
 EXPECTED = &quot;north    1,244.56\nsouth        0.99\n-----------------\ntotal    1,245.55&quot;
 class T(unittest.TestCase):
     def test_report(self):
         self.assertEqual(monthly_report(ROWS), EXPECTED)
-unittest.main(argv=[&quot;x&quot;], exit=False, verbosity=0)
+if __name__ == &quot;__main__&quot;:
+    unittest.main(argv=[&quot;x&quot;], verbosity=0)
 EOF
 python3 test_report.py &amp;&amp; python3 longest.py report.py</pre><pre class="out">----------------------------------------------------------------------
 Ran 1 test in 0.000s
 
 OK
-  18  report.py:monthly_report</pre></div></div><div class="st"><span class="n">03</span><div><p>拆成三个层级：解析、汇总、渲染。顶层读起来像目录。</p><pre class="cmd">cat &gt; report.py &lt;&lt;&#x27;EOF&#x27;
+  18  report.py:monthly_report</pre></div></div><div class="st"><span class="n">03</span><div><p>拆成三个层级：解析、汇总、渲染。保留旧行为：非 paid 行不解析金额；paid 行金额非法时仍报 ValueError。测试故意包含金额无效的退款行，防止调整执行顺序时引入异常。</p><pre class="cmd">cat &gt; report.py &lt;&lt;&#x27;EOF&#x27;
 from typing import NamedTuple
 
 class Payment(NamedTuple):
     region: str
     status: str
-    cents: int
+    amount_text: str
 
 def monthly_report(lines):
     payments = parse_payments(lines)
@@ -97,13 +102,13 @@ def parse_payments(lines):
         parts = line.strip().split(&quot;,&quot;)
         if len(parts) == 3:
             region, status, amount = parts
-            yield Payment(region, status, int(amount))
+            yield Payment(region, status, amount)
 
 def paid_totals_by_region(payments):
     totals = {}
     for p in payments:
         if p.status == &quot;paid&quot;:
-            totals[p.region] = totals.get(p.region, 0) + p.cents
+            totals[p.region] = totals.get(p.region, 0) + int(p.amount_text)
     return totals
 
 def render(totals):
