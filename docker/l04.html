@@ -62,7 +62,7 @@ HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"
 EOF
 docker build -t api-demo:1.1 . && docker run -d --name api -p 8000:8000 api-demo:1.1
-sleep 15; docker ps --format "{{.Names}} {{.Status}}"</pre><pre class="out">api Up 15 seconds (healthy)</pre><p>健康检查在容器<b>内部</b>执行，所以访问 127.0.0.1 就可以。连续失败 3 次后状态变为 unhealthy；Compose 和编排系统会根据这个状态决定依赖启动顺序或替换容器。</p></div></details></div>
+sleep 15; docker ps --format "{{.Names}} {{.Status}}"</pre><pre class="out">api Up 15 seconds (healthy)</pre><p>健康检查在容器<b>内部</b>执行，所以访问 127.0.0.1 就可以。连续失败 3 次后状态变为 unhealthy。Compose 的 <code>depends_on: condition: service_healthy</code> 可以在启动依赖服务时等待健康检查，但普通 Docker / Compose 不会仅因 unhealthy 自动重启容器，<code>restart</code> 策略针对的是进程退出。Swarm 可以替换不健康的任务；Kubernetes 使用自己配置的探针，不读取镜像的 HEALTHCHECK。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
