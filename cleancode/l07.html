@@ -53,12 +53,14 @@ def pay(account, amount):
 EOF
 python3 -c &quot;
 from bank import *
-a = Account(); a.set_balance(50); pay(a, 80); print(a.get_balance())&quot;</pre><pre class="out">-30</pre></div></div><div class="st"><span class="n">02</span><div><p>之后：对象保护自己的不变量。</p><pre class="cmd">cat &gt; bank.py &lt;&lt;&#x27;EOF&#x27;
+a = Account(); a.set_balance(50); pay(a, 80); print(a.get_balance())&quot;</pre><pre class="out">-30</pre></div></div><div class="st"><span class="n">02</span><div><p>之后：从构造时就检查余额非负，并在存取操作中保持它。下例只演示单线程内存对象；真实账户还需金额精度、并发和事务控制。</p><pre class="cmd">cat &gt; bank.py &lt;&lt;&#x27;EOF&#x27;
 class InsufficientFunds(Exception):
     pass
 
 class Account:
     def __init__(self, opening_balance=0):
+        if not opening_balance &gt;= 0:
+            raise ValueError(&quot;初始余额必须非负&quot;)
         self._balance = opening_balance
 
     @property
@@ -77,7 +79,7 @@ class Account:
 
     @staticmethod
     def _require_positive(amount):
-        if amount &lt;= 0:
+        if not amount &gt; 0:
             raise ValueError(&quot;金额必须为正&quot;)
 EOF
 python3 -c &quot;
