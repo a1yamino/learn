@@ -53,8 +53,8 @@ ACL WHOAMI</pre><pre class="out">OK
 &quot;default&quot;</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为三个团队设计 ACL</h3><p>一个 Redis 实例被三个服务共享：订单服务（键前缀 <code>order:</code>，需要读写、Lua 脚本）、推荐服务（只读 <code>product:</code> 和 <code>rec:</code>，写 <code>rec:</code>）、数据看板（只读所有键的统计信息，不能读取数据）。再加一个运维账户。写出 ACL 规则，并说明默认用户如何处理、密码如何下发。</p><details><summary>查看参考答案</summary><div><pre>user default off
 user order on #&lt;sha256&gt; ~order:* +@read +@write +@scripting -@dangerous
 user rec on #&lt;sha256&gt; %R~product:* ~rec:* +@read +@write -@dangerous
-user board on #&lt;sha256&gt; +info +ping +dbsize +slowlog|get +latency|latest +memory|stats
-user ops on #&lt;sha256&gt; ~* &amp;* +@all</pre><ul><li>密码以 SHA-256 写入 aclfile（<code>#</code> 后跟哈希），配置文件中不出现明文；应用从密钥管理服务获取明文密码。</li><li><code>%R~product:*</code> 让推荐服务对商品键只读；<code>~rec:*</code> 读写。看板账户没有任何键模式，即使命令允许也读不到数据。</li><li>禁用 default 用户，强制所有客户端用自己的账户认证，便于 <code>ACL LOG</code> 和 <code>CLIENT LIST</code> 中区分来源。</li><li>ops 只从跳板机使用；网络层仅允许三个服务的网段访问。更好的做法是把三个服务拆到不同实例，避免互相影响。</li></ul></div></details></div>
+user board on #&lt;sha256&gt; +info +ping +dbsize +latency|latest +memory|stats
+user ops on #&lt;sha256&gt; ~* &amp;* +@all</pre><ul><li>密码以 SHA-256 写入 aclfile（<code>#</code> 后跟哈希），配置文件中不出现明文；应用从密钥管理服务获取明文密码。</li><li><code>%R~product:*</code> 让推荐服务对商品键只读；<code>~rec:*</code> 读写。看板账户没有键读取命令，也不授予 SLOWLOG GET：慢日志会包含原始命令及参数，键模式不会替它遮蔽业务数据。监控只读取汇总指标。</li><li>禁用 default 用户，强制所有客户端用自己的账户认证，便于 <code>ACL LOG</code> 和 <code>CLIENT LIST</code> 中区分来源。</li><li>ops 只从跳板机使用；网络层仅允许三个服务的网段访问。更好的做法是把三个服务拆到不同实例，避免互相影响。</li></ul></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
