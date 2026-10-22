@@ -3,7 +3,7 @@
 set -e
 N=$1; cd /workspace/kafka-course
 python3 build.py $N; python3 index.py $((10#$N))
-cp /workspace/learn/kafka/l$N.js /cursor/stores/store-c8ce1fd0-7a1f-4906-b5c2-3226ea6c13e6/backup/kafka-course/
+timeout 30 cp /workspace/learn/kafka/l$N.js /cursor/stores/store-c8ce1fd0-7a1f-4906-b5c2-3226ea6c13e6/backup/kafka-course/ || echo STOREFAIL $N >> /tmp/kstore.log
 cd /workspace/learn; (python3 -m http.server 8765 >/dev/null 2>&1 &); sleep 1
 cd /workspace/kafka-course/test; for t in 1 2 3 4 5 6; do r=$(timeout 250 node kt.js http://localhost:8765/ $N 2>&1|tail -1); [[ $r == errors* ]] && break; sleep 3; done
 pkill -f "http.server 8765" || true; echo "LOCAL $r"; [[ $r == 'errors []' ]] || exit 1
