@@ -1,0 +1,135 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 10 课 · apply_patch：补丁格式与解析</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 10 课</span><span class="sp"></span><a href="l09.html">← 第 9 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 10 课</div><h1>apply_patch：补丁格式与解析</h1>
+<p>pi 的 edit 工具做“精确文本替换”（oldText → newText），再加一点模糊匹配。Codex 让模型写一种专门设计的<b>补丁语言</b>：<code>*** Begin Patch</code> … <code>*** End Patch</code>，一个补丁里可以新增、删除、修改、移动多个文件。在 gpt-5.5 上它是一个 <b>custom（自由格式）工具</b>，语法用 Lark 文法约束模型输出，补丁原文不必塞进 JSON 字符串。本课在真实 codex 中应用三个补丁：新增、修改并删除、以及一个对不上的补丁。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个补丁的旅程</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：会成功吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个补丁的旅程</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：会成功吗？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/apply-patch/src/parser.rs#L1-L24" target="_blank" rel="noopener">codex-rs/apply-patch/src/parser.rs  L1–24 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">//! This module is responsible for parsing &amp; validating a patch into a list of &quot;hunks&quot;.
+//! (It does not attempt to actually check that the patch can be applied to the filesystem.)
+//!
+//! The official Lark grammar for the apply-patch format is:
+//!
+//! start: begin_patch environment_id? hunk+ end_patch
+//! begin_patch: &quot;*** Begin Patch&quot; LF
+//! environment_id: &quot;*** Environment ID: &quot; filename LF
+//! end_patch: &quot;*** End Patch&quot; LF?
+//!
+//! hunk: add_hunk | delete_hunk | update_hunk
+//! add_hunk: &quot;*** Add File: &quot; filename LF add_line+
+//! delete_hunk: &quot;*** Delete File: &quot; filename LF
+//! update_hunk: &quot;*** Update File: &quot; filename LF change_move? change?
+//! filename: /(.+)/
+//! add_line: &quot;+&quot; /(.+)/ LF -&gt; line
+//!
+//! change_move: &quot;*** Move to: &quot; filename LF
+//! change: (change_context | change_line)+ eof_line?
+//! change_context: (&quot;@@&quot; | &quot;@@ &quot; /(.+)/) LF
+//! change_line: (&quot;+&quot; | &quot;-&quot; | &quot; &quot;) /(.+)/ LF
+//! eof_line: &quot;*** End of File&quot; LF
+//!
+//! The parser below is a little more lenient than the explicit spec and allows for</pre><p>逐级放宽的匹配：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/apply-patch/src/seek_sequence.rs#L1-L6" target="_blank" rel="noopener">codex-rs/apply-patch/src/seek_sequence.rs  L1–6, L35–40 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">/// Attempt to find the sequence of `pattern` lines within `lines` beginning at or after `start`.
+/// Returns the starting index of the match or `None` if not found. Matches are attempted with
+/// decreasing strictness: exact match, then ignoring trailing whitespace, then ignoring leading
+/// and trailing whitespace. When `eof` is true, we first try starting at the end-of-file (so that
+/// patterns intended to match file endings are applied at the end), and fall back to searching
+/// from `start` if needed.
+  // …
+// Exact match first.
+for i in search_start..=lines.len().saturating_sub(pattern.len()) {
+    if lines[i..i + pattern.len()] == *pattern {
+        return Some(i);
+    }
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l10.html">pi 第 10 课 · edit 工具：精确替换、diff 与文件修改队列</a>。两者都要求“旧文本必须能找到”，都做了容错；Codex 用一种多文件补丁语言，pi 用逐处替换。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。 自由格式工具调用的输出项类型是 <code>custom_tool_call</code>，字段 <code>input</code> 是补丁原文。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>三个补丁。</p><pre class="cmd">cat &gt; codex/scratch/s_patch.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：apply_patch（自由格式工具）新增、修改、删除文件，再故意给一个对不上的补丁
+def patch(cid, text):
+    return {&quot;type&quot;: &quot;custom_tool_call&quot;, &quot;name&quot;: &quot;apply_patch&quot;, &quot;call_id&quot;: cid, &quot;input&quot;: text}
+P1 = &quot;&quot;&quot;*** Begin Patch
+*** Add File: greet.py
++def greet(name):
++    return &quot;hello &quot; + name
+*** Add File: old.txt
++obsolete
+*** End Patch
+&quot;&quot;&quot;
+P2 = &quot;&quot;&quot;*** Begin Patch
+*** Update File: greet.py
+@@ def greet(name):
+-    return &quot;hello &quot; + name
++    return f&quot;你好，{name}！&quot;
+*** Delete File: old.txt
+*** End Patch
+&quot;&quot;&quot;
+P3 = &quot;&quot;&quot;*** Begin Patch
+*** Update File: greet.py
+@@
+-    return &quot;this line does not exist&quot;
++    return None
+*** End Patch
+&quot;&quot;&quot;
+def reply(n, body):
+    if n &lt;= 3: return [patch(f&quot;p{n}&quot;, [P1, P2, P3][n - 1])]
+    return [msg(&quot;完成&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>在 workspace-write 沙箱下应用。</p><pre class="cmd">cat &gt; codex/scratch/l10.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+S=$(pwd); export CODEX_HOME=$(mktemp -d); W=$(mktemp -d); cd $W
+bash $S/run.sh $S/s_patch.py --sandbox workspace-write &quot;修改代码&quot; &gt;/dev/null 2&gt;&amp;1
+echo &quot;== 三次 apply_patch 的结果（发回模型的 custom_tool_call_output）&quot;
+python3 - $CODEX_HOME/requests/req04.json &lt;&lt;&#x27;PY&#x27;
+import json, sys
+for it in json.load(open(sys.argv[1]))[&quot;body&quot;][&quot;input&quot;]:
+    if it[&quot;type&quot;] == &quot;custom_tool_call_output&quot;:
+        o = it[&quot;output&quot;]; o = o if isinstance(o, str) else json.dumps(o, ensure_ascii=False)
+        print(&quot; &quot;, it[&quot;call_id&quot;], &quot;→&quot;, o.replace(&quot;\n&quot;, &quot; ⏎ &quot;)[:160])
+PY
+echo &quot;== 工作目录最终状态&quot;; ls $W; cat $W/greet.py
+EOF
+cd codex/scratch &amp;&amp; bash l10.sh</pre><pre class="out">== 三次 apply_patch 的结果（发回模型的 custom_tool_call_output）
+  p1 → Exit code: 0 ⏎ Wall time: 0.2 seconds ⏎ Output: ⏎ Success. Updated the following files: ⏎ A greet.py ⏎ A old.txt ⏎ 
+  p2 → Exit code: 0 ⏎ Wall time: 0.1 seconds ⏎ Output: ⏎ Success. Updated the following files: ⏎ M greet.py ⏎ D old.txt ⏎ 
+  p3 → apply_patch verification failed: Failed to find expected lines in /tmp/tmp.ntYaICMTNk/greet.py: ⏎     return &quot;this line does not exist&quot;
+== 工作目录最终状态
+greet.py
+def greet(name):
+    return f&quot;你好，{name}！&quot;</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>移动并修改</h3><p>写一个补丁：把 greet.py 移动到 <code>pkg/greet.py</code>，同时把函数名改成 <code>hello</code>。</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">*** Begin Patch
+*** Update File: greet.py
+*** Move to: pkg/greet.py
+@@
+-def greet(name):
++def hello(name):
+*** End Patch</pre><p>Move to 必须紧跟在 Update File 之后（文法 <code>update_hunk: … change_move? change?</code>）。结果列表中以 M 显示目标文件，原文件被删除，中间目录会被创建。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>文法</b>（<code>apply-patch/src/parser.rs</code> 顶部注释，<code>core/assets/tools/apply_patch.lark</code>）：hunk 分为 Add File（全部为 + 行）、Delete File、Update File（可带 Move to，用 <code>@@ 上下文</code> 定位，<code>+ - 空格</code> 三种行，可选 End of File）。</li><li><b>定位</b>（<code>seek_sequence.rs</code>）：在文件中查找要替换的旧行，按严格程度递减尝试：完全相等 → 忽略行尾空白 → 忽略首尾空白（还有 Unicode 标点规范化）。<code>@@ def greet(name):</code> 这样的上下文行先把搜索起点移到该行。</li><li><b>先验证再写入</b>：找不到旧行就整体失败：“apply_patch verification failed: Failed to find expected lines …”，文件保持不变，错误回给模型重试。</li><li><b>结果</b>：成功时输出 “Success. Updated the following files:” 与 A/M/D 列表，并报告退出码与耗时。</li><li><b>与沙箱、审批的关系</b>：apply_patch 也要通过安全检查——默认 read-only 沙箱、审批策略 never 时得到 “patch rejected: writing is blocked by read-only sandbox; rejected by user approval settings”。<code>--sandbox workspace-write</code> 允许写工作目录。</li><li><b>独占执行</b>：apply_patch 不支持并行（第 7 课），修改文件时不会与其他工具交错；修改还会被 <code>turn_diff_tracker</code> 记录，生成整个 turn 的 diff。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 11</div><a class="big" href="l11.html">沙箱：macOS Seatbelt →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l10.js"></script>
+</body></html>

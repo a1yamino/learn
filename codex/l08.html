@@ -1,0 +1,253 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 8 课 · 会话线程、中断与转向</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 8 课</span><span class="sp"></span><a href="l07.html">← 第 7 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 8 课</div><h1>会话线程、中断与转向</h1>
+<p>pi 的 Agent 类有两个队列：steer（在当前工具调用后插入）与 follow-up（等 agent 空闲后再处理）。Codex 的对应物是<b>线程（thread）</b>与它的<b>输入队列</b>：当一个 turn 正在运行时提交新输入，会话不会开新 turn，而是把它“转向”进当前 turn；中断则取消正在执行的工具，并在历史里留下明确的痕迹，告诉模型“用户是故意打断的”。本课用一个约 60 行的 app-server 客户端，在真实 codex 中演示转向与中断。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">转向与中断</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：会发生什么？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>转向与中断</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：会发生什么？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/session/turn_input.rs#L1-L12" target="_blank" rel="noopener">codex-rs/core/src/session/turn_input.rs  L1–12, L370–393 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">//! Handles reply-bearing turn-input operations.
+//!
+//! This is the one place Core decides whether submitted input starts a turn,
+//! steers an active turn, or is rejected. It replies after that decision; it
+//! does not wait for user-prompt hooks, updating the in-memory model context,
+//! rollout persistence, or sampling.
+//!
+//! Persistent thread settings apply on Started and Steered. Turn start
+//! options only update turn context on Started; input provenance follows each request.
+//! Host shutdown admission is checked before reserving or starting a new turn.
+//! Parent-delegated subagent input bypasses drain; automatic starts remain gated.
+//! Realtime drain refusals are returned to the fanout for ordered session teardown.
+  // …
+    start,
+)
+.await?;
+let sender_messages = capture_sender_user_messages(session, &amp;mut input).await;
+match session
+    .steer_input(
+        &amp;mut input,
+        sender_messages.as_ref(),
+        additional_context.clone(),
+        /*expected_turn_id*/ None,
+        settings.required_active_final_output_json_schema(),
+        responsesapi_client_metadata.clone(),
+        origin,
+    )
+    .await
+{
+    Ok((turn_id, root_turn_id)) =&gt; {
+        settings.apply_steered(session, submission_id).await?;
+        Ok(TurnInputSubmission::Steered {
+            turn_id,
+            root_turn_id,
+        })
+    }
+    Err(NotSubmittedReason::NoActiveTurn) =&gt; {</pre><p>中止的工具输出：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/tools/parallel.rs#L375-L384" target="_blank" rel="noopener">codex-rs/core/src/tools/parallel.rs  L375–384 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">
+fn abort_message(call: &amp;ToolCall, elapsed_secs: Option&lt;f32&gt;) -&gt; String {
+    let Some(secs) = elapsed_secs else {
+        return &quot;aborted before dispatch&quot;.to_string();
+    };
+    if call.tool_name.is_default_namespace() &amp;&amp; call.tool_name.name == &quot;exec_command&quot; {
+        format!(&quot;Wall time: {secs:.1} seconds\naborted by user&quot;)
+    } else {
+        format!(&quot;aborted by user after {secs:.1}s&quot;)
+    }</pre><p>中断提示：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/context/turn_aborted.rs#L10-L14" target="_blank" rel="noopener">codex-rs/core/src/context/turn_aborted.rs  L10–14 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">
+impl TurnAborted {
+    pub(crate) const INTERRUPTED_GUIDANCE: &amp;&#x27;static str = &quot;The user interrupted the previous turn on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed.&quot;;
+    pub(crate) const INTERRUPTED_DEVELOPER_GUIDANCE: &amp;&#x27;static str = &quot;The previous turn was interrupted on purpose. Any running unified exec processes may still be running in the background. If any tools/commands were aborted, they may have partially executed.&quot;;
+</pre><p>app-server 的转向参数：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/app-server-protocol/src/protocol/v2/turn.rs#L317-L322" target="_blank" rel="noopener">codex-rs/app-server-protocol/src/protocol/v2/turn.rs  L317–322, L344–348 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub struct TurnSteerParams {
+    pub thread_id: String,
+    #[ts(optional = nullable)]
+    pub client_user_message_id: Option&lt;String&gt;,
+    pub input: Vec&lt;UserInput&gt;,
+    /// Optional metadata to enrich Codex&#x27;s ResponsesAPI turn metadata.
+  // …
+    pub expected_turn_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = &quot;camelCase&quot;)]</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l08.html">pi 第 8 课 · Agent 类：状态、事件订阅、steering 与 follow-up</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。 本课新增 <code>apc.py</code>：一个最小的 app-server 客户端（JSON-RPC，每行一条消息），后面几课还会用到；run.sh 新增 <code>RUN</code> 变量，用来运行客户端脚本代替 codex exec。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>更新 run.sh；app-server 客户端。</p><pre class="cmd">cat &gt; codex/scratch/run.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# run.sh &lt;剧本.py&gt; [codex 参数...]：启动假模型，用临时 CODEX_HOME 运行 codex exec
+# 可选环境变量：MODEL、EXTRA_CONFIG（追加到顶层配置）、EXTRA_PROVIDER（追加到提供方）、
+#   REQ_RETRIES/STREAM_RETRIES；RUN 设置时运行 &quot;$RUN 参数…&quot; 而不是 codex exec（例如 app-server 客户端）
+MODEL=${MODEL:-gpt-5.5}
+SCRIPT=$(realpath &quot;$1&quot;); shift
+export CODEX_HOME=${CODEX_HOME:-$(mktemp -d)}; mkdir -p $CODEX_HOME; LOG=$CODEX_HOME/requests
+PORT=$((20000 + RANDOM % 20000))
+python3 &quot;$(dirname &quot;$0&quot;)/mock.py&quot; &quot;$SCRIPT&quot; $PORT &quot;$LOG&quot; &amp; MOCK=$!
+trap &quot;kill $MOCK 2&gt;/dev/null&quot; EXIT
+cat &gt; $CODEX_HOME/config.toml &lt;&lt;TOML
+model = &quot;$MODEL&quot;
+model_provider = &quot;mock&quot;
+$EXTRA_CONFIG
+[model_providers.mock]
+$EXTRA_PROVIDER
+name = &quot;Mock&quot;
+base_url = &quot;http://127.0.0.1:$PORT/v1&quot;
+wire_api = &quot;responses&quot;
+request_max_retries = ${REQ_RETRIES:-0}
+stream_max_retries = ${STREAM_RETRIES:-0}
+TOML
+sleep 0.5
+if [ -n &quot;$RUN&quot; ]; then $RUN &quot;$@&quot;; else codex exec --skip-git-repo-check &quot;$@&quot; &lt;/dev/null; fi
+EOF
+cat &gt; codex/scratch/apc.py &lt;&lt;&#x27;EOF&#x27;
+#!/usr/bin/env python3
+&quot;&quot;&quot;apc.py：极简 app-server 客户端（JSON-RPC over stdio，每行一条 JSON）。
+用法：在课程脚本中 from apc import AppServer&quot;&quot;&quot;
+import json, subprocess, threading, queue, os, sys, time
+
+class AppServer:
+    def __init__(self, args=(), cwd=None, env=None):
+        self.p = subprocess.Popen([&quot;codex&quot;, &quot;app-server&quot;, *args], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, text=True, cwd=cwd, env=env, bufsize=1)
+        self.next_id, self.pending, self.events = 1, {}, queue.Queue()
+        self.on_request = None  # 服务器发来的请求（如审批）的处理函数：(method, params) -&gt; result
+        threading.Thread(target=self._reader, daemon=True).start()
+
+    def _reader(self):
+        for line in self.p.stdout:
+            m = json.loads(line)
+            if &quot;id&quot; in m and &quot;method&quot; in m:          # 服务器 → 客户端的请求
+                result = self.on_request(m[&quot;method&quot;], m[&quot;params&quot;]) if self.on_request else {}
+                self._send({&quot;id&quot;: m[&quot;id&quot;], &quot;result&quot;: result})
+            elif &quot;id&quot; in m:                          # 对我们请求的响应
+                self.pending.pop(m[&quot;id&quot;]).put(m)
+            else:                                    # 通知
+                self.events.put(m)
+
+    def _send(self, m):
+        self.p.stdin.write(json.dumps(m, ensure_ascii=False) + &quot;\n&quot;); self.p.stdin.flush()
+
+    def request(self, method, params):
+        i = self.next_id; self.next_id += 1; q = queue.Queue(); self.pending[i] = q
+        self._send({&quot;id&quot;: i, &quot;method&quot;: method, &quot;params&quot;: params})
+        m = q.get(timeout=60)
+        if &quot;error&quot; in m: raise RuntimeError(f&quot;{method}: {m[&#x27;error&#x27;]}&quot;)
+        return m[&quot;result&quot;]
+
+    def notify(self, method, params=None):
+        self._send({&quot;method&quot;: method, **({&quot;params&quot;: params} if params is not None else {})})
+
+    def wait(self, method, timeout=60, show=None):
+        &quot;&quot;&quot;等待某个通知；show(m) 用于打印途中的通知&quot;&quot;&quot;
+        end = time.time() + timeout
+        while True:
+            m = self.events.get(timeout=max(0.1, end - time.time()))
+            if show: show(m)
+            if m[&quot;method&quot;] == method: return m[&quot;params&quot;]
+
+    def start(self, cwd):
+        self.request(&quot;initialize&quot;, {&quot;clientInfo&quot;: {&quot;name&quot;: &quot;course&quot;, &quot;title&quot;: None, &quot;version&quot;: &quot;0&quot;}})
+        self.notify(&quot;initialized&quot;)
+        return self.request(&quot;thread/start&quot;, {&quot;cwd&quot;: cwd})[&quot;thread&quot;][&quot;id&quot;]
+
+    def close(self):
+        self.p.stdin.close(); self.p.wait(timeout=10)
+
+def text(t): return [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: t, &quot;text_elements&quot;: []}]
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>剧本：慢命令。</p><pre class="cmd">cat &gt; codex/scratch/s_steer.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：第 1 次请求执行一条慢命令；之后的请求只回答文字
+def reply(n, body):
+    last_user = [i for i in body[&quot;input&quot;] if i.get(&quot;role&quot;) == &quot;user&quot;][-1][&quot;content&quot;][0][&quot;text&quot;]
+    if n == 1 or last_user == &quot;第二个任务&quot;:
+        return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;sleep 2; echo 慢命令完成&quot;, &quot;yield_time_ms&quot;: 10000}, f&quot;slow{n}&quot;)]
+    return [msg(f&quot;收到（最后一条用户消息：{last_user}）&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>转向、中断、再继续。</p><pre class="cmd">cat &gt; codex/scratch/l08.py &lt;&lt;&#x27;EOF&#x27;
+# 转向与中断：用 app-server 在 turn 运行中插话、再中断另一个 turn
+import os, sys, time, json; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from apc import AppServer, text
+a = AppServer(cwd=os.getcwd()); tid = a.start(os.getcwd())
+def show(m):
+    p = m.get(&quot;params&quot;, {}); it = p.get(&quot;item&quot;, {})
+    if m[&quot;method&quot;] in (&quot;turn/started&quot;, &quot;turn/completed&quot;):
+        print(f&quot;  {m[&#x27;method&#x27;]:16} status={p[&#x27;turn&#x27;][&#x27;status&#x27;]}&quot;)
+    elif m[&quot;method&quot;] == &quot;item/completed&quot; and it.get(&quot;type&quot;) in (&quot;commandExecution&quot;, &quot;agentMessage&quot;, &quot;userMessage&quot;):
+        desc = it.get(&quot;text&quot;) or it.get(&quot;command&quot;) or json.dumps(it.get(&quot;content&quot;), ensure_ascii=False)[:60]
+        print(f&quot;  item/completed   {it[&#x27;type&#x27;]}: {desc}&quot;)
+
+print(&quot;== 1. 转向：慢命令运行时插入一句话&quot;)
+turn = a.request(&quot;turn/start&quot;, {&quot;threadId&quot;: tid, &quot;input&quot;: text(&quot;第一个任务&quot;)})[&quot;turn&quot;][&quot;id&quot;]
+time.sleep(0.8)
+r = a.request(&quot;turn/steer&quot;, {&quot;threadId&quot;: tid, &quot;input&quot;: text(&quot;顺便也看看 README&quot;), &quot;expectedTurnId&quot;: turn})
+print(&quot;  turn/steer 返回同一个 turn：&quot;, r[&quot;turnId&quot;] == turn)
+a.wait(&quot;turn/completed&quot;, show=show)
+
+print(&quot;== 2. 中断：慢命令运行时取消 turn&quot;)
+turn = a.request(&quot;turn/start&quot;, {&quot;threadId&quot;: tid, &quot;input&quot;: text(&quot;第二个任务&quot;)})[&quot;turn&quot;][&quot;id&quot;]
+time.sleep(0.8)
+a.request(&quot;turn/interrupt&quot;, {&quot;threadId&quot;: tid, &quot;turnId&quot;: turn})
+a.wait(&quot;turn/completed&quot;, show=show)
+print(&quot;== 3. 中断之后再发一条消息&quot;)
+a.request(&quot;turn/start&quot;, {&quot;threadId&quot;: tid, &quot;input&quot;: text(&quot;第三个任务&quot;)})
+a.wait(&quot;turn/completed&quot;, show=show)
+a.close()
+EOF
+cat &gt; codex/scratch/l08.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+S=$(pwd); export CODEX_HOME=$(mktemp -d); cd $(mktemp -d)
+RUN=&quot;python3 $S/l08.py&quot; bash $S/run.sh $S/s_steer.py
+echo &quot;== 模型收到的请求&quot;
+python3 $S/show.py $CODEX_HOME/requests 60 | grep -vE &quot;developer|environment_context&quot; | tail -8
+EOF
+cd codex/scratch &amp;&amp; bash l08.sh</pre><pre class="out">== 1. 转向：慢命令运行时插入一句话
+  turn/steer 返回同一个 turn： True
+  turn/started     status=inProgress
+  item/completed   userMessage: [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;第一个任务&quot;, &quot;text_elements&quot;: []}]
+  item/completed   commandExecution: /bin/bash -lc &#x27;sleep 2; echo 慢命令完成&#x27;
+  item/completed   userMessage: [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;顺便也看看 README&quot;, &quot;text_elements&quot;: [
+  item/completed   agentMessage: 收到（最后一条用户消息：顺便也看看 README）
+  turn/completed   status=completed
+== 2. 中断：慢命令运行时取消 turn
+  turn/started     status=inProgress
+  item/completed   userMessage: [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;第二个任务&quot;, &quot;text_elements&quot;: []}]
+  turn/completed   status=interrupted
+== 3. 中断之后再发一条消息
+  turn/started     status=inProgress
+  item/completed   userMessage: [{&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;第三个任务&quot;, &quot;text_elements&quot;: []}]
+  item/completed   agentMessage: 收到（最后一条用户消息：第三个任务）
+  turn/completed   status=completed
+== 模型收到的请求
+  function_call_output             Chunk ID: a2907a ⏎ Wall time: 1.8971 seconds ⏎ Process exite
+  message                user      顺便也看看 README
+  message                assistant 收到（最后一条用户消息：顺便也看看 README）
+  message                user      第二个任务
+  function_call                    exec_command({&quot;cmd&quot;: &quot;sleep 2; echo 慢命令完成&quot;, &quot;yield_time_ms&quot;:
+  function_call_output             Wall time: 0.7 seconds ⏎ aborted by user
+  message                user      &lt;turn_aborted&gt; ⏎ The user interrupted the previous turn on p
+  message                user      第三个任务</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>转向两次</h3><p>在第一个任务的慢命令运行期间，连续发两次 turn/steer（“A”和“B”）。预测 req02 的末尾，以及模型回答中的“最后一条用户消息”。</p><details><summary>查看参考答案</summary><div><p>两条都在慢命令结束后、下一次请求前一并取出，req02 末尾依次是 function_call_output、user “A”、user “B”；模型回答“收到（最后一条用户消息：B）”。两次 turn/steer 都返回同一个 turnId。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>线程</b>：一个线程 = 一段可恢复的对话（有 id、历史、设置）；<code>ThreadManager</code> 管理多个线程，app-server 的 <code>thread/start</code>、<code>thread/resume</code>、<code>thread/fork</code> 操作它们。</li><li><b>开始还是转向</b>（<code>session/turn_input.rs</code>）：这是内核里“唯一决定”输入去向的地方——有活动 turn 就调用 <code>steer_input</code> 排进去（返回 Steered，带同一个 turn id），否则启动新 turn（Started）。只有用户输入或独立的函数输出才能开始或转向。</li><li><b>转向何时生效</b>：run_turn 每一圈开头取出排队输入（第 6 课）。实验中“顺便也看看 README”出现在 req02 的 function_call_output 之后——慢命令执行完、下一次请求之前。</li><li><b>expectedTurnId</b>：<code>turn/steer</code> 必须带上期望的活动 turn id，不匹配就失败，避免把话插进错误的 turn。</li><li><b>中断</b>：<code>Op::Interrupt</code>（app-server 的 <code>turn/interrupt</code>）取消 turn；正在运行的工具得到输出 “Wall time: 0.7 seconds⏎aborted by user”，turn 状态为 interrupted。下一次请求还会附上一条 <code>&lt;turn_aborted&gt;</code> 用户消息：“用户是故意中断的……被中止的命令可能已部分执行”。</li><li><b>对比 pi</b>：pi 的 abort 只是停止；Codex 把中断写进历史，让模型下一轮知道发生了什么。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 09</div><a class="big" href="l09.html">shell 与 unified exec →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l08.js"></script>
+</body></html>

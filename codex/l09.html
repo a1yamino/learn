@@ -1,0 +1,159 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 9 课 · shell 与 unified exec</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 9 课</span><span class="sp"></span><a href="l08.html">← 第 8 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 9 课</div><h1>shell 与 unified exec</h1>
+<p>pi 的 bash 工具执行一条命令、等它结束、截断输出尾部。Codex 的 <b>unified exec</b> 更像一个终端复用器：<code>exec_command</code> 在 PTY 中启动进程，最多等待 <code>yield_time_ms</code>；进程还没结束就返回一个 <b>session ID</b>，模型之后可以用 <code>write_stdin</code> 继续输入、读取新输出。于是交互式程序（REPL、提示输入、长时间构建）也能被 agent 驱动。本课在真实 codex 中走一遍：提示输入 → 写入 stdin → 一条十万行的输出被截断。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个交互式进程</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：输出会是什么样？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个交互式进程</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：输出会是什么样？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/unified_exec/mod.rs#L1-L24" target="_blank" rel="noopener">codex-rs/core/src/unified_exec/mod.rs  L1–24, L68–77 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">//! Unified Exec: interactive process execution orchestrated with approvals + sandboxing.
+//!
+//! Responsibilities
+//! - Manages interactive processes (create, reuse, buffer output with caps).
+//! - Supports completion-only calls that terminate on timeout or cancellation.
+//! - Uses the shared ToolOrchestrator to handle approval, sandbox selection, and
+//!   retry semantics in a single, descriptive flow.
+//! - Spawns the PTY from a sandbox-transformed `ExecRequest`; on sandbox denial,
+//!   retries without sandbox when policy allows (no re‑prompt thanks to caching).
+//! - Uses the shared `is_likely_sandbox_denied` heuristic to keep denial messages
+//!   consistent with other exec paths.
+//!
+//! Flow at a glance (open process)
+//! 1) Build a small request `{ command, cwd }`.
+//! 2) Orchestrator: approval (bypass/cache/prompt) → select sandbox → run.
+//! 3) Runtime: transform `SandboxTransformRequest` -&gt; `ExecRequest` -&gt; spawn PTY.
+//! 4) If denial, orchestrator retries with `SandboxType::None`.
+//! 5) Process handle is returned with streaming output + metadata.
+//!
+//! This keeps policy logic and user interaction centralized while the PTY/process
+//! concerns remain isolated here. The implementation is split between:
+//! - `process.rs`: PTY process lifecycle + output buffering.
+//! - `process_state.rs`: shared exit/failure state for local and remote processes.
+//! - `process_manager.rs`: orchestration (approvals, sandboxing, reuse) and request handling.
+  // …
+pub(crate) const MIN_YIELD_TIME_MS: u64 = 250;
+pub(crate) const WINDOWS_INITIAL_EXEC_YIELD_TIME_FLOOR_MS: u64 = 10_000;
+// Minimum yield time for an empty `write_stdin`.
+pub(crate) const MIN_EMPTY_YIELD_TIME_MS: u64 = 5_000;
+pub(crate) const MAX_YIELD_TIME_MS: u64 = 30_000;
+pub(crate) const DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS: u64 = 300_000;
+pub(crate) const DEFAULT_MAX_OUTPUT_TOKENS: usize = 10_000;
+pub(crate) const UNIFIED_EXEC_OUTPUT_MAX_BYTES: usize = 1024 * 1024; // 1 MiB
+pub(crate) const UNIFIED_EXEC_OUTPUT_MAX_TOKENS: usize = UNIFIED_EXEC_OUTPUT_MAX_BYTES / 4;
+pub(crate) const MAX_UNIFIED_EXEC_PROCESSES: usize = 64;</pre><p>输出头部：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/tools/context.rs#L524-L549" target="_blank" rel="noopener">codex-rs/core/src/tools/context.rs  L524–549 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">fn response_header(&amp;self) -&gt; String {
+    let mut sections = Vec::new();
+
+    if !self.chunk_id.is_empty() {
+        sections.push(format!(&quot;Chunk ID: {}&quot;, self.chunk_id));
+    }
+
+    let wall_time_seconds = self.wall_time.as_secs_f64();
+    sections.push(format!(&quot;Wall time: {wall_time_seconds:.4} seconds&quot;));
+
+    if let Some(exit_code) = self.exit_code {
+        sections.push(format!(&quot;Process exited with code {exit_code}&quot;));
+    }
+
+    if let Some(process_id) = &amp;self.process_id {
+        sections.push(format!(&quot;Process running with session ID {process_id}&quot;));
+    }
+
+    if let Some(original_token_count) = self.original_token_count {
+        sections.push(format!(&quot;Original token count: {original_token_count}&quot;));
+    }
+
+    sections.push(&quot;Output:&quot;.to_string());
+    sections.join(&quot;\n&quot;)
+}
+</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l09.html">pi 第 9 课 · 编码工具集</a> 与 <a href="../pi/l11.html">pi 第 11 课 · bash 工具：进程、输出截断与中止</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>剧本：读取 session ID 并写入 stdin。</p><pre class="cmd">cat &gt; codex/scratch/s_exec.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：启动一个等待输入的进程 → 用 write_stdin 交互 → 一条超长输出被截断
+import re
+def last_output(body):
+    return [i for i in body[&quot;input&quot;] if i[&quot;type&quot;] == &quot;function_call_output&quot;][-1][&quot;output&quot;]
+def reply(n, body):
+    if n == 1:
+        return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;read -p &#x27;名字? &#x27; x; echo 你好, $x&quot;, &quot;tty&quot;: True, &quot;yield_time_ms&quot;: 500}, &quot;c1&quot;)]
+    if n == 2:
+        sid = int(re.search(r&quot;session ID (\d+)&quot;, last_output(body)).group(1))
+        return [call(&quot;write_stdin&quot;, {&quot;session_id&quot;: sid, &quot;chars&quot;: &quot;codex\n&quot;, &quot;yield_time_ms&quot;: 500}, &quot;c2&quot;)]
+    if n == 3:
+        return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;seq 1 100000&quot;, &quot;max_output_tokens&quot;: 200}, &quot;c3&quot;)]
+    return [msg(&quot;完成&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>运行，打印三次工具输出。</p><pre class="cmd">cat &gt; codex/scratch/l09.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+S=$(pwd); export CODEX_HOME=$(mktemp -d); cd $(mktemp -d)
+bash $S/run.sh $S/s_exec.py &quot;演示 unified exec&quot; &gt;/dev/null 2&gt;&amp;1
+python3 - $CODEX_HOME/requests &lt;&lt;&#x27;PY&#x27;
+import json, sys
+inp = json.load(open(sys.argv[1] + &quot;/req04.json&quot;))[&quot;body&quot;][&quot;input&quot;]
+for it in inp:
+    if it[&quot;type&quot;] == &quot;function_call&quot;:
+        print(&quot;&gt;&gt;&quot;, it[&quot;name&quot;], it[&quot;arguments&quot;])
+    if it[&quot;type&quot;] == &quot;function_call_output&quot;:
+        out = it[&quot;output&quot;].splitlines()
+        print(&quot;\n&quot;.join(&quot;   &quot; + l for l in (out if len(out) &lt; 14 else out[:9] + [&quot;   …&quot;] + out[-3:])))
+PY
+EOF
+cd codex/scratch &amp;&amp; bash l09.sh</pre><pre class="out">&gt;&gt; exec_command {&quot;cmd&quot;: &quot;read -p &#x27;名字? &#x27; x; echo 你好, $x&quot;, &quot;tty&quot;: true, &quot;yield_time_ms&quot;: 500}
+   Chunk ID: 6e76ca
+   Wall time: 0.5014 seconds
+   Process running with session ID 97613
+   Original token count: 2
+   Output:
+   名字? 
+&gt;&gt; write_stdin {&quot;session_id&quot;: 97613, &quot;chars&quot;: &quot;codex\n&quot;, &quot;yield_time_ms&quot;: 500}
+   Chunk ID: bf435a
+   Wall time: 0.0001 seconds
+   Process exited with code 0
+   Original token count: 6
+   Output:
+   codex
+   你好, codex
+&gt;&gt; exec_command {&quot;cmd&quot;: &quot;seq 1 100000&quot;, &quot;max_output_tokens&quot;: 200}
+   Chunk ID: 117943
+   Wall time: 0.0000 seconds
+   Process exited with code 0
+   Original token count: 147224
+   Output:
+   Warning: truncated output (original token count: 147224)
+   Total output lines: 100000
+   
+   1
+      …
+   99998
+   99999
+   100000</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>后台进程</h3><p>让模型启动 <code>python3 -m http.server 8999</code>（yield 1000ms），再用另一个 exec_command 执行 <code>curl -s localhost:8999 | head -3</code>，最后不结束服务器就回答。turn 结束后服务器还在吗？</p><details><summary>查看参考答案</summary><div><p>第一次调用返回 session ID，服务器在后台运行；第二个命令能拿到目录列表。turn 结束后进程仍在（unified exec 进程属于会话而非 turn），直到会话关闭或被清理——这正是 Op::CleanBackgroundTerminals 与中断提示里“正在运行的 unified exec 进程可能仍在后台运行”的由来。如果实验中启动失败，先检查沙箱：默认的 read-only 沙箱下可改用 <code>--sandbox danger-full-access</code>（仅在临时目录中这样做）。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>exec_command</b>：参数 cmd、workdir、shell、login、tty、yield_time_ms、max_output_tokens，以及审批相关的 sandbox_permissions/justification/prefix_rule。yield_time_ms 被限制在 250–30000 ms。</li><li><b>会话</b>：进程未结束时输出 “Process running with session ID N”；<code>write_stdin{session_id, chars}</code> 向它写入并收集新输出（chars 为空就只是轮询）。最多同时保留 64 个进程。</li><li><b>输出格式</b>（<code>tools/context.rs</code>）：Chunk ID、Wall time、退出码或 session ID、Original token count，然后是 Output。模型据此判断进程状态。</li><li><b>截断</b>：超过 max_output_tokens（默认 10000）时保留<b>开头与结尾</b>，中间用省略标记替换，并加上 “Warning: truncated output (original token count: …)” 和总行数。对比 pi 只保留尾部。</li><li><b>编排</b>（<code>unified_exec/mod.rs</code> 的说明）：构建请求 → 编排器处理审批（跳过/缓存/询问）→ 选择沙箱 → 在 PTY 中运行；若被沙箱拒绝且策略允许，以无沙箱重试（不再询问）。第 11–13 课展开。</li><li><b>登录 shell</b>：命令通过 <code>/bin/bash -lc</code> 运行；core 中还有 shell 环境快照机制（<code>shell_snapshot.rs</code>）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 10</div><a class="big" href="l10.html">apply_patch：补丁格式与解析 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l09.js"></script>
+</body></html>
