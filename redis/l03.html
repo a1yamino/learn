@@ -1,0 +1,79 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 3 课 · 从应用连接：客户端、连接池与 Pipeline</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 3 课</span><span class="sp"></span><a href="l02.html">← 第 2 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 3 课</div><h1>从应用连接：客户端、连接池与 Pipeline</h1>
+<p>应用通过客户端库和 Redis 对话。本课讲 RESP 协议长什么样、连接池为什么必要、超时怎么设，以及降低网络往返的三种手段：批量命令、Pipeline 和多路复用的客户端；最后说明客户端缓存（client-side caching）的工作方式。示例用 Python（redis-py），概念适用于 Jedis、Lettuce、go-redis 等。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">往返次数决定吞吐</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">连接池</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：取 100 个商品要多久</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>往返次数决定吞吐</h2><div class="goal">逐条执行与 Pipeline。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>连接池</h2><div class="goal">连接的复用与耗尽。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：取 100 个商品要多久</h2><div class="goal">同机房，往返 0.3 ms。选择一种写法，看耗时和注意事项。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查看连接和协议。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">安装客户端：<code>pip install redis</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>直接看 RESP：用 nc 手写协议。</p><pre class="cmd">printf &#x27;*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n*2\r\n$3\r\nGET\r\n$1\r\nk\r\n&#x27; | nc -q1 localhost 6379</pre><pre class="out">+OK
+$1
+v</pre></div></div><div class="st"><span class="n">02</span><div><p>Python 连接（连接池默认启用）。</p><pre class="cmd">python3 - &lt;&lt;&#x27;PY&#x27;
+import redis
+r = redis.Redis(host=&quot;localhost&quot;, port=6379, decode_responses=True,
+                socket_connect_timeout=0.2, socket_timeout=0.5)
+r.set(&quot;greeting&quot;, &quot;hello&quot;)
+print(r.get(&quot;greeting&quot;))
+PY</pre><pre class="out">hello</pre></div></div><div class="st"><span class="n">03</span><div><p>逐条执行 1 万次与 Pipeline 对比。</p><pre class="cmd">python3 - &lt;&lt;&#x27;PY&#x27;
+import redis, time
+r = redis.Redis()
+t = time.perf_counter()
+for i in range(10000): r.set(f&quot;k:{i}&quot;, i)
+print(&quot;loop&quot;, round(time.perf_counter() - t, 3))
+t = time.perf_counter()
+p = r.pipeline(transaction=False)
+for i in range(10000): p.set(f&quot;k:{i}&quot;, i)
+p.execute()
+print(&quot;pipeline&quot;, round(time.perf_counter() - t, 3))
+PY</pre><pre class="out">loop 0.912
+pipeline 0.041</pre></div></div><div class="st"><span class="n">04</span><div><p>批量读取：MGET。</p><pre class="cmd">python3 - &lt;&lt;&#x27;PY&#x27;
+import redis
+r = redis.Redis(decode_responses=True)
+print(r.mget([f&quot;k:{i}&quot; for i in range(5)]))
+PY</pre><pre class="out">[&#x27;0&#x27;, &#x27;1&#x27;, &#x27;2&#x27;, &#x27;3&#x27;, &#x27;4&#x27;]</pre></div></div><div class="st"><span class="n">05</span><div><p>Pipeline 中的错误不影响其他命令。</p><pre class="cmd">python3 - &lt;&lt;&#x27;PY&#x27;
+import redis
+r = redis.Redis(decode_responses=True)
+p = r.pipeline(transaction=False)
+p.set(&quot;a&quot;, 1); p.lpush(&quot;a&quot;, 2); p.incr(&quot;a&quot;)
+print(p.execute(raise_on_error=False))
+PY</pre><pre class="out">[True, ResponseError(&#x27;WRONGTYPE Operation against a key holding the wrong kind of value&#x27;), 2]</pre></div></div><div class="st"><span class="n">06</span><div><p>客户端列表：看到 Python 程序的连接。</p><pre class="cmd">CLIENT LIST</pre><pre class="out">id=12 addr=172.17.0.1:50122 laddr=172.17.0.2:6379 fd=9 name= age=3 idle=0 … cmd=client|list …</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>给“商品列表页”减少往返</h3><p>列表页显示 20 个商品，现在的代码对每个商品依次执行：<code>HGETALL product:{id}</code>、<code>GET stock:{id}</code>、<code>ZSCORE rating {id}</code>，共 60 次往返，耗时约 20 ms。改写它，并说明为什么不用 MULTI/EXEC。</p><details><summary>查看参考答案</summary><div><pre class="cmd">p = r.pipeline(transaction=False)
+for pid in ids:
+    p.hgetall(f"product:{pid}")
+    p.get(f"stock:{pid}")
+    p.zscore("rating", pid)
+res = p.execute()
+items = [res[i:i+3] for i in range(0, len(res), 3)]</pre><p>60 次往返变成 1 次，耗时降到 1 ms 左右（服务器执行 60 条命令只需几十微秒）。这里只需要减少往返，不需要原子性：几个值是否在同一瞬间读取对展示没有影响，所以用非事务 Pipeline。MULTI/EXEC（第 10 课）会额外保证中间不插入其他客户端的命令，但同样是一次往返，并没有更快，在 Cluster 模式下还要求所有键在同一个槽。在 Cluster 中，客户端会把 Pipeline 按节点拆分后并行发送。进一步可以把库存合并进商品 Hash 的字段，减少命令数。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>RESP</b>：命令以数组发送，如 <code>*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n</code>；回复有简单字符串 <code>+OK</code>、错误 <code>-ERR</code>、整数 <code>:1</code>、块字符串 <code>$5</code>、数组 <code>*2</code>。RESP3（<code>HELLO 3</code>）增加了 map、set、推送等类型。</li><li>一次命令的耗时 ≈ 网络往返（同机房约 0.1–0.5 ms）+ 执行时间（微秒级）。循环执行 1000 次 GET 就是 1000 次往返。</li><li><b>批量命令</b>（<code>MGET/MSET/HMGET</code>）把多次读写合并成一条；<b>Pipeline</b> 把多条任意命令连续发出、最后一次性读取回复，往返从 N 次降到 1 次。Pipeline 不是事务：中间的命令可能与其他客户端的命令交错，也可能部分失败。</li><li><b>连接池</b>：建立 TCP 连接（和 TLS 握手、AUTH）比执行命令贵得多。阻塞式客户端（redis-py、Jedis）每个并发请求占用一个连接，池大小要覆盖并发度；Lettuce、go-redis 等可以在少量连接上多路复用。注意 <code>maxclients</code>（默认 10000）。</li><li>设置<b>超时</b>：连接超时和读写超时（几十到几百毫秒）。Redis 卡顿时没有超时的客户端会耗尽应用线程。阻塞命令（<code>BLPOP</code>、<code>XREAD BLOCK</code>）的读超时要大于阻塞时间，并使用独立的连接。</li><li><b>客户端缓存</b>（Redis 6+）：<code>CLIENT TRACKING on</code> 后，服务器记住每个连接读过的键，键被修改时推送失效消息，客户端在本地内存缓存热点值，命中时完全不经过网络。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 04</div><a class="big" href="l04.html">数据结构编码：SDS、listpack、intset 与 quicklist →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l03.js"></script>
+</body></html>
