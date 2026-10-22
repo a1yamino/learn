@@ -6,7 +6,7 @@ Player(document.getElementById('p1'),{els:e,scenes:[
  {t:'流式发送',p:'主库每产生一段 WAL，walsender 就把它发给备库的 walreceiver。复制的单位是 WAL 字节，不是 SQL。',d:4000,set:{...L,f1:[260,90],ws:[125,30,{cls:'blk sig'}],wr:[355,30,{cls:'blk sig'}]}},
  {t:'重放与只读',p:'startup 进程像崩溃恢复一样持续重放 WAL。备库可以执行只读查询，看到的是重放到某一时刻的一致状态。',d:4000,set:{...L,st:[480,30,{cls:'blk ok'}],rd:[355,100]}},
  {t:'反馈与复制槽',p:'备库定期回报已写入、刷盘和重放的位置。复制槽记下备库需要的最早位置，主库不会删除之后的 WAL。',d:4000,set:{...L,fb:[260,130],sl:[0,180]}}]});
-const e2={c:B('COMMIT','主库','',110),w:B('主库 WAL 刷盘','local','',130),r1:B('备库收到并写入','remote_write','',140),r2:B('备库刷盘','on（同步时默认）','',140),r3:B('备库已重放','remote_apply','',140),a:P('off / local：主库刷盘就返回','mute'),lat:P('每多等一步，提交延迟增加一次往返','sig'),ok:P('remote_apply：立刻读备库也能看到刚写入的数据','ok')};
+const e2={c:B('COMMIT','主库','',110),w:B('主库 WAL 刷盘','local','',130),r1:B('备库收到并写入','remote_write','',140),r2:B('备库刷盘','on（同步时默认）','',140),r3:B('备库已重放','remote_apply','',140),a:P('local：等本地刷盘；off：不等待刷盘','mute'),lat:P('每多等一步，提交延迟增加一次往返','sig'),ok:P('remote_apply：立刻读备库也能看到刚写入的数据','ok')};
 const S2={c:[0,40],w:[120,40]};
 Player(document.getElementById('p2'),{els:e2,scenes:[
  {t:'异步',p:'主库本地 WAL 刷盘后就返回成功，不等备库。主库此时崩溃，备库可能还没收到这笔事务。',set:{...S2,w:[120,40,{cls:'blk ok'}],a:[0,110]}},
