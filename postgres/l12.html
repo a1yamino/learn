@@ -18,7 +18,7 @@
 <div id="p2"></div>
 </section>
 
-<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：读 EXPLAIN ANALYZE</h2><div class="goal">点击计划中的一行，看这一行说明了什么。</div></div></div>
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：读 EXPLAIN ANALYZE</h2><div class="goal">点击计划中的一行，看这一行说明了什么。这里的排序场景另设 work_mem = 64kB，用于演示磁盘排序；数值为教学示例。</div></div></div>
 <div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
 </section>
 
@@ -26,11 +26,11 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">使用 shop 库的 users（1000 行）和 orders（10 万行）。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>只估算，不执行。</p><pre class="cmd">EXPLAIN SELECT * FROM orders WHERE amount &gt; 900;</pre><pre class="out"> Seq Scan on orders  (cost=0.00..2137.00 rows=10050 width=29)
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">使用 shop 库的 users（1000 行）和 orders（10 万行）。第 3 课 amount 约在 1–501 之间，450 以上约占一成。以下页数、行数和耗时为示例；前课写入、VACUUM、随机数据和本机设置会改变实际计划。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>只估算，不执行。</p><pre class="cmd">EXPLAIN SELECT * FROM orders WHERE amount &gt; 450;</pre><pre class="out"> Seq Scan on orders  (cost=0.00..2620.00 rows=10050 width=29)
    Filter: (amount &gt; &#x27;900&#x27;::numeric)</pre></div></div><div class="st"><span class="n">02</span><div><p>验证代价公式：1370 页 × 1.0 + 100000 行 × 0.01 + 100000 × 0.0025。</p><pre class="cmd">SELECT relpages, reltuples, relpages * 1.0 + reltuples * 0.01 + reltuples * 0.0025 AS cost FROM pg_class WHERE relname = &#x27;orders&#x27;;</pre><pre class="out"> relpages | reltuples |  cost
 ----------+-----------+---------
-     1370 |    100000 | 2620.00</pre></div></div><div class="st"><span class="n">03</span><div><p>估算与实际。</p><pre class="cmd">EXPLAIN ANALYZE SELECT * FROM orders WHERE amount &gt; 900;</pre><pre class="out"> Seq Scan on orders  (cost=0.00..2137.00 rows=10050 width=29) (actual time=0.015..12.801 rows=9981 loops=1)
+     1370 |    100000 | 2620.00</pre></div></div><div class="st"><span class="n">03</span><div><p>估算与实际。</p><pre class="cmd">EXPLAIN ANALYZE SELECT * FROM orders WHERE amount &gt; 450;</pre><pre class="out"> Seq Scan on orders  (cost=0.00..2620.00 rows=10050 width=29) (actual time=0.015..12.801 rows=9981 loops=1)
    Filter: (amount &gt; &#x27;900&#x27;::numeric)
    Rows Removed by Filter: 90019
    Buffers: shared hit=1370
