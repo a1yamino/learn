@@ -1,0 +1,49 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka 第 4 课 · 生产者：发送流程、分区器与批处理</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kafka</a><span class="crumb">第 4 课</span><span class="sp"></span><a href="l03.html">← 第 3 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kafka · 第 4 课</div><h1>生产者：发送流程、分区器与批处理</h1>
+<p>调用 send() 并不会立刻发出一个网络请求。本课跟着一条消息走一遍生产者内部：序列化、选择分区、进入按分区组织的记录累加器、由 Sender 线程按 Broker 合并成请求发送，以及 batch.size、linger.ms、压缩和 buffer.memory 如何决定吞吐和延迟。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条消息在生产者里的路径</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：batch.size 与 linger.ms</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">分区器</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一条消息在生产者里的路径</h2><div class="goal">从 send() 返回到 Broker 确认。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：batch.size 与 linger.ms</h2><div class="goal">每秒 2000 条、每条 500 字节，发往一个分区。调整参数，看批次大小、请求数和增加的延迟。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>分区器</h2><div class="goal">有 key、无 key 和指定分区。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">用性能测试工具比较参数。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在单节点容器的 /opt/kafka 下。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建主题。</p><pre class="cmd">bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic perf --partitions 6</pre><pre class="out">Created topic perf.</pre></div></div><div class="st"><span class="n">02</span><div><p>linger.ms=0、小批次。</p><pre class="cmd">bin/kafka-producer-perf-test.sh --topic perf --num-records 500000 --record-size 200 --throughput -1 --producer-props bootstrap.servers=localhost:9092 linger.ms=0 batch.size=1024</pre><pre class="out">500000 records sent, 61230.1 records/sec (11.68 MB/sec), 312.4 ms avg latency …</pre></div></div><div class="st"><span class="n">03</span><div><p>增大批次并等待 20 ms。</p><pre class="cmd">bin/kafka-producer-perf-test.sh --topic perf --num-records 500000 --record-size 200 --throughput -1 --producer-props bootstrap.servers=localhost:9092 linger.ms=20 batch.size=131072</pre><pre class="out">500000 records sent, 412371.1 records/sec (78.66 MB/sec), 45.2 ms avg latency …</pre></div></div><div class="st"><span class="n">04</span><div><p>加上压缩（测试数据是随机字符，压缩率不高；真实 JSON 通常能压缩 3–10 倍）。</p><pre class="cmd">bin/kafka-producer-perf-test.sh --topic perf --num-records 500000 --record-size 200 --throughput -1 --producer-props bootstrap.servers=localhost:9092 linger.ms=20 batch.size=131072 compression.type=zstd</pre><pre class="out">500000 records sent, 398000.4 records/sec …</pre></div></div><div class="st"><span class="n">05</span><div><p>查看批次中的记录数。</p><pre class="cmd">bin/kafka-dump-log.sh --files /tmp/kraft-combined-logs/perf-0/00000000000000000000.log | sed -n 3p</pre><pre class="out">baseOffset: 0 lastOffset: 607 count: 608 … compresscodec: zstd …</pre></div></div><div class="st"><span class="n">06</span><div><p>用 Python 客户端发送（宿主机，pip install confluent-kafka）。</p><pre class="cmd">python3 -c &quot;
+from confluent_kafka import Producer
+p=Producer({&#x27;bootstrap.servers&#x27;:&#x27;localhost:9092&#x27;,&#x27;linger.ms&#x27;:10})
+for i in range(3): p.produce(&#x27;perf&#x27;,key=f&#x27;o{i}&#x27;,value=b&#x27;x&#x27;,callback=lambda e,m: print(m.partition(),m.offset()))
+p.flush()&quot;</pre><pre class="out">3 0
+1 0
+5 0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为两种数据选择生产者参数</h3><p>① 应用访问日志：每秒 20 万条、每条约 1 KB JSON、能容忍秒级延迟；② 支付指令：每秒 200 条、每条约 2 KB，端到端延迟要求 P99 &lt; 50 ms。分别给出 <code>linger.ms</code>、<code>batch.size</code>、<code>compression.type</code>、<code>buffer.memory</code> 的建议和理由，并说明 key 怎么选。</p><details><summary>查看参考答案</summary><div><ul><li><b>访问日志</b>：<code>linger.ms=50–100</code>，<code>batch.size=256KB–1MB</code>，<code>compression.type=zstd</code>（或 lz4 节省 CPU），<code>buffer.memory=128MB</code> 以上，防止 Broker 短暂变慢时阻塞应用线程。无 key（粘性分区，批次大、分布均匀）；如果下游需要按用户聚合再用用户 ID 作 key。</li><li><b>支付指令</b>：流量小，批次本来就凑不满，<code>linger.ms</code> 保持默认 5 或设为 0–1，避免为等批次增加延迟；<code>batch.size</code> 默认即可；<code>compression.type=lz4</code> 或 none（数据量小，收益不大）；<code>buffer.memory</code> 默认。key 用账户 ID 或支付单号，保证同一账户的指令有序；可靠性配置见下一课（acks=all、幂等）。</li></ul></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><code>send(record)</code> 在调用线程中完成：拦截器 → key/value 序列化 → <b>分区器</b>选分区 → 追加到<b>记录累加器</b>（RecordAccumulator）中该分区的当前批次，然后立即返回一个 Future；真正的网络发送由后台 <b>Sender 线程</b>完成。</li><li>分区规则：指定了分区就用它；有 key 时用 <code>murmur2(keyBytes) % 分区数</code>；没有 key 时使用<b>粘性分区</b>：一直往同一个分区追加，直到当前批次满或被发送，再换分区（Kafka 3.3 起还会避开响应慢的 Broker）。这样无 key 消息也能凑成大批次。</li><li>批次在满足任一条件时可以发送：达到 <code>batch.size</code>（默认 16384 字节）；等待超过 <code>linger.ms</code>（Kafka 4.0 起默认 5 ms，之前为 0）。Sender 把发往同一个 Broker 的多个分区的批次合并成一个 ProduceRequest，每个连接最多 <code>max.in.flight.requests.per.connection</code>（默认 5）个未完成请求。</li><li><b>压缩</b>（<code>compression.type</code>：none、gzip、snappy、lz4、zstd）按批次进行，批次越大压缩率越高。CPU 花在生产者上，Broker 通常原样存储，网络和磁盘都受益。日志类数据常用 lz4 或 zstd。</li><li>累加器总大小由 <code>buffer.memory</code>（默认 32 MB）限制；满了以后 send() 阻塞，最多 <code>max.block.ms</code>（默认 60 秒）后抛异常。单条消息上限 <code>max.request.size</code>（默认 1 MB），还要与 Broker/主题的 <code>message.max.bytes</code> 一致。</li><li>回调（或 Future）在收到 Broker 响应后触发，在 Sender 线程（I/O 线程）中执行，所以回调里不要做慢操作。<code>flush()</code> 立即发送所有批次并等待完成；<code>close()</code> 前会 flush。生产者是线程安全的，一个进程通常共用一个实例。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 05</div><a class="big" href="l05.html">生产者可靠性：acks、重试与幂等 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l04.js"></script>
+</body></html>
