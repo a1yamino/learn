@@ -10,15 +10,18 @@ Player(document.getElementById('p2'),{els:{n1:N(1),n2:N(2),n3:N(3),t1:{cls:'pill
  {t:'调度',p:'调度器把 3 个 task 分配到节点上，默认尽量分散。每个 task 对应一个容器。',set:{n1:[0,40],n2:[190,40],n3:[380,40],want:[0,0],t1:[30,90],t2:[220,90],t3:[410,90]}},
  {t:'节点宕机',p:'node3 失联。实际状态变成 2 个副本，和期望不一致。',set:{n1:[0,40],n2:[190,40],n3:[380,40,{cls:'frame dim'}],want:[0,0],t1:[30,90],t2:[220,90],t3:[410,90,{cls:'pill mute'}],x:[410,200]}},
  {t:'自动恢复',p:'manager 在其他节点上重新创建 web.3。不需要人介入。这个“观察 → 比较 → 修正”的循环，就是 Kubernetes 控制器的核心思想。',d:3800,set:{n1:[0,40],n2:[190,40],n3:[380,40,{cls:'frame dim'}],want:[0,0],t1:[30,90],t2:[220,70],t3:[220,110],n:[0,220,{html:'实际状态 → 期望状态'}]}}]});
-(()=>{const nodes=[{n:'node1',mgr:true,up:true},{n:'node2',mgr:true,up:true},{n:'node3',mgr:true,up:true},{n:'node4',mgr:false,up:true}];
+(()=>{let tasks=[1,1,1,1];
+ const nodes=[{n:'node1',mgr:true,up:true},{n:'node2',mgr:true,up:true},{n:'node3',mgr:true,up:true},{n:'node4',mgr:false,up:true}];
  const nb=document.getElementById('nb'),cl=document.getElementById('cl'),nm=document.getElementById('nm');
  nodes.forEach((d,i)=>{const b=document.createElement('button');b.className='btn';b.textContent=d.n+' 宕机';b.dataset.v=i;b.addEventListener('click',()=>{d.up=!d.up;b.textContent=d.n+(d.up?' 宕机':' 恢复');draw()});nb.appendChild(b)});
  function draw(){const up=nodes.filter(d=>d.up),mUp=nodes.filter(d=>d.mgr&&d.up).length,quorum=mUp>=2;
-  let tasks=nodes.map(()=>0);if(quorum&&up.length){for(let k=0;k<4;k++){const i=nodes.indexOf(up[k%up.length]);tasks[i]++}}else{nodes.forEach((d,i)=>tasks[i]=d.up?1:0)}
+  // 宕机移除该节点上的任务；失去多数派时保留其他节点的现有任务。
+  nodes.forEach((d,i)=>{if(!d.up)tasks[i]=0});
+  if(quorum&&up.length){while(tasks.reduce((a,b)=>a+b,0)<4){const candidates=nodes.map((d,i)=>d.up?i:-1).filter(i=>i>=0);const i=candidates.reduce((a,b)=>tasks[a]<=tasks[b]?a:b);tasks[i]++}}
   nb.querySelectorAll('.btn').forEach((b,i)=>b.classList.toggle('pri',!nodes[i].up));
   cl.innerHTML=nodes.map((d,i)=>`<div class="frame" style="position:static;padding:12px;min-height:110px;opacity:${d.up?1:.4}"><div style="font:500 12px var(--m)">${d.n} · ${d.mgr?'manager':'worker'}</div><div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">${Array(tasks[i]).fill('<span class="pill sig" style="position:static">web</span>').join('')}</div></div>`).join('');
   const down=nodes.length-up.length;const run=tasks.reduce((a,b)=>a+b,0);
-  if(!down){nm.className='msg';nm.innerHTML='4 个副本分布在 4 个节点。3 个 manager 通过 Raft 保持一致，多数派是 2。'}
+  if(!down){nm.className='msg';nm.innerHTML='4 个副本正在运行。恢复节点不会自动迁回已有任务；3 个 manager 通过 Raft 保持一致，多数派是 2。'}
   else if(quorum){nm.className='msg ok';nm.innerHTML=`${down} 个节点宕机，manager 还剩 ${mUp} 个（≥ 2，多数派仍在）。宕机节点上的任务已在其他节点重建，运行中 ${run}/4。`}
   else{nm.className='msg bad';nm.innerHTML=`manager 只剩 ${mUp} 个，<b>失去多数派</b>。已经运行的容器继续服务（${run} 个），但集群无法调度、无法补齐副本、无法更新。3 个 manager 最多容忍 1 个故障；要容忍 2 个需要 5 个。`}}draw()})();
 Term(document.getElementById('t4'),[
