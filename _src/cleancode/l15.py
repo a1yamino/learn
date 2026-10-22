@@ -29,7 +29,7 @@ S3=('坏味道 → 手法 对照表','常用的组合。下一课与第 17 课�
 <tr><td>死代码</td><td>无调用者；不可达分支</td><td>删除</td></tr>
 <tr><td>注释（作为除臭剂）</td><td>大段注释解释“这一段在做什么”</td><td>提取函数；改名；引入断言</td></tr></table>''')
 S4=('工具帮忙闻','几个能自动发现部分坏味道的工具。')
-TERM=[['vulture src/ --min-confidence 80','src/billing/legacy.py:12: unused function \'old_export\' (60% confidence)\nsrc/users/views.py:88: unreachable code after \'return\' (100% confidence)','死代码检测。'],
+TERM=[['vulture src/ --min-confidence 60','src/billing/legacy.py:12: unused function \'old_export\' (60% confidence)\nsrc/users/views.py:88: unreachable code after \'return\' (100% confidence)','死代码检测：60% 为候选线索，不能仅凭工具结果就删除公开接口或动态调用的代码；阈值提高到80时不会显示60%的候选。'],
 ['ruff check --select PLR0913,PLR2004,C901 src/','src/ship.py:3:5: PLR0913 Too many arguments in function definition (8 > 5)\nsrc/orders.py:41:30: PLR2004 Magic value used in comparison, consider replacing `3` with a constant variable\nsrc/report.py:23:5: C901 `monthly_report` is too complex (14 > 10)','参数过多、魔法数、过高的复杂度。'],
 ['grep -rnE "round\\([^,]+, 2\\)" --include=*.py src/ | wc -l','14','手工搜索：散落的金额舍入，提示缺少 Money 类型。']]
 S5=('在你的电脑上练习','用值对象治疗“基本类型偏执”：把散落在各处的金额 float 改为 <code>Money</code>。')
