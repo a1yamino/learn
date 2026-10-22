@@ -12,12 +12,12 @@ def secs(prac,E):
 ('重试、重复与幂等','响应丢失后重发同一个批次。','<div id="p2"></div>'),
 ('相关命令','配置与观察。','<div id="t4"></div>'),
 ('在你的电脑上练习','用第 2 课的三节点集群（docker compose up -d），在 k1 中 cd /opt/kafka; B="--bootstrap-server k1:19092"。',prac([
- ('创建 min.insync.replicas=2 的主题。','bin/kafka-topics.sh $B --create --topic pay --partitions 1 --replication-factor 3 --config min.insync.replicas=2','Created topic pay.'),
+ ('本实验临时用 min.insync.replicas=3，以便只停一台组合节点就触发写入不足，同时保留控制器多数。','bin/kafka-topics.sh $B --create --topic pay --partitions 1 --replication-factor 3 --config min.insync.replicas=3','Created topic pay.'),
  ('acks=all 写入成功。','echo hello | bin/kafka-console-producer.sh $B --topic pay --producer-property acks=all && echo OK','OK'),
- ('在宿主机停掉两个 Broker（不能是 k1）。','docker compose stop k2 k3','✔ Container k2 Stopped …'),
- ('再写入：ISR 只剩 1，小于 2。','echo world | bin/kafka-console-producer.sh $B --topic pay --producer-property acks=all --producer-property delivery.timeout.ms=10000 --producer-property request.timeout.ms=5000','ERROR Error when sending message to topic pay … org.apache.kafka.common.errors.NotEnoughReplicasException: Messages are rejected since there are fewer in-sync replicas than required.'),
- ('acks=1 仍然成功，但只有一份副本。','echo risky | bin/kafka-console-producer.sh $B --topic pay --producer-property acks=1 && echo OK','OK'),
- ('恢复 Broker，查看幂等生产者的状态。','docker compose start k2 k3\nbin/kafka-dump-log.sh --files /tmp/kraft-combined-logs/pay-0/00000000000000000000.log | grep producerId','… producerId: 1000 producerEpoch: 0 … baseSequence: 0 …\n… producerId: 1002 producerEpoch: 0 … baseSequence: 0 …')],
+ ('在宿主机只停 k3，保留 k1/k2 两个控制器；若同时停两台会失去 KRaft 多数，无法单独观察 ISR 行为。','docker compose stop k3','✔ Container k3 Stopped …'),
+ ('等 describe 显示 ISR 为两个节点后再写入：2 小于本实验的 minISR 3。','echo world | bin/kafka-console-producer.sh $B --topic pay --producer-property acks=all --producer-property delivery.timeout.ms=10000 --producer-property request.timeout.ms=5000','ERROR Error when sending message to topic pay … org.apache.kafka.common.errors.NotEnoughReplicasException: Messages are rejected since there are fewer in-sync replicas than required.'),
+ ('acks=1 不要求满足 minISR，仍可响应成功；确认时只保证 Leader 已写入。ELR启用时低于minISR可能阻止HW推进，消费者要等同步副本恢复后才能读到。','echo risky | bin/kafka-console-producer.sh $B --topic pay --producer-property acks=1 && echo OK','OK'),
+ ('在宿主机恢复 k3 后回到 k1 查看状态。生产常用 RF=3/minISR=2；这里为演示使用了 minISR=3。','docker compose start k3\nbin/kafka-dump-log.sh --files /tmp/kafka-logs/pay-0/00000000000000000000.log | grep producerId','… producerId: 1000 producerEpoch: 0 … baseSequence: 0 …\n… producerId: 1002 producerEpoch: 0 … baseSequence: 0 …')],
  ('给订单服务配置生产者','订单服务把“订单已创建”事件发到 <code>orders</code>（副本因子 3）。要求：Broker 返回成功的事件即使一台 Broker 磁盘损坏也不丢；同一订单的事件严格有序；Kafka 短暂不可用（最长 1 分钟）时应用不报错；超过之后要能发现并补偿。写出生产者与主题配置，并说明应用侧如何处理最终失败。',
  '<ul><li>主题：<code>replication.factor=3</code>，<code>min.insync.replicas=2</code>，<code>unclean.leader.election.enable=false</code>（默认）。</li><li>生产者：<code>acks=all</code>，<code>enable.idempotence=true</code>（默认），<code>max.in.flight.requests.per.connection=5</code>，key = 订单号（单分区内有序且不因重试乱序）。</li><li>超时：<code>delivery.timeout.ms=120000</code>（覆盖 1 分钟不可用），<code>request.timeout.ms=30000</code>，<code>buffer.memory</code> 足够容纳 1 分钟的积压（或接受 <code>max.block.ms</code> 后的阻塞失败）。</li><li>最终失败：回调中拿到异常后，把事件写入本地数据库的“待重发”表并告警，由后台任务重发；更可靠的做法是 Outbox 模式：在下单的同一个数据库事务里写入事件表，再由中继进程发送到 Kafka（第 21 课），这样应用永远不会“下单成功但事件丢失”。重发可能导致重复，消费者需要按事件 ID 幂等。</li></ul>'))),
 ('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
