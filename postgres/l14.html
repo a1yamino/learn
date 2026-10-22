@@ -27,7 +27,9 @@
 </section>
 
 <section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">打开两个 psql 窗口，使用第 5 课的 accounts 表（A=100、B=100）。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>READ COMMITTED：窗口 1 开启事务读一次。</p><pre class="cmd">-- 窗口 1
+<div class="prac"><div class="st"><span class="n">01</span><div><p>READ COMMITTED：窗口 1 开启事务读一次。</p><pre class="cmd">-- 开始前确认两个窗口均无未结束事务，再在窗口 1 重置
+UPDATE accounts SET balance = 100 WHERE name IN (&#x27;A&#x27;,&#x27;B&#x27;);
+-- 窗口 1
 BEGIN;
 SELECT balance FROM accounts WHERE name = &#x27;A&#x27;;</pre><pre class="out"> balance
 ---------
@@ -66,7 +68,23 @@ COMMIT;
 COMMIT;</pre><pre class="out">COMMIT
 ERROR:  could not serialize access due to read/write dependencies among transactions
 DETAIL:  Reason code: Canceled on identification as a pivot, during commit attempt.
-HINT:  The transaction might succeed if retried.</pre></div></div><div class="st"><span class="n">06</span><div><p>同样的步骤用 REPEATABLE READ：两个都提交，没有人值班了。</p><pre class="cmd">SELECT * FROM oncall;</pre><pre class="out"> doctor | on_duty
+HINT:  The transaction might succeed if retried.</pre></div></div><div class="st"><span class="n">06</span><div><p>先重置值班状态，再在两个窗口按以下顺序重做 REPEATABLE READ；本次两人都能提交。</p><pre class="cmd">-- 窗口 1，确认上一轮事务均已结束
+UPDATE oncall SET on_duty = true;
+-- 窗口 1
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT count(*) FROM oncall WHERE on_duty;
+-- 窗口 2
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT count(*) FROM oncall WHERE on_duty;
+-- 窗口 1
+UPDATE oncall SET on_duty = false WHERE doctor = &#x27;alice&#x27;;
+-- 窗口 2
+UPDATE oncall SET on_duty = false WHERE doctor = &#x27;bob&#x27;;
+-- 窗口 1
+COMMIT;
+-- 窗口 2
+COMMIT;
+SELECT * FROM oncall ORDER BY doctor;</pre><pre class="out"> doctor | on_duty
 --------+---------
  alice  | f
  bob    | f</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>修复库存扣减</h3><p>库存扣减代码：<code>SELECT stock FROM items WHERE id = $1</code>，应用里判断 <code>stock &gt;= qty</code>，然后 <code>UPDATE items SET stock = $new WHERE id = $1</code>，<code>$new = stock - qty</code>。高峰期出现超卖。说明在 READ COMMITTED 下为什么会超卖，给出至少两种正确写法并比较。</p><details><summary>查看参考答案</summary><div><p>两个请求同时 SELECT 到 stock = 1，都判断通过，都写回 0：卖出 2 件，只扣了 1 件（丢失更新）。第二个 UPDATE 虽然等了第一个，但写回的是应用算好的常量 0，而不是基于最新值计算。</p><pre class="cmd">-- 写法 1：原子条件更新（推荐）
