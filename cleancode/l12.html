@@ -60,9 +60,10 @@ def to_json(rows):
 
 def export(rows, fmt):
     try:
-        return EXPORTERS[fmt](rows)
+        render = EXPORTERS[fmt]
     except KeyError:
         raise ValueError(f&quot;不支持的格式 {fmt!r}，可选：{sorted(EXPORTERS)}&quot;) from None
+    return render(rows)  # 渲染器内部的 KeyError 不应伪装成不支持的格式
 EOF
 cat &gt; plugin_tsv.py &lt;&lt;&#x27;EOF&#x27;
 from exporters import exporter
@@ -116,11 +117,25 @@ class SquareContract(RectangleContract):
     def make(self):
         return Square(3)
 
-unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;], exit=False)
+if __name__ == &quot;__main__&quot;:
+    unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;])
 EOF
-python3 test_contract.py 2&gt;&amp;1 | grep -E &quot;\.\.\.|AssertionError&quot;</pre><pre class="out">test_area_after_set_width (__main__.RectangleContract.test_area_after_set_width) ... ok
+python3 test_contract.py</pre><pre class="out">test_area_after_set_width (__main__.RectangleContract.test_area_after_set_width) ... ok
 test_area_after_set_width (__main__.SquareContract.test_area_after_set_width) ... FAIL
-AssertionError: 100 != 30</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>修复 LSP</h3><p>给出两种消除上面 <code>Square</code>/<code>Rectangle</code> 问题的设计，并说明各自适合的场景。</p><details><summary>查看参考答案</summary><div><ol><li><b>不可变值对象</b>：去掉会修改自身的 <code>set_width</code>，改为 <code>with_width(w)</code>，并规定它总是返回一个新的 <code>Rectangle</code>（宽为 w、高不变）。<code>Square(3).with_width(10)</code> 得到 <code>Rectangle(10, 3)</code>——不再是正方形，但契约对两者都成立，因为没有对象被“就地改形”。适合几何、金额这类值。</li><li><b>不继承，共享接口</b>：<code>Rectangle</code> 与 <code>Square</code> 都实现 <code>Shape</code> 协议（<code>area()</code>），彼此没有继承关系；需要修改尺寸的代码只接受 <code>Rectangle</code>。适合两者行为确实不同的情况。</li></ol><p>判断依据：继承表达的是“<b>行为上</b>可替换”，而不是现实中的“是一种”。</p></div></details></div>
+
+======================================================================
+FAIL: test_area_after_set_width (__main__.SquareContract.test_area_after_set_width)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File &quot;test_contract.py&quot;, line 12, in test_area_after_set_width
+    self.assertEqual(r.area(), 10 * h)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+AssertionError: 100 != 30
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+FAILED (failures=1)</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>修复 LSP</h3><p>给出两种消除上面 <code>Square</code>/<code>Rectangle</code> 问题的设计，并说明各自适合的场景。</p><details><summary>查看参考答案</summary><div><ol><li><b>不可变值对象</b>：去掉会修改自身的 <code>set_width</code>，改为 <code>with_width(w)</code>，并规定它总是返回一个新的 <code>Rectangle</code>（宽为 w、高不变）。<code>Square(3).with_width(10)</code> 得到 <code>Rectangle(10, 3)</code>——不再是正方形，但契约对两者都成立，因为没有对象被“就地改形”。适合几何、金额这类值。</li><li><b>不继承，共享接口</b>：<code>Rectangle</code> 与 <code>Square</code> 都实现 <code>Shape</code> 协议（<code>area()</code>），彼此没有继承关系；需要修改尺寸的代码只接受 <code>Rectangle</code>。适合两者行为确实不同的情况。</li></ol><p>判断依据：继承表达的是“<b>行为上</b>可替换”，而不是现实中的“是一种”。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
