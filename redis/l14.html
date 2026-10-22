@@ -1,0 +1,53 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 14 课 · Sentinel：自动故障切换</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 14 课</span><span class="sp"></span><a href="l13.html">← 第 13 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 14 课</div><h1>Sentinel：自动故障切换</h1>
+<p>复制本身不会在主库宕机时自动切换。Sentinel 是一组监控进程，负责发现主库故障、投票选出领导者、挑选并提升新的主库，再通知客户端。本课讲主观下线与客观下线、quorum 与多数派的区别、新主库如何挑选，以及脑裂时为什么会丢数据。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次故障切换</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：几个 Sentinel 挂了还能切换</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">脑裂</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次故障切换</h2><div class="goal">从发现故障到客户端切到新主库。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：几个 Sentinel 挂了还能切换</h2><div class="goal">部署 5 个 Sentinel，quorum = 2。选择存活的 Sentinel 数量。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>脑裂</h2><div class="goal">旧主库被隔离但还在接受写入。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查询与管理 Sentinel。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在上一课的 rnet 网络中（主库 m、副本 r1）再加一个副本和三个 Sentinel。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>再启动一个副本，写 Sentinel 配置。</p><pre class="cmd">docker run -d --name r2 --network rnet redis:8.10 redis-server --replicaof m 6379
+printf &quot;sentinel resolve-hostnames yes\nsentinel monitor mymaster m 6379 2\nsentinel down-after-milliseconds mymaster 5000\nsentinel failover-timeout mymaster 30000\n&quot; &gt; s.conf</pre><pre class="out">…</pre></div></div><div class="st"><span class="n">02</span><div><p>启动三个 Sentinel（配置文件要可写，每个复制一份）。</p><pre class="cmd">for i in 1 2 3; do cp s.conf s$i.conf; docker run -d --name s$i --network rnet -v $PWD/s$i.conf:/s.conf redis:8.10 redis-sentinel /s.conf; done</pre><pre class="out">…</pre></div></div><div class="st"><span class="n">03</span><div><p>询问主库地址。</p><pre class="cmd">docker exec s1 redis-cli -p 26379 SENTINEL get-master-addr-by-name mymaster</pre><pre class="out">1) &quot;172.18.0.2&quot;
+2) &quot;6379&quot;</pre></div></div><div class="st"><span class="n">04</span><div><p>停掉主库，观察日志。</p><pre class="cmd">docker stop m; sleep 15
+docker logs s1 2&gt;&amp;1 | grep -E &quot;sdown|odown|switch&quot;</pre><pre class="out">+sdown master mymaster 172.18.0.2 6379
++odown master mymaster 172.18.0.2 6379 #quorum 3/2
++switch-master mymaster 172.18.0.2 6379 172.18.0.4 6379</pre></div></div><div class="st"><span class="n">05</span><div><p>新主库地址变了。</p><pre class="cmd">docker exec s1 redis-cli -p 26379 SENTINEL get-master-addr-by-name mymaster</pre><pre class="out">1) &quot;172.18.0.4&quot;
+2) &quot;6379&quot;</pre></div></div><div class="st"><span class="n">06</span><div><p>旧主库恢复后变成副本。</p><pre class="cmd">docker start m; sleep 5; docker exec m redis-cli ROLE</pre><pre class="out">1) &quot;slave&quot;
+2) &quot;172.18.0.4&quot;
+3) (integer) 6379
+4) &quot;connected&quot;
+…</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计一个跨可用区的 Sentinel 部署</h3><p>有两个可用区 A、B 和一台可以放在第三个可用区 C 的小机器。一主两从。要求：任意一个可用区整体故障后仍能自动切换；网络把 A 与其他区隔开时尽量少丢数据。给出各节点和 Sentinel 放在哪里、quorum、关键配置，并说明“只有 A、B 两个区”时为什么做不到。</p><details><summary>查看参考答案</summary><div><ul><li>主库在 A，副本在 A 和 B 各一个（或 B 一个、C 不放数据节点）；Sentinel 三个：A、B、C 各一个，<code>quorum 2</code>。</li><li>任一区故障：剩下两个 Sentinel 构成 3 个中的多数，能判定 ODOWN（2 ≥ quorum）并选出领导者执行切换。</li><li>A 被隔离：B、C 的 Sentinel 把 B 的副本提升为主库；A 中的旧主库设置 <code>min-replicas-to-write 1</code>、<code>min-replicas-max-lag 10</code>，A 内的副本仍连着它，所以这条规则不会阻止它写入——要让副本只放在 B（以及 C）中，或者设为 <code>min-replicas-to-write 2</code> 以要求跨区副本也确认（代价是任一副本故障主库就停止写）。权衡后常见做法是一主在 A、一从在 B、一从在 C。</li><li>只有两个区时，Sentinel 总有一个区占多数（如 A 放 2 个、B 放 1 个）：A 整体故障后只剩 1 个，达不到多数，无法切换；平均放置则偶数个时任何一边断开都没有多数。必须有第三个位置做仲裁。</li><li>客户端都通过 Sentinel 获取主库地址；<code>replica-priority</code> 控制优先提升的副本。</li></ul></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>Sentinel 进程（至少 3 个，部署在不同的机器/可用区）每秒向主库、副本和其他 Sentinel 发送 PING，通过主库的 <code>__sentinel__:hello</code> 频道互相发现，从主库的 INFO 发现副本。</li><li><b>主观下线（SDOWN）</b>：某个 Sentinel 在 <code>down-after-milliseconds</code> 内收不到有效回复。<b>客观下线（ODOWN）</b>：至少 <b>quorum</b> 个 Sentinel 都认为主库主观下线。</li><li>进入 ODOWN 后，Sentinel 之间进行一次 Raft 式的领导者选举：获得<b>多数</b>（例如 3 个中的 2 个）Sentinel 投票的才能执行故障切换。所以 quorum 只决定“判定故障”，真正切换还需要多数派存活。</li><li>领导者挑选新主库：排除断线太久的副本，然后按 <code>replica-priority</code>（越小越优先，0 表示永不提升）、复制偏移量（数据最新）、run ID 依次选择；对它执行 <code>REPLICAOF NO ONE</code>，让其他副本改为复制新主库，并把旧主库记录为新主库的副本（恢复后自动降级）。</li><li>客户端不应写死主库地址，而是询问 Sentinel：<code>SENTINEL get-master-addr-by-name mymaster</code>，并订阅 <code>+switch-master</code> 事件或在连接出错时重新查询。主流客户端库都内置支持。</li><li><b>脑裂</b>：旧主库与 Sentinel 隔离但仍能接受部分客户端的写入，切换后它被降级为副本，期间的写入全部丢失。用 <code>min-replicas-to-write 1</code> 和 <code>min-replicas-max-lag 10</code> 让被隔离的旧主库在失去副本后停止写入，把丢失窗口限制在约 10 秒。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 15</div><a class="big" href="l15.html">Cluster：槽、重定向与扩缩容 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l14.js"></script>
+</body></html>
