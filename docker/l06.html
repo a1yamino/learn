@@ -14,7 +14,7 @@
 <div id="p1"></div>
 </section>
 
-<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：删除容器，数据还在吗？</h2><div class="goal">一个 PostgreSQL 容器，数据目录是 <code>/var/lib/postgresql/data</code>。选择挂载方式，写入数据，删除容器，再用同样的参数新建一个。</div></div></div>
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：删除容器，数据还在吗？</h2><div class="goal">一个 PostgreSQL 16 容器，数据目录是 /var/lib/postgresql/data。官方镜像声明了 VOLUME：不显式挂载时会创建匿名卷。下方省略建表步骤，比较写入后删除并新建容器的结果；匿名卷仍在，但新容器不会自动复用它。</div></div></div>
 <div class="chal"><div class="lab">挂载方式</div><div class="cmds" id="mt"></div><div class="lab" style="margin-top:14px">操作</div><div class="cmds" id="ac"></div><div class="log" id="lg" style="height:220px"></div></div>
 </section>
 
@@ -37,7 +37,10 @@ docker run -d --name pg -e POSTGRES_PASSWORD=dev \
   --mount type=volume,src=pgdata,dst=/var/lib/postgresql/data postgres:16
 sleep 5; docker exec pg psql -U postgres -tc &quot;SELECT x FROM t&quot;</pre><pre class="out">pg
 …
- hello</pre></div></div><div class="st"><span class="n">04</span><div><p>查看卷在宿主机上的位置。Mac / Windows 上这个路径在 Docker Desktop 的虚拟机里。</p><pre class="cmd">docker volume inspect -f &quot;{{.Mountpoint}}&quot; pgdata</pre><pre class="out">/var/lib/docker/volumes/pgdata/_data</pre></div></div><div class="st"><span class="n">05</span><div><p>备份：临时容器挂载卷（只读）和当前目录，打包。</p><pre class="cmd">docker run --rm -v pgdata:/data:ro -v &quot;$PWD&quot;:/backup alpine \
+ hello</pre></div></div><div class="st"><span class="n">04</span><div><p>查看卷在宿主机上的位置。Mac / Windows 上这个路径在 Docker Desktop 的虚拟机里。</p><pre class="cmd">docker volume inspect -f &quot;{{.Mountpoint}}&quot; pgdata</pre><pre class="out">/var/lib/docker/volumes/pgdata/_data</pre></div></div><div class="st"><span class="n">05</span><div><p>冷备份：先正常停止 PostgreSQL，并确认它已退出；再用临时容器只读挂载卷和当前目录打包。没有业务写入，也不能保证运行中的数据库文件一致。</p><pre class="cmd">docker stop -t 60 pg
+docker inspect -f "{{.State.Status}} {{.State.ExitCode}}" pg
+# 确认 exited 0 后再备份；若超时被强制杀死，先排查并完成正常关闭
+docker run --rm -v pgdata:/data:ro -v &quot;$PWD&quot;:/backup alpine \
   tar czf /backup/pgdata.tgz -C /data .
 ls -lh pgdata.tgz</pre><pre class="out">-rw-r--r--  1 you  staff   6.4M Oct 21 18:10 pgdata.tgz</pre></div></div><div class="st"><span class="n">06</span><div><p>绑定挂载：修改宿主机文件，容器里立即生效。</p><pre class="cmd">mkdir site &amp;&amp; echo v1 &gt; site/index.html
 docker run -d --name web -p 8080:80 -v &quot;$PWD/site&quot;:/usr/share/nginx/html:ro nginx:1.27
@@ -48,7 +51,7 @@ pgdata</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>
 docker run --rm -v pgdata2:/data -v "$PWD":/backup alpine \
   sh -c "cd /data && tar xzf /backup/pgdata.tgz"
 docker run -d --name pg2 -e POSTGRES_PASSWORD=dev -v pgdata2:/var/lib/postgresql/data postgres:16
-sleep 5; docker exec pg2 psql -U postgres -tc "SELECT x FROM t"</pre><pre class="out"> hello</pre><p>注意：直接打包数据库文件只适合<b>已停止</b>的数据库，或像这里一样没有写入时。线上数据库要用 <code>pg_dump</code> 这类工具做一致性备份。</p></div></details></div>
+sleep 5; docker exec pg2 psql -U postgres -tc "SELECT x FROM t"</pre><pre class="out"> hello</pre><p>注意：本练习先正常停止数据库，再完整打包数据目录；恢复使用相同主版本 PostgreSQL 16。仅停止业务写入并不等于停止数据库后台写入。需要在线备份时使用 <code>pg_dump</code> 或配置正确的 <code>pg_basebackup</code>，并验证恢复结果。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
@@ -56,7 +59,7 @@ sleep 5; docker exec pg2 psql -U postgres -tc "SELECT x FROM t"</pre><pre class=
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li>容器的可写层随容器删除。需要保留的数据（数据库、上传文件）要放在挂载点上。</li><li><b>命名卷</b>由 Docker 管理，适合生产数据；<b>绑定挂载</b>把宿主机目录映射进去，适合开发时同步代码；<b>tmpfs</b> 在内存里，容器停止即消失。</li><li>挂载会<b>遮住</b>容器里同一路径原有的文件。空的命名卷第一次挂载时，Docker 会先把镜像里的内容复制进卷；绑定挂载不会。</li><li>推荐 <code>--mount type=volume,src=...,dst=...</code> 写法，比 <code>-v</code> 更明确；绑定挂载的路径不存在时 <code>--mount</code> 会报错，<code>-v</code> 会悄悄建一个空目录。</li><li>备份卷：用一个临时容器同时挂载卷和宿主机目录，用 tar 打包。</li></ol></section>
+<ol class="sum"><li>容器的可写层随容器删除。需要保留的数据（数据库、上传文件）要放在挂载点上。</li><li><b>命名卷</b>由 Docker 管理，适合生产数据；<b>绑定挂载</b>把宿主机目录映射进去，适合开发时同步代码；<b>tmpfs</b> 在内存里，容器停止即消失。</li><li>挂载会<b>遮住</b>容器里同一路径原有的文件。空的命名卷第一次挂载时，Docker 会先把镜像里的内容复制进卷；绑定挂载不会。</li><li>推荐 <code>--mount type=volume,src=...,dst=...</code> 写法，比 <code>-v</code> 更明确；绑定挂载的路径不存在时 <code>--mount</code> 会报错，<code>-v</code> 会悄悄建一个空目录。</li><li>备份卷前先满足应用的一致性条件：本课正常停止 PostgreSQL 后，再用临时容器挂载卷并用 tar 打包。在线数据库备份使用数据库专用工具。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 07</div><a class="big" href="l07.html">网络与端口映射 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
