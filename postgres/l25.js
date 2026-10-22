@@ -17,7 +17,7 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
 ["ALTER TABLE orders ADD COLUMN source text DEFAULT 'web'",'锁：ACCESS EXCLUSIVE · 耗时：毫秒\n（11+：默认值存在目录中，读取时补上）','ok','安全。'],
 ["ALTER TABLE orders ADD COLUMN token uuid DEFAULT gen_random_uuid()",'锁：ACCESS EXCLUSIVE · 耗时：重写整张表，约 40 分钟','bad','volatile 默认值每行不同，必须重写。改为：加可空列 → 设置默认值（只影响新行）→ 分批回填旧行。'],
 ["ALTER TABLE orders ALTER COLUMN status SET NOT NULL",'锁：ACCESS EXCLUSIVE · 耗时：全表扫描验证，约 3 分钟','bad','先 ADD CONSTRAINT … CHECK (status IS NOT NULL) NOT VALID，VALIDATE（不阻塞读写），再 SET NOT NULL（利用已验证的约束跳过扫描）。'],
-["ALTER TABLE orders ALTER COLUMN user_id TYPE bigint",'锁：ACCESS EXCLUSIVE · 耗时：重写表和所有索引，约 2 小时','bad','新列 + 触发器同步 + 分批回填 + 短事务切换。'],
+["ALTER TABLE orders ALTER COLUMN user_id TYPE bigint  -- 假设原类型为 integer",'锁：ACCESS EXCLUSIVE · 耗时：重写表和所有索引，约 2 小时','bad','新列 + 触发器同步 + 分批回填 + 短事务切换。'],
 ["ALTER TABLE orders ALTER COLUMN note TYPE varchar(500)  -- 原为 varchar(200)",'锁：ACCESS EXCLUSIVE · 耗时：毫秒','ok','扩大 varchar 长度或 varchar → text 不需要重写。缩小长度则需要扫描验证。'],
 ["CREATE INDEX orders_status_idx ON orders (status)",'锁：SHARE（阻塞所有写入）· 耗时：约 6 分钟','bad','用 CREATE INDEX CONCURRENTLY，不阻塞写入。失败时 DROP INDEX CONCURRENTLY 留下的 INVALID 索引后重试。'],
 ["ALTER TABLE order_items ADD FOREIGN KEY (order_id) REFERENCES orders (id)",'锁：两张表 SHARE ROW EXCLUSIVE · 耗时：扫描验证全部行','bad','先 NOT VALID 添加（只检查新写入），再 VALIDATE CONSTRAINT。'],
