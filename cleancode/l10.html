@@ -40,15 +40,35 @@ class CartTest(unittest.TestCase):
     def test_empty_cart_total_is_zero(self):
         self.assertEqual(Cart().total(), 0)
 EOF
-python3 -m unittest 2&gt;&amp;1 | grep -E &quot;Error|Ran|FAILED&quot;</pre><pre class="out">ImportError: Failed to import test module: test_cart
+python3 -m unittest</pre><pre class="out">E
+======================================================================
+ERROR: test_cart (unittest.loader._FailedTest.test_cart)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_cart
+Traceback (most recent call last):
+  File &quot;/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/loader.py&quot;, line 433, in _find_test_path
+    module = self._get_module_from_name(name)
+  File &quot;/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/loader.py&quot;, line 374, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File &quot;/privatetest_cart.py&quot;, line 2, in &lt;module&gt;
+    from cart import Cart
 ModuleNotFoundError: No module named &#x27;cart&#x27;
+
+
+----------------------------------------------------------------------
 Ran 1 test in 0.000s
+
 FAILED (errors=1)</pre></div></div><div class="st"><span class="n">02</span><div><p>绿：最少的代码。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
 class Cart:
     def total(self):
         return 0
 EOF
-python3 -m unittest 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div></div><div class="st"><span class="n">03</span><div><p>红：下一个行为迫使实现变得通用。</p><pre class="cmd">cat &gt;&gt; test_cart.py &lt;&lt;&#x27;EOF&#x27;
+python3 -m unittest</pre><pre class="out">.
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK</pre></div></div><div class="st"><span class="n">03</span><div><p>红：下一个行为迫使实现变得通用。</p><pre class="cmd">cat &gt;&gt; test_cart.py &lt;&lt;&#x27;EOF&#x27;
 
     def test_total_sums_item_prices(self):
         cart = Cart()
@@ -56,9 +76,19 @@ python3 -m unittest 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div>
         cart.add(&quot;ink&quot;, 5)
         self.assertEqual(cart.total(), 15)
 EOF
-python3 -m unittest 2&gt;&amp;1 | grep -E &quot;^(ERROR|FAIL|AttributeError|Ran)&quot;</pre><pre class="out">ERROR: test_total_sums_item_prices (test_cart.CartTest.test_total_sums_item_prices)
+python3 -m unittest</pre><pre class="out">.E
+======================================================================
+ERROR: test_total_sums_item_prices (test_cart.CartTest.test_total_sums_item_prices)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File &quot;/privatetest_cart.py&quot;, line 10, in test_total_sums_item_prices
+    cart.add(&quot;pen&quot;, 10)
+    ^^^^^^^^
 AttributeError: &#x27;Cart&#x27; object has no attribute &#x27;add&#x27;
+
+----------------------------------------------------------------------
 Ran 2 tests in 0.000s
+
 FAILED (errors=1)</pre></div></div><div class="st"><span class="n">04</span><div><p>绿。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
 class Cart:
     def __init__(self):
@@ -70,7 +100,11 @@ class Cart:
     def total(self):
         return sum(self._prices)
 EOF
-python3 -m unittest 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div></div><div class="st"><span class="n">05</span><div><p>红：VIP 满 100 免运费，否则运费 8。</p><pre class="cmd">cat &gt;&gt; test_cart.py &lt;&lt;&#x27;EOF&#x27;
+python3 -m unittest</pre><pre class="out">..
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK</pre></div></div><div class="st"><span class="n">05</span><div><p>红：VIP 免运费，非 VIP 运费为 8；满额免运费留到挑战中添加。</p><pre class="cmd">cat &gt;&gt; test_cart.py &lt;&lt;&#x27;EOF&#x27;
 
     def test_shipping_is_8_by_default(self):
         self.assertEqual(Cart().shipping_fee(), 8)
@@ -79,34 +113,56 @@ python3 -m unittest 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div>
         cart = Cart(is_vip=True)
         self.assertEqual(cart.shipping_fee(), 0)
 EOF
-python3 -m unittest 2&gt;&amp;1 | grep -E &quot;^(ERROR|FAIL|Ran)&quot;</pre><pre class="out">ERROR: test_shipping_is_8_by_default (test_cart.CartTest.test_shipping_is_8_by_default)
+python3 -m unittest</pre><pre class="out">.E.E
+======================================================================
+ERROR: test_shipping_is_8_by_default (test_cart.CartTest.test_shipping_is_8_by_default)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File &quot;/privatetest_cart.py&quot;, line 15, in test_shipping_is_8_by_default
+    self.assertEqual(Cart().shipping_fee(), 8)
+                     ^^^^^^^^^^^^^^^^^^^
+AttributeError: &#x27;Cart&#x27; object has no attribute &#x27;shipping_fee&#x27;
+
+======================================================================
 ERROR: test_vip_gets_free_shipping (test_cart.CartTest.test_vip_gets_free_shipping)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File &quot;/privatetest_cart.py&quot;, line 18, in test_vip_gets_free_shipping
+    cart = Cart(is_vip=True)
+TypeError: Cart.__init__() got an unexpected keyword argument &#x27;is_vip&#x27;
+
+----------------------------------------------------------------------
 Ran 4 tests in 0.001s
-FAILED (errors=2)</pre></div></div><div class="st"><span class="n">06</span><div><p>绿，然后重构：测试保护下把价格和名字一起保存。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
+
+FAILED (errors=2)</pre></div></div><div class="st"><span class="n">06</span><div><p>绿，然后重构：用列表保存名称与价格，保留重复添加的累计行为。不能直接改成 name → price 的字典，否则同名商品会被覆盖；现有测试通过不代表所有行为都保持不变。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
 STANDARD_SHIPPING = 8
 
 class Cart:
     def __init__(self, is_vip=False):
-        self._items = {}
+        self._items = []
         self._is_vip = is_vip
 
     def add(self, name, price):
-        self._items[name] = price
+        self._items.append((name, price))
 
     def total(self):
-        return sum(self._items.values())
+        return sum(price for name, price in self._items)
 
     def shipping_fee(self):
         return 0 if self._is_vip else STANDARD_SHIPPING
 EOF
-python3 -m unittest -v 2&gt;&amp;1 | grep -E &quot;ok$|Ran|OK&quot;</pre><pre class="out">test_empty_cart_total_is_zero (test_cart.CartTest.test_empty_cart_total_is_zero) ... ok
+python3 -m unittest -v</pre><pre class="out">test_empty_cart_total_is_zero (test_cart.CartTest.test_empty_cart_total_is_zero) ... ok
 test_shipping_is_8_by_default (test_cart.CartTest.test_shipping_is_8_by_default) ... ok
 test_total_sums_item_prices (test_cart.CartTest.test_total_sums_item_prices) ... ok
 test_vip_gets_free_shipping (test_cart.CartTest.test_vip_gets_free_shipping) ... ok
+
+----------------------------------------------------------------------
 Ran 4 tests in 0.000s
-OK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>继续 TDD</h3><p>继续上面的购物车，用 TDD 依次加入：① 同一商品添加两次时数量累加（需要改变数据结构）；② 删除商品；③ 非 VIP 满 99 元免运费。对每一项先写出测试名，再写测试。</p><details><summary>查看参考答案</summary><div><pre class="cmd">def test_adding_same_item_twice_doubles_quantity(self):
+
+OK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>继续 TDD</h3><p>继续上面的购物车，用 TDD 依次加入：① 增加 quantity_of(name)，可以查询同一商品累计数量；② 删除商品；③ 非 VIP 满 99 元免运费。对每一项先写出测试名，再写测试。</p><details><summary>查看参考答案</summary><div><pre class="cmd">def test_adding_same_item_twice_doubles_quantity(self):
     cart = Cart(); cart.add("pen", 10); cart.add("pen", 10)
     self.assertEqual(cart.total(), 20)
+    self.assertEqual(cart.quantity_of("pen"), 2)
 
 def test_removed_item_is_not_charged(self):
     cart = Cart(); cart.add("pen", 10); cart.add("ink", 5)
@@ -119,7 +175,7 @@ def test_free_shipping_from_99(self):
 
 def test_shipping_charged_below_99(self):
     cart = Cart(); cart.add("bag", 98.99)
-    self.assertEqual(cart.shipping_fee(), 8)</pre><p>第一个测试会失败（dict 覆盖了同名商品），这正是测试的价值：它暴露了上一步“重构”中引入的错误假设。实现改为保存 <code>{name: (price, quantity)}</code>。第三项需要两个测试，覆盖边界的两侧（99 与 98.99）。</p></div></details></div>
+    self.assertEqual(cart.shipping_fee(), 8)</pre><p>第一个测试因尚未实现 quantity_of 而失败；原有列表已能正确累计同名商品金额。可以按列表统计数量，也可以改为 <code>{name: (price, quantity)}</code>，但要保留重复添加的既有行为。第三项需要两个测试，覆盖边界的两侧（99 与 98.99）。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
