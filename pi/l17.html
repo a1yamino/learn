@@ -86,8 +86,8 @@ for (let i = firstChanged; i &lt;= renderEnd; i++) {
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 pi-tui 测试中的 <code>VirtualTerminal</code>（基于 xterm.js 的无头终端）运行 TUI，记录每次渲染写入终端的字节。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l17.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。用 pi-tui 测试中的 <code>VirtualTerminal</code>（基于 xterm.js 的无头终端）运行 TUI，记录每次渲染写入终端的字节。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l17.ts &lt;&lt;&#x27;EOF&#x27;
 import { Text, TuiMainScreen } from &quot;@earendil-works/pi-tui&quot;;
 import { VirtualTerminal } from &quot;../packages/tui/test/virtual-terminal.ts&quot;;
 
@@ -118,7 +118,7 @@ await new Promise((r) =&gt; setTimeout(r, 50));
 console.log(&quot;\n屏幕内容：\n&quot; + (await term.flushAndGetViewport()).map((l: string) =&gt; &quot;  |&quot; + l.trimEnd()).filter((l: string) =&gt; l !== &quot;  |&quot;).join(&quot;\n&quot;));
 tui.stop();
 EOF
-cd pi-mono/scratch &amp;&amp; node l17.ts</pre><pre class="out">== 首次渲染（全部输出）：写入 603 字节
+node scratch/l17.ts</pre><pre class="out">== 首次渲染（全部输出）：写入 603 字节
    ⟦同步开始⟧                                        ESC[0mESC]8;;↵ pi 课程：TUI 演示                      ESC[0mESC]8;;↵                                       …
 == 只改最后一行：写入 82 字节
    ⟦同步开始⟧ESC[1A
@@ -135,17 +135,21 @@ ESC[2K pi 课程：TUI 演示（已更新）            ESC[0mESC]8;;⟦同步�
   | 第 2 行
   | 第 3 行
   | 状态：调用工具 read</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>一个自定义组件</h3><p>写一个 <code>ProgressBar</code> 组件：<code>render(width)</code> 返回一行 <code>[#####-----] 50%</code>，进度条长度随 width 变化且永远不超过 width。把它加进上面的 TUI，每 100ms 更新一次进度，观察每次写入的字节数。</p><details><summary>查看参考答案</summary><div><pre>class ProgressBar {
-  constructor(public pct = 0) {}
+  pct: number;
+  constructor(pct = 0) { this.pct = pct; }
   invalidate() {}
   render(width: number): string[] {
-    const label = ` ${this.pct}%`;
+    const pct = Math.min(100, Math.max(0, Math.round(this.pct)));
+    width = Math.max(0, Math.floor(width));
+    const label = ` ${pct}%`;
+    if (width &lt; label.length + 2) return [`${pct}%`.slice(0, width)];
     const inner = Math.max(0, width - 2 - label.length);
-    const done = Math.round((inner * this.pct) / 100);
+    const done = Math.round((inner * pct) / 100);
     return [`[${"#".repeat(done)}${"-".repeat(inner - done)}]${label}`];
   }
 }
 const bar = new ProgressBar(); tui.addChild(bar);
-for (let p = 0; p &lt;= 100; p += 10) { bar.pct = p; tui.renderNow(); show(`${p}%`); }</pre><p>每次更新只有进度条那一行变化，写入几十字节；与全屏重绘（几百到几千字节）相比，在慢速 SSH 连接上差别非常明显。注意宽度计算使用字符数仅在纯 ASCII 时成立，含中文时应使用 <code>visibleWidth</code>。</p></div></details></div>
+for (let p = 0; p &lt;= 100; p += 10) { bar.pct = p; tui.renderNow(); show(`${p}%`); await new Promise((r) => setTimeout(r, 100)); }</pre><p>每次更新只有进度条那一行变化，写入几十字节；与全屏重绘（几百到几千字节）相比，在慢速 SSH 连接上差别非常明显。注意宽度计算使用字符数仅在纯 ASCII 时成立，含中文时应使用 <code>visibleWidth</code>。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
