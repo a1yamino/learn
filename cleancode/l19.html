@@ -73,7 +73,7 @@ with ThreadPoolExecutor(max_workers=8) as pool:
     total = sum(pool.map(count_words, docs))
 print(total)
 EOF
-python3 noshare.py</pre><pre class="out">9000</pre></div></div><div class="st"><span class="n">03</span><div><p>生产者—消费者：有界队列 + 哨兵，正确关闭。</p><pre class="cmd">cat &gt; pc.py &lt;&lt;&#x27;EOF&#x27;
+python3 noshare.py</pre><pre class="out">9000</pre></div></div><div class="st"><span class="n">03</span><div><p>生产者—消费者：一个生产者、一个消费者的正常关闭。这里的处理不抛异常；实际任务还需设计错误传播、取消和超时。</p><pre class="cmd">cat &gt; pc.py &lt;&lt;&#x27;EOF&#x27;
 import queue, threading
 
 DONE = object()
