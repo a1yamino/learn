@@ -26,28 +26,45 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 redis-cli 中执行。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>内存概况。</p><pre class="cmd">INFO memory</pre><pre class="out">used_memory_human:1.05M
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本实验使用独立容器和 Python 客户端（pip install redis），避免第 5 课的大数据集影响 10 MB 上限。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>在宿主机启动实验容器。</p><pre class="cmd">docker run -d --name learn-review-rmem -p 127.0.0.1:6388:6379 redis:8.10 redis-server --save &quot;&quot;
+docker exec -it learn-review-rmem redis-cli</pre><pre class="out">127.0.0.1:6379&gt;</pre></div></div><div class="st"><span class="n">02</span><div><p>内存概况。</p><pre class="cmd">INFO memory</pre><pre class="out">used_memory_human:1.05M
 used_memory_rss_human:9.12M
 used_memory_peak_human:24.30M
 mem_fragmentation_ratio:8.69
 maxmemory_human:0B
 maxmemory_policy:noeviction
-mem_allocator:jemalloc-5.3.0</pre></div></div><div class="st"><span class="n">02</span><div><p>设置 10 MB 上限，默认策略下写满会报错。</p><pre class="cmd">CONFIG SET maxmemory 10mb
-EVAL &quot;for i=1,200000 do redis.call(&#x27;SET&#x27;,&#x27;k:&#x27;..i,string.rep(&#x27;x&#x27;,100)) end return 1&quot; 0</pre><pre class="out">(error) OOM command not allowed when used memory &gt; &#x27;maxmemory&#x27;. script: …</pre></div></div><div class="st"><span class="n">03</span><div><p>改为 allkeys-lru，再写：旧键被淘汰。</p><pre class="cmd">CONFIG SET maxmemory-policy allkeys-lru
-EVAL &quot;for i=1,200000 do redis.call(&#x27;SET&#x27;,&#x27;k:&#x27;..i,string.rep(&#x27;x&#x27;,100)) end return 1&quot; 0
-DBSIZE
-INFO stats</pre><pre class="out">(integer) 1
-(integer) 52144
-…
-evicted_keys:147856</pre></div></div><div class="st"><span class="n">04</span><div><p>看一个键的空闲时间。</p><pre class="cmd">GET k:199999
+mem_allocator:jemalloc-5.3.0</pre></div></div><div class="st"><span class="n">03</span><div><p>设置 10 MB 上限，默认策略下写满会报错。</p><pre class="cmd">CONFIG SET maxmemory 10mb
+CONFIG SET maxmemory-policy noeviction
+# 输入 exit 退出 redis-cli，再在宿主机运行：
+python3 - &lt;&lt;&#x27;PY&#x27;
+import redis
+r = redis.Redis(port=6388)
+for i in range(200000):
+    try: r.set(f&quot;k:{i}&quot;, &quot;x&quot; * 100)
+    except redis.exceptions.ResponseError as e:
+        print(type(e).__name__, str(e))
+        break
+PY</pre><pre class="out">OutOfMemoryError command not allowed when used memory &gt; &#x27;maxmemory&#x27;.</pre></div></div><div class="st"><span class="n">04</span><div><p>改为 allkeys-lru，再写：旧键被淘汰。</p><pre class="cmd">python3 - &lt;&lt;&#x27;PY&#x27;
+import redis
+r = redis.Redis(port=6388)
+r.config_set(&quot;maxmemory-policy&quot;, &quot;allkeys-lru&quot;)
+for i in range(200000): r.set(f&quot;k:{i}&quot;, &quot;x&quot; * 100)
+print(&quot;keys&quot;, r.dbsize())
+print(&quot;evicted_keys&quot;, r.info(&quot;stats&quot;)[&quot;evicted_keys&quot;])
+PY
+# 重新进入实验实例，继续后面的命令：
+docker exec -it learn-review-rmem redis-cli</pre><pre class="out">keys 约 50000
+evicted_keys 逐渐增长（具体值随版本和分配器不同）</pre></div></div><div class="st"><span class="n">05</span><div><p>看一个键的空闲时间。</p><pre class="cmd">GET k:199999
 OBJECT IDLETIME k:199999</pre><pre class="out">&quot;xxxx…&quot;
-(integer) 0</pre></div></div><div class="st"><span class="n">05</span><div><p>切换到 LFU，看访问频率计数。</p><pre class="cmd">CONFIG SET maxmemory-policy allkeys-lfu
+(integer) 0</pre></div></div><div class="st"><span class="n">06</span><div><p>切换到 LFU，看访问频率计数。</p><pre class="cmd">CONFIG SET maxmemory-policy allkeys-lfu
 GET k:199999
 GET k:199999
 OBJECT FREQ k:199999</pre><pre class="out">OK
 …
-(integer) 6</pre></div></div><div class="st"><span class="n">06</span><div><p>内存诊断。</p><pre class="cmd">MEMORY DOCTOR</pre><pre class="out">Sam, I detected a few issues in this Redis instance memory implants:
+(integer) 6</pre></div></div><div class="st"><span class="n">07</span><div><p>内存诊断；完成后退出并删除实验容器。</p><pre class="cmd">MEMORY DOCTOR
+# 以下在宿主机执行：
+docker rm -f learn-review-rmem</pre><pre class="out">Sam, I detected a few issues in this Redis instance memory implants:
 
  * High total RSS: This instance has a memory fragmentation and RSS overhead greater than 1.4 …</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>一台缓存实例频繁淘汰热点</h3><p>商品缓存实例 8 GB，<code>allkeys-lru</code>。每晚 2 点有一个离线任务遍历全部商品写入缓存（大部分是冷门商品）。之后几十分钟里缓存命中率从 98% 降到 70%，数据库压力剧增。解释原因，给出至少两种改进。</p><details><summary>查看参考答案</summary><div><p>LRU 只看“最近一次访问时间”：离线任务把几百万个冷门商品依次写入，每一个都比白天的热点商品“更新”，于是热点被大量淘汰。早上热点重新回源，命中率要很久才能恢复。</p><ul><li>改用 <code>allkeys-lfu</code>：热点商品的访问计数高，批量写入的冷门商品计数很低（新键初始计数为 5，且会衰减），淘汰时优先淘汰它们。</li><li>离线任务不要写入在线缓存：它真正需要的通常只是读取数据，或者写入另一个实例。</li><li>如果必须预热，只预热访问量排名靠前的商品，并给它们较短的过期时间。</li><li>按需扩容：观察 <code>evicted_keys</code> 的增长速度和命中率（<code>keyspace_hits / (hits + misses)</code>），淘汰持续发生说明内存不足以容纳工作集。</li></ul></div></details></div>
 </section>
@@ -57,7 +74,7 @@ OBJECT FREQ k:199999</pre><pre class="out">OK
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><code>used_memory</code> 是分配器（jemalloc）分配出去的字节数：数据集 + 键空间字典开销 + 客户端输入/输出缓冲区 + 复制积压缓冲区 + AOF 缓冲区等。<code>used_memory_rss</code> 是操作系统看到的常驻内存。二者之比为<b>碎片率</b>：明显大于 1.5 表示碎片多（可开启 <code>activedefrag</code>），小于 1 说明发生了 swap。</li><li><b>一定要设置 <code>maxmemory</code></b>，并给 fork 时的写时复制、缓冲区和操作系统留出余量（通常为物理内存的 60%–75%）。默认 0 表示不限制，最终会被 OOM killer 杀掉或开始 swap。</li><li>达到 maxmemory 后，每条可能增加内存的写命令执行前都会尝试淘汰。策略 <code>maxmemory-policy</code>：<code>noeviction</code>（默认，写命令报 OOM 错误）；<code>allkeys-lru / allkeys-lfu / allkeys-random</code>（在所有键中选）；<code>volatile-lru / volatile-lfu / volatile-random / volatile-ttl</code>（只在设置了过期时间的键中选）。</li><li>纯缓存用 <code>allkeys-lru</code> 或 <code>allkeys-lfu</code>；Redis 同时存放缓存和不能丢的数据时用 <code>volatile-*</code>，但没有过期时间的键过多时，可淘汰的键不够，仍会 OOM。更好的做法是把两类数据放到不同的实例。</li><li><b>近似 LRU</b>：每个对象只存 24 位的最近访问时钟；淘汰时随机抽样 <code>maxmemory-samples</code>（默认 5）个键，放入大小为 16 的淘汰池，删除最久未访问的。样本越大越接近真实 LRU，CPU 越高。</li><li><b>LFU</b>：同一个 24 位字段改存 16 位时间 + 8 位对数计数器（最大 255，访问越多增加概率越小，<code>lfu-log-factor</code>），计数随时间衰减（<code>lfu-decay-time</code> 分钟）。LFU 能抵抗一次性批量扫描把热点数据挤出去。</li></ol></section>
+<ol class="sum"><li><code>used_memory</code> 是分配器（jemalloc）分配出去的字节数：数据集 + 键空间字典开销 + 客户端输入/输出缓冲区 + 复制积压缓冲区 + AOF 缓冲区等。<code>used_memory_rss</code> 是操作系统看到的常驻内存。二者之比为<b>碎片率</b>：明显大于 1.5 表示碎片多（可开启 <code>activedefrag</code>），小于 1 说明发生了 swap。</li><li>单个 Lua 脚本执行期间不会逐条触发淘汰，可能暂时超过上限；实验要从客户端分批写入。<b>一定要设置 <code>maxmemory</code></b>，并给 fork 时的写时复制、缓冲区和操作系统留出余量（通常为物理内存的 60%–75%）。默认 0 表示不限制，最终会被 OOM killer 杀掉或开始 swap。</li><li>达到 maxmemory 后，每条可能增加内存的写命令执行前都会尝试淘汰。策略 <code>maxmemory-policy</code>：<code>noeviction</code>（默认，写命令报 OOM 错误）；<code>allkeys-lru / allkeys-lfu / allkeys-random</code>（在所有键中选）；<code>volatile-lru / volatile-lfu / volatile-random / volatile-ttl</code>（只在设置了过期时间的键中选）。</li><li>纯缓存用 <code>allkeys-lru</code> 或 <code>allkeys-lfu</code>；Redis 同时存放缓存和不能丢的数据时用 <code>volatile-*</code>，但没有过期时间的键过多时，可淘汰的键不够，仍会 OOM。更好的做法是把两类数据放到不同的实例。</li><li><b>近似 LRU</b>：每个对象只存 24 位的最近访问时钟；淘汰时随机抽样 <code>maxmemory-samples</code>（默认 5）个键，放入大小为 16 的淘汰池，删除最久未访问的。样本越大越接近真实 LRU，CPU 越高。</li><li><b>LFU</b>：同一个 24 位字段改存 16 位时间 + 8 位对数计数器（最大 255，访问越多增加概率越小，<code>lfu-log-factor</code>），计数随时间衰减（<code>lfu-decay-time</code> 分钟）。LFU 能抵抗一次性批量扫描把热点数据挤出去。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 09</div><a class="big" href="l09.html">持久化：RDB 与 AOF →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
