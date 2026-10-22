@@ -52,8 +52,10 @@ CREATE TABLE events_default PARTITION OF events DEFAULT;
 INSERT INTO events (created_at, kind) VALUES (&#x27;2026-12-05&#x27;, &#x27;x&#x27;);</pre><pre class="out">ERROR:  no partition of relation &quot;events&quot; found for row
 DETAIL:  Partition key of the failing row contains (created_at) = (2026-12-05 00:00:00+08).
 CREATE TABLE
-INSERT 0 1</pre></div></div><div class="st"><span class="n">06</span><div><p>删除最老的一个月。</p><pre class="cmd">ALTER TABLE events DETACH PARTITION events_2026_08 CONCURRENTLY;
-DROP TABLE events_2026_08;</pre><pre class="out">ALTER TABLE
+INSERT 0 1</pre></div></div><div class="st"><span class="n">06</span><div><p>删除最老的一个月。上一步已创建 DEFAULT 分区，不能使用 CONCURRENTLY；普通 DETACH 会短暂持有父表排他锁，用 lock_timeout 限制等待。</p><pre class="cmd">SET lock_timeout = &#x27;3s&#x27;;
+ALTER TABLE events DETACH PARTITION events_2026_08;
+DROP TABLE events_2026_08;
+RESET lock_timeout;</pre><pre class="out">ALTER TABLE
 DROP TABLE</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>把一张大表在线改成分区表</h3><p>现有 events 表 6 亿行、未分区，持续写入。要改为按月分区，不能停机。描述可行的迁移步骤。</p><details><summary>查看参考答案</summary><div><p>PostgreSQL 不能把现有表直接转换为分区表，但可以把它整个挂成一个分区：</p><pre class="cmd">BEGIN;
 SET lock_timeout = '3s';
 ALTER TABLE events RENAME TO events_legacy;
