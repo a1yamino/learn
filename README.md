@@ -12,6 +12,7 @@
 | [Kubernetes](https://a1yamino.github.io/learn/k8s/) | 学完 Docker 的工程师 | 已完成（27 课） |
 | [PostgreSQL](https://a1yamino.github.io/learn/postgres/) | 初级后端工程师 | 已完成（26 课） |
 | [Redis](https://a1yamino.github.io/learn/redis/) | 初级后端工程师 | 已完成（24 课） |
+| [Kafka](https://a1yamino.github.io/learn/kafka/) | 初级后端工程师 | 更新中（24 课） |
 
 ### Docker 课程大纲
 基础：1 为什么需要 Docker · 2 容器生命周期与核心命令 · 3 Dockerfile 与构建缓存 · 4 实战：把后端 API 打包成镜像 · 5 多阶段构建与镜像瘦身 · 6 数据卷与持久化 · 7 网络与端口映射 · 8 Docker Compose 入门 · 9 配置、环境变量与密钥 · 10 镜像仓库、标签与推送
@@ -61,6 +62,23 @@
 
 综合项目：24 综合项目：一个高并发商品服务的缓存层
 
+### Kafka 课程大纲
+基础：1 Kafka 是什么：日志、主题与分区 · 2 动手：命令行工具与第一个主题
+
+存储与生产：3 日志存储：分区、段与索引 · 4 生产者：发送流程、分区器与批处理 · 5 生产者可靠性：acks、重试与幂等
+
+消费：6 消费者与消费者组 · 7 再平衡：协议、分配策略与 KIP-848 · 8 位移：提交、重置与交付语义
+
+集群内部：9 复制：Leader、ISR 与高水位 · 10 KRaft：控制器与元数据日志 · 11 事务与精确一次 · 12 保留策略与日志压缩
+
+生态：13 序列化与 Schema Registry · 14 Kafka Connect · 15 Kafka Streams：拓扑与无状态处理 · 16 Kafka Streams：状态、窗口与连接
+
+生产运维：17 性能调优：零拷贝、页缓存与批量 · 18 监控与消费延迟 · 19 安全：TLS、SASL 与 ACL · 20 运维：分区重分配、扩容与升级
+
+设计模式：21 Outbox 模式与 CDC · 22 事件溯源与 CQRS · 23 错误处理：重试主题与死信队列
+
+综合项目：24 综合项目：一个订单事件平台
+
 ## 每一课都有 / What's in each lesson
 - 讲解和自动播放的图解动画
 - 少量动手操作（只在动手比看更容易理解的地方）
@@ -75,6 +93,7 @@ docker/           Docker 课程（index.html + lNN.html）
 k8s/              Kubernetes 课程
 postgres/         PostgreSQL 课程
 redis/            Redis 课程
+kafka/            Kafka 课程
 _src/             课程生成器源文件 / generator sources
 ```
 纯静态 HTML，无需构建；克隆后直接用浏览器打开 `index.html` 即可。
