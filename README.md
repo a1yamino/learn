@@ -16,8 +16,8 @@
 | [Redis](https://a1yamino.github.io/learn/redis/) | 数据结构、持久化、复制、缓存一致性 | 后端开发基础，了解数据库与缓存的区别 | 24 / 24 |
 | [Kafka](https://a1yamino.github.io/learn/kafka/) | 分区日志、消费、复制、事务与事件驱动 | 后端开发基础；部分例子使用 Java | 24 / 24 |
 | [DDIA：数据密集型应用设计](https://a1yamino.github.io/learn/ddia/) | 数据模型、分布式故障、一致性与系统权衡 | 使用过数据库，能阅读简单 Python / SQL | 28 / 28 |
-| [Clean Code：代码整洁之道](https://a1yamino.github.io/learn/cleancode/) | 命名、函数、错误处理、测试与设计原则 | 写过代码；练习使用 Python 3.10+ | 计划 20 课，持续更新 |
-| [pi 源码精读：编码 agent 的内核](https://a1yamino.github.io/learn/pi/) | 模型适配、agent 循环、工具、上下文与扩展 | TypeScript / Node.js 基础，能阅读异步代码 | 计划 20 课，持续更新 |
+| [Clean Code：代码整洁之道](https://a1yamino.github.io/learn/cleancode/) | 命名、函数、错误处理、测试与设计原则 | 写过代码；练习使用 Python 3.10+ | 20 / 20 |
+| [pi 源码精读：编码 agent 的内核](https://a1yamino.github.io/learn/pi/) | 模型适配、agent 循环、工具、上下文与扩展 | TypeScript / Node.js 基础，能阅读异步代码 | 20 / 20 |
 
 课程持续更新，**以各目录中已开放的入口为准**。仓库中已有 `lNN.html` 的章节也可能仍是未发布草稿；标记“未上线”的入口不计作已发布。表中计划课数不等于已经开放的课数。
 
@@ -74,8 +74,8 @@ postgres/        PostgreSQL 课件
 redis/           Redis 课件
 kafka/           Kafka 课件
 ddia/            DDIA 课件
-cleancode/       Clean Code 课件与未发布草稿
-pi/              pi 源码精读课件与未发布草稿
+cleancode/       Clean Code 课件
+pi/              pi 源码精读课件
 _src/            部分课程的 Python 生成源、输出记录与辅助脚本
 ```
 
