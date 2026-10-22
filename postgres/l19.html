@@ -26,7 +26,7 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">使用第 18 课的 pg（主）和 pg2（备）。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">使用第 18 课的 pg（主）和 pg2（备）。本课先演示主备互换；练习末尾会先隔离 pg2，再把已追平的 pg 提升为后续章节使用的可写实例。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>写入一行作为标记，然后停止主库，模拟故障。</p><pre class="cmd">docker exec -u postgres pg psql -d shop -c &quot;INSERT INTO accounts VALUES (&#x27;before&#x27;, 1)&quot;
 docker stop pg</pre><pre class="out">INSERT 0 1
 pg</pre></div></div><div class="st"><span class="n">02</span><div><p>提升备库。</p><pre class="cmd">docker exec -u postgres pg2 psql -c &quot;SELECT pg_promote()&quot;
@@ -43,10 +43,24 @@ docker exec -u postgres pg2 psql -c &quot;SELECT pg_is_in_recovery(), timeline_i
   pg_rewind -D /var/lib/postgresql/18/docker --source-server=&quot;host=pg2 user=postgres password=pg dbname=postgres&quot; -R -P</pre><pre class="out">pg_rewind: connected to server
 pg_rewind: servers diverged at WAL location 0/6000148 on timeline 1
 pg_rewind: rewinding from last common checkpoint at 0/5000098 on timeline 1
-pg_rewind: Done!</pre></div></div><div class="st"><span class="n">06</span><div><p>启动旧主库，它现在跟随 pg2。</p><pre class="cmd">docker start pg
+pg_rewind: Done!</pre></div></div><div class="st"><span class="n">06</span><div><p>启动旧主库，它现在跟随 pg2。</p><pre class="cmd">docker exec -u postgres pg2 psql -c &quot;SELECT * FROM pg_create_physical_replication_slot(&#x27;replica1&#x27;)&quot;
+docker start pg
 docker exec -u postgres pg2 psql -c &quot;SELECT client_addr, state FROM pg_stat_replication&quot;</pre><pre class="out"> client_addr |   state
 -------------+-----------
- 172.19.0.2  | streaming</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计一个 RPO = 0 的方案</h3><p>业务要求：任何单点故障都不能丢已提交的订单，切换时间不超过 1 分钟；可以接受写入延迟增加几毫秒。用 Patroni 设计节点数量、同步配置和应用连接方式，并说明这个方案在什么情况下仍会丢数据或停写。</p><details><summary>查看参考答案</summary><div><p>三个 PostgreSQL 节点放在三个可用区，etcd 三节点（可与 PG 同机，也可独立）。Patroni 配置 <code>synchronous_mode: true</code>、<code>synchronous_node_count: 1</code>：至少一个备库同步确认，提交才返回（<code>synchronous_commit = on</code>）。Patroni 只会把<b>同步备库</b>提升为主库，因此被提升的节点一定拥有全部已提交事务。<code>ttl: 30</code>、<code>loop_wait: 10</code>，切换在 30–40 秒内完成。</p><p>应用通过 HAProxy（检查 Patroni 的 <code>/primary</code> 接口）或 Kubernetes Service 连接，连接断开后指数退避重连，事务级重试。</p><p>边界：两个备库同时不可用时，严格模式（<code>synchronous_mode_strict: true</code>）会停止写入以保证不丢数据；非严格模式则降级为异步，此时主库再故障会丢数据——这是可用性与 RPO 的取舍，要明确选择。另外，多个可用区同时失联或 etcd 失去多数派时，主库会降级为只读，写入停止。复制保护不了误删数据（DROP TABLE 会被同步到所有备库），那需要 PITR（第 23 课）。</p></div></details></div>
+ 172.19.0.2  | streaming</pre></div></div><div class="st"><span class="n">07</span><div><p>为后续课程恢复可写的 pg：先确认 pg 已追平，再停止 pg2，最后提升 pg。pg2 保持停止，避免两个主库同时接受写入；若要继续使用它做备库，应重新初始化。</p><pre class="cmd">TARGET_LSN=$(docker exec -u postgres pg2 psql -Atc &quot;SELECT pg_current_wal_flush_lsn()&quot;)
+until [ &quot;$(docker exec -u postgres pg psql -Atc &quot;SELECT pg_last_wal_replay_lsn() &gt;= &#x27;$TARGET_LSN&#x27;::pg_lsn&quot;)&quot; = t ]; do sleep 1; done
+docker stop pg2
+docker exec -u postgres pg psql -c &quot;SELECT pg_promote()&quot;
+docker exec -u postgres pg psql -c &quot;SELECT pg_is_in_recovery()&quot; -d shop -c &quot;CREATE TEMP TABLE writable_check (id int)&quot;
+# 练习后不再使用物理复制槽，移除未活动的槽，避免继续保留 WAL
+docker exec -u postgres pg psql -c &quot;SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = &#x27;replica1&#x27; AND NOT active&quot;</pre><pre class="out">pg2
+ pg_promote
+------------
+ t
+ pg_is_in_recovery
+-------------------
+ f
+CREATE TABLE</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计一个 RPO = 0 的方案</h3><p>业务要求：任何单点故障都不能丢已提交的订单，切换时间不超过 1 分钟；可以接受写入延迟增加几毫秒。用 Patroni 设计节点数量、同步配置和应用连接方式，并说明这个方案在什么情况下仍会丢数据或停写。</p><details><summary>查看参考答案</summary><div><p>三个 PostgreSQL 节点放在三个可用区，etcd 三节点（可与 PG 同机，也可独立）。Patroni 配置 <code>synchronous_mode: true</code>、<code>synchronous_node_count: 1</code>：至少一个备库同步确认，提交才返回（<code>synchronous_commit = on</code>）。Patroni 只会把<b>同步备库</b>提升为主库，因此被提升的节点一定拥有全部已提交事务。<code>ttl: 30</code>、<code>loop_wait: 10</code>，切换在 30–40 秒内完成。</p><p>应用通过 HAProxy（检查 Patroni 的 <code>/primary</code> 接口）或 Kubernetes Service 连接，连接断开后指数退避重连，事务级重试。</p><p>边界：两个备库同时不可用时，严格模式（<code>synchronous_mode_strict: true</code>）会停止写入以保证不丢数据；非严格模式则降级为异步，此时主库再故障会丢数据——这是可用性与 RPO 的取舍，要明确选择。另外，多个可用区同时失联或 etcd 失去多数派时，主库会降级为只读，写入停止。复制保护不了误删数据（DROP TABLE 会被同步到所有备库），那需要 PITR（第 23 课）。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
