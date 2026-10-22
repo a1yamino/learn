@@ -27,7 +27,7 @@
 </section>
 
 <section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>项目：一步步完成</h2><div class="goal">这是开放式综合项目，命令中的目录、镜像和数据库对象需先按要求实现。第 4 课仅有 /health，并未提供订单、数据库访问、缓存、迁移或测试代码。先完成下方功能契约，再进入部署步骤；输出为验收示例，不是运行空目录即可得到的结果。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>1. 应用和仓库。在第 4 课 API 上实现：订单写入 PostgreSQL 的 shop 数据库、查询订单及 Redis Cache-Aside 缓存、/health 就绪检查。迁移任务创建 orders 表；测试至少断言创建后可查询、更新后缓存失效、缓存不可用时按约定回源。前端通过 /api 访问服务。配置数据库名 POSTGRES_DB=shop，记录初始化数据的实际行数，不要假定预期一定是 42。目录结构如下。</p><pre class="cmd">mkdir shop &amp;&amp; cd shop &amp;&amp; git init
+<div class="prac"><div class="st"><span class="n">01</span><div><p><b>1. 应用和仓库</b>。在第 4 课 API 上实现：订单写入 PostgreSQL 的 shop 数据库、查询订单及 Redis Cache-Aside 缓存、/health 就绪检查。迁移任务创建 orders 表；测试至少断言创建后可查询、更新后缓存失效、缓存不可用时按约定回源。前端通过 /api 访问服务。配置数据库名 POSTGRES_DB=shop，记录初始化数据的实际行数，不要假定预期一定是 42。目录结构如下。</p><pre class="cmd">mkdir shop &amp;&amp; cd shop &amp;&amp; git init
 # api/  (Dockerfile, app, tests)
 # web/  (Dockerfile, 静态文件, nginx.conf)
 # compose.yaml  compose.override.yaml  compose.prod.yaml
@@ -43,13 +43,14 @@ nc: bad address &#x27;db&#x27;</pre></div></div><div class="st"><span class="n">
       4     memory: &quot;…&quot;
       3     read_only: true</pre></div></div><div class="st"><span class="n">06</span><div><p><b>6. CI</b>：第 23 课的 workflow，构建两个镜像、test 阶段、Trivy 门禁、推送、签名，输出两个 digest。</p><pre class="cmd">git push &amp;&amp; gh run watch</pre><pre class="out">✓ build (api)  ✓ build (web)  ✓ deploy</pre></div></div><div class="st"><span class="n">07</span><div><p><b>7. 部署</b>：服务器上通过环境变量传入 digest。</p><pre class="cmd">API_IMAGE=ghcr.io/you/shop-api@sha256:… WEB_IMAGE=ghcr.io/you/shop-web@sha256:… \
   docker compose -f compose.yaml -f compose.prod.yaml up -d --wait</pre><pre class="out">✔ Container shop-api-1  Healthy
-✔ Container shop-web-1  Healthy</pre></div></div><div class="st"><span class="n">08</span><div><p><b>8. 备份与恢复演练</b>。备份数据库，删除卷，恢复，确认数据还在。</p><pre class="cmd"># 在 Bash 中执行，管道任一步失败均返回失败
-set -o pipefail
-docker compose exec -T db pg_dump -U postgres shop | gzip &gt; backup.sql.gz || { echo "备份失败，停止恢复演练" &gt;&amp;2; exit 1; }
-# 在测试环境：
-docker compose down -v &amp;&amp; docker compose up -d --wait db
-gunzip -c backup.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres shop &gt;/dev/null
-docker compose exec db psql -U postgres shop -tc &quot;select count(*) from orders&quot;</pre><pre class="out">  42</pre></div></div><div class="st"><span class="n">09</span><div><p>回滚演练。在测试环境部署健康检查失败的版本，再换回上一个 digest。镜像回滚不回滚数据库或卷：迁移必须与旧应用兼容，破坏性迁移需另行制定数据恢复方案。验证健康状态、订单读写和恢复前后数据行数。</p><pre class="cmd">API_IMAGE=…@sha256:&lt;坏版本&gt; docker compose … up -d --wait; echo exit=$?
+✔ Container shop-web-1  Healthy</pre></div></div><div class="st"><span class="n">08</span><div><p><b>8. 备份与恢复演练</b>。备份数据库，删除卷，恢复，确认数据还在。</p><pre class="cmd"># 在测试环境执行。只有备份成功才删卷恢复；用子 shell 开启 pipefail，不影响当前终端
+if (set -o pipefail; docker compose exec -T db pg_dump -U postgres shop | gzip &gt; backup.sql.gz); then
+  docker compose down -v &amp;&amp; docker compose up -d --wait db
+  gunzip -c backup.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres shop &gt;/dev/null
+  docker compose exec db psql -U postgres shop -tc &quot;select count(*) from orders&quot;
+else
+  echo &quot;备份失败，已停止恢复演练，卷没有删除&quot; &gt;&amp;2
+fi</pre><pre class="out">  42</pre></div></div><div class="st"><span class="n">09</span><div><p><b>9. 回滚演练</b>。在测试环境部署健康检查失败的版本，再换回上一个 digest。镜像回滚不回滚数据库或卷：迁移必须与旧应用兼容，破坏性迁移需另行制定数据恢复方案。验证健康状态、订单读写和恢复前后数据行数。</p><pre class="cmd">API_IMAGE=…@sha256:&lt;坏版本&gt; docker compose … up -d --wait; echo exit=$?
 API_IMAGE=…@sha256:&lt;上一版本&gt; docker compose … up -d --wait; echo exit=$?</pre><pre class="out">container shop-api-1 is unhealthy
 exit=1
 exit=0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一份运维手册</h3><p>在仓库里加 <code>RUNBOOK.md</code>，覆盖：部署、回滚、备份和恢复、查看日志、三种常见故障的排查步骤。请另一个人（或未来的你）只照着手册，在一台新服务器上把应用跑起来并完成一次恢复。</p><details><summary>查看参考答案</summary><div><p>参考结构：</p><pre class="cmd"># Shop 运维手册
