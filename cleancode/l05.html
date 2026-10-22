@@ -1,0 +1,103 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 5 课 · 注释：何时该写，何时该删</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 5 课</span><span class="sp"></span><a href="l04.html">← 第 4 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 5 课</div><h1>注释：何时该写，何时该删</h1>
+<p>注释不能美化糟糕的代码。本课区分好注释与坏注释：法律信息、解释意图（为什么这样做）、警示后果、TODO、公共接口的文档字符串是有价值的；复述代码、日志式注释、误导性注释、注释掉的代码、位置标记、强制每个函数都写的注释则是噪音，并且会随着代码变化而过时。最后讨论“用代码代替注释”的手段，以及 Ousterhout 关于接口注释的不同观点。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条注释的一生</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：留下还是删掉？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">写好接口文档</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">从代码中找出可疑注释</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一条注释的一生</h2><div class="goal">注释和代码分开演化时会发生什么。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：留下还是删掉？</h2><div class="goal">选择一条注释，看判断。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>写好接口文档</h2><div class="goal">docstring 写给调用者看，回答“我怎么用它”，而不是“它怎么实现”。</div></div></div>
+<pre class="cmd" style="overflow-x:auto;white-space:pre">def reserve(sku: str, quantity: int, *, hold_minutes: int = 15) -> Reservation:
+    """为购物车预留库存。
+
+    预留在 hold_minutes 分钟后自动释放，除非在此之前调用 confirm()。
+    同一个 sku 的多次预留会累加，不会覆盖。
+
+    Raises:
+        OutOfStock: 可用库存少于 quantity。此时不会创建部分预留。
+        ValueError: quantity 不是正数。
+    """</pre>
+<table class="tbl"><tr><th>应该写</th><th>不应该写</th></tr>
+<tr><td>行为的契约：前提条件、返回值、异常、副作用</td><td>实现步骤（“首先查询数据库，然后……”）</td></tr>
+<tr><td>单位、取值范围（“毫秒”“0–1 之间”）</td><td>参数类型（类型注解已经写了）</td></tr>
+<tr><td>不显然的行为（“累加，不覆盖”“不会部分预留”）</td><td>复述函数名（“预留库存的函数”）</td></tr></table>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>从代码中找出可疑注释</h2><div class="goal">几条命令帮你在清理时定位注释噪音。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">清理一个注释过多的模块：删除噪音，用名字代替注释，保留解释“为什么”的部分。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>之前。</p><pre class="cmd">cat &gt; shipping.py &lt;&lt;&#x27;EOF&#x27;
+# 运费模块
+# 作者：张三
+# 2023-01-05 创建
+# 2023-06-11 李四修改
+
+# 计算运费
+def calc(w, r, vip):
+    # 如果是 vip
+    if vip:
+        # vip 免运费
+        return 0
+    # 基础运费
+    c = 8
+    # 超过 1 公斤，每公斤加 2 元
+    if w &gt; 1:
+        c += (w - 1) * 2
+    # 偏远地区
+    if r in (&quot;XZ&quot;, &quot;XJ&quot;):
+        # 偏远地区翻倍。物流合同第 4.2 条规定
+        c *= 2
+    # c = c * 1.06
+    return c
+EOF
+python3 -c &quot;from shipping import calc; print(calc(3, &#x27;BJ&#x27;, False), calc(3, &#x27;XZ&#x27;, False), calc(3, &#x27;XJ&#x27;, True))&quot;</pre><pre class="out">12 24 0</pre></div></div><div class="st"><span class="n">02</span><div><p>之后：名字代替注释，只保留解释业务原因的那一条。</p><pre class="cmd">cat &gt; shipping.py &lt;&lt;&#x27;EOF&#x27;
+BASE_FEE = 8
+INCLUDED_KG = 1
+FEE_PER_EXTRA_KG = 2
+# 物流合同第 4.2 条：西藏、新疆的运费为标准运费的两倍。
+REMOTE_REGIONS = {&quot;XZ&quot;, &quot;XJ&quot;}
+REMOTE_MULTIPLIER = 2
+
+def shipping_fee(weight_kg, region, is_vip):
+    &quot;&quot;&quot;返回一个包裹的运费（元）。VIP 免运费。&quot;&quot;&quot;
+    if is_vip:
+        return 0
+    fee = BASE_FEE + max(0, weight_kg - INCLUDED_KG) * FEE_PER_EXTRA_KG
+    if region in REMOTE_REGIONS:
+        fee *= REMOTE_MULTIPLIER
+    return fee
+EOF
+python3 -c &quot;from shipping import shipping_fee as f; print(f(3, &#x27;BJ&#x27;, False), f(3, &#x27;XZ&#x27;, False), f(3, &#x27;XJ&#x27;, True))&quot;</pre><pre class="out">12 24 0</pre></div></div><div class="st"><span class="n">03</span><div><p>数一数：注释行从 15 行减少到 2 行，信息却没有丢失。</p><pre class="cmd">grep -c &quot;#&quot; shipping.py; python3 -c &quot;import shipping; help(shipping.shipping_fee)&quot; | sed -n 3,4p</pre><pre class="out">1
+shipping_fee(weight_kg, region, is_vip)
+    返回一个包裹的运费（元）。VIP 免运费。</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一条好注释</h3><p>下面的代码看起来像一个 bug，但其实是故意的：<pre class="cmd">def retry_delay(attempt):
+    return min(2 ** attempt, 60) + random.uniform(0, 1)</pre>同事想删掉 <code>random.uniform(0, 1)</code>，因为“它让测试不稳定”。写一条注释防止这种误改，并给出让测试稳定的办法。</p><details><summary>查看参考答案</summary><div><pre class="cmd">def retry_delay(attempt, *, jitter=random.uniform):
+    # 加入 0–1 秒的随机抖动：避免大量客户端在同一次故障后
+    # 以完全相同的节奏重试，造成周期性的流量尖峰（惊群效应）。
+    return min(2 ** attempt, 60) + jitter(0, 1)</pre><p>注释解释了<b>为什么</b>（不是“加一个随机数”这种复述），并说出了删掉它的后果。测试时通过参数注入一个确定的函数：<code>retry_delay(3, jitter=lambda a, b: 0) == 8</code>。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>注释会过时，代码不会说谎</b>：代码被修改时，注释常常没有同步更新。一条错误的注释比没有注释更糟。</li><li><b>先尝试用代码表达</b>：<code># 检查员工是否有资格享受全部福利</code> + 复杂条件 → <code>if employee.is_eligible_for_full_benefits():</code>。解释变量和提取函数能代替大部分“这段在做什么”的注释。</li><li><b>好注释解释“为什么”</b>：业务原因、选择这个算法的理由、被否决的显而易见方案、外部系统的怪癖（“支付网关在周日返回 503，需重试”）、性能权衡、正则表达式的意图。</li><li><b>警示与 TODO</b>：说明后果（“这个测试会运行 10 分钟”“该函数不是线程安全的”）；TODO 要具体、可追踪，最好链接到问题编号。</li><li><b>坏注释</b>：复述代码（<code>i += 1  # i 加 1</code>）、日志式修改记录（用 git）、注释掉的代码（删掉，git 里有）、署名、<code>#####</code> 位置标记、为了规范而写的空洞 docstring。</li><li><b>接口文档</b>：公共函数、类和模块的 docstring 描述<b>做什么、参数含义、返回值、异常和前提</b>，不描述怎么做。Ousterhout 认为接口注释是设计的一部分——在这点上它比书中的立场更积极，本课程赞同。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 06</div><a class="big" href="l06.html">格式：垂直与水平的排版 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l05.js"></script>
+</body></html>

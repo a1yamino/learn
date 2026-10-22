@@ -1,0 +1,146 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 3 课 · 函数：短小、只做一件事、一个抽象层级</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 3 课</span><span class="sp"></span><a href="l02.html">← 第 2 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 3 课</div><h1>函数：短小、只做一件事、一个抽象层级</h1>
+<p>函数是程序的第一层组织单位。本课讲书中关于函数的核心主张：短小；只做一件事（以及如何判断“一件事”）；每个函数只处在一个抽象层级，代码能自顶向下像报纸一样阅读（下降规则）；switch / if-elif 链的处理；描述性的名字。然后把它和 Ousterhout 的“深模块”观点放在一起比较：拆分的目的是降低理解成本，过度拆分同样会增加成本。练习把一个 40 行的混合函数拆成清晰的层级。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个函数，三个抽象层级</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这个函数做了几件事？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">两种观点并排</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">测量函数长度</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个函数，三个抽象层级</h2><div class="goal">把混在一起的层级拆开，读者每次只需要关注一个层级。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这个函数做了几件事？</h2><div class="goal">选择一个函数，看分析。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>两种观点并排</h2><div class="goal">把书中的主张和“深模块”放在一起看，得到一个可操作的标准。</div></div></div>
+<table class="tbl"><tr><th>问题</th><th>《代码整洁之道》</th><th>《软件设计的哲学》</th><th>本课程建议</th></tr>
+<tr><td>函数多长？</td><td>越短越好，几行</td><td>长度不是问题，接口复杂度才是</td><td>一屏之内，意图一眼可见</td></tr>
+<tr><td>何时拆分？</td><td>能提取出新名字就拆</td><td>能隐藏复杂度、简化接口才拆</td><td>按<b>概念</b>拆：新函数有可复用或可独立理解的意义</td></tr>
+<tr><td>拆分的代价</td><td>很少讨论</td><td>接口数量增加、阅读跳转、“共享状态”变隐式</td><td>如果读者必须同时看 5 个小函数才能理解一件事，就合回去</td></tr>
+<tr><td>注释</td><td>尽量用名字代替</td><td>接口注释必不可少</td><td>见第 5 课</td></tr></table>
+<p>书中一个常被引用的反例：为了让方法短，把局部变量提升为实例字段，让多个小方法通过字段传递数据。这会让数据流变得隐式，读者必须追踪“谁在什么时候写了这个字段”。<b>更好的做法</b>是让小函数通过参数和返回值传递数据（尽量写成纯函数）。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>测量函数长度</h2><div class="goal">用一个小工具找出代码库中最长的函数，作为清理的起点。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">把一个混合了三个层级的报表函数拆开。练习中的 <code>longest.py</code> 就是上面终端里用到的工具。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写一个找出最长函数的小工具（用标准库 <code>ast</code>）。</p><pre class="cmd">cat &gt; longest.py &lt;&lt;&#x27;EOF&#x27;
+import ast, pathlib, sys
+
+def function_lengths(path):
+    tree = ast.parse(pathlib.Path(path).read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield node.end_lineno - node.lineno + 1, f&quot;{path}:{node.name}&quot;
+
+if __name__ == &quot;__main__&quot;:
+    found = [f for p in sys.argv[1:] for f in function_lengths(p)]
+    for length, where in sorted(found, reverse=True):
+        print(f&quot;{length:4}  {where}&quot;)
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>一个混合层级的函数。</p><pre class="cmd">cat &gt; report.py &lt;&lt;&#x27;EOF&#x27;
+def monthly_report(rows):
+    totals = {}
+    for line in rows:
+        parts = line.strip().split(&quot;,&quot;)
+        if len(parts) != 3:
+            continue
+        region, status, amount = parts
+        if status != &quot;paid&quot;:
+            continue
+        totals[region] = totals.get(region, 0) + int(amount)
+    out = []
+    for region in sorted(totals):
+        cents = totals[region]
+        out.append(f&quot;{region:&lt;6}{cents // 100:&gt;8,}.{cents % 100:02d}&quot;)
+    out.append(&quot;-&quot; * 17)
+    grand = sum(totals.values())
+    out.append(f&quot;{&#x27;total&#x27;:&lt;6}{grand // 100:&gt;8,}.{grand % 100:02d}&quot;)
+    return &quot;\n&quot;.join(out)
+EOF
+cat &gt; test_report.py &lt;&lt;&#x27;EOF&#x27;
+import unittest
+from report import monthly_report
+ROWS = [&quot;north,paid,123456\n&quot;, &quot;south,paid,99\n&quot;, &quot;north,refunded,500\n&quot;, &quot;bad line\n&quot;, &quot;north,paid,1000\n&quot;]
+EXPECTED = &quot;north    1,244.56\nsouth        0.99\n-----------------\ntotal    1,245.55&quot;
+class T(unittest.TestCase):
+    def test_report(self):
+        self.assertEqual(monthly_report(ROWS), EXPECTED)
+unittest.main(argv=[&quot;x&quot;], exit=False, verbosity=0)
+EOF
+python3 test_report.py &amp;&amp; python3 longest.py report.py</pre><pre class="out">----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+  18  report.py:monthly_report</pre></div></div><div class="st"><span class="n">03</span><div><p>拆成三个层级：解析、汇总、渲染。顶层读起来像目录。</p><pre class="cmd">cat &gt; report.py &lt;&lt;&#x27;EOF&#x27;
+from typing import NamedTuple
+
+class Payment(NamedTuple):
+    region: str
+    status: str
+    cents: int
+
+def monthly_report(lines):
+    payments = parse_payments(lines)
+    totals = paid_totals_by_region(payments)
+    return render(totals)
+
+def parse_payments(lines):
+    for line in lines:
+        parts = line.strip().split(&quot;,&quot;)
+        if len(parts) == 3:
+            region, status, amount = parts
+            yield Payment(region, status, int(amount))
+
+def paid_totals_by_region(payments):
+    totals = {}
+    for p in payments:
+        if p.status == &quot;paid&quot;:
+            totals[p.region] = totals.get(p.region, 0) + p.cents
+    return totals
+
+def render(totals):
+    lines = [row(region, totals[region]) for region in sorted(totals)]
+    lines.append(&quot;-&quot; * 17)
+    lines.append(row(&quot;total&quot;, sum(totals.values())))
+    return &quot;\n&quot;.join(lines)
+
+def row(label, cents):
+    return f&quot;{label:&lt;6}{format_money(cents):&gt;11}&quot;
+
+def format_money(cents):
+    return f&quot;{cents // 100:,}.{cents % 100:02d}&quot;
+EOF
+python3 test_report.py &amp;&amp; python3 longest.py report.py</pre><pre class="out">----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+   6  report.py:parse_payments
+   6  report.py:paid_totals_by_region
+   5  report.py:render
+   4  report.py:monthly_report
+   2  report.py:row
+   2  report.py:format_money</pre></div></div><div class="st"><span class="n">04</span><div><p>看一下结果。</p><pre class="cmd">python3 -c &quot;from report import *; print(monthly_report([&#x27;east,paid,250000&#x27;, &#x27;west,paid,1&#x27;]))&quot;</pre><pre class="out">east     2,500.00
+west         0.01
+-----------------
+total    2,500.01</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>拆分，还是不拆？</h3><p>对下面每个提取方案判断是否值得，并说明理由：① 从 <code>render</code> 中提取 <code>format_money(cents)</code>；② 从 <code>paid_totals_by_region</code> 中提取 <code>is_paid(p)</code>，内容是 <code>return p.status == "paid"</code>；③ 把 <code>monthly_report</code> 的三行再合并回一个函数；④ 把 <code>parse_payments</code> 的局部变量改为实例字段，让它拆成三个无参数的方法。</p><details><summary>查看参考答案</summary><div><ol><li><b>值得</b>。“金额格式化”是独立的概念，在发票、邮件中也会用，且有边界情况（负数、千分位）值得单独测试。</li><li><b>可以，但不是必须</b>。如果“已支付”的判断在多处出现，或者未来会变复杂（部分退款），把它放到 <code>Payment.is_paid</code> 属性上最好——它属于数据本身，而不是一个游离的函数。</li><li><b>不值得</b>。三行的编排函数是这个模块最有价值的“目录”，合并会把三个层级重新混在一起。</li><li><b>不值得，而且有害</b>。用实例字段在方法之间传数据会让数据流隐式化、产生顺序依赖，也让函数无法单独测试。用参数和返回值传递。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>只做一件事</b>：判断方法——如果还能从函数中提取出一个名字不是简单复述原实现的新函数，它就在做不止一件事；或者，如果函数中的语句分属不同的抽象层级，它也在做不止一件事。</li><li><b>一个抽象层级</b>：<code>render_report()</code> 中同时出现 <code>build_sections()</code>（高层）与 <code>line.strip().split(",")</code>（低层）会让读者在层级之间来回跳。把低层细节下沉到命名良好的函数中。</li><li><b>下降规则</b>：调用者在上，被调用者紧随其下，读代码像读报纸：先标题，再段落，再细节。</li><li><b>短小</b>是结果而不是目标：书中主张很短（几行）；更稳妥的标准是“一屏之内、一眼能看懂意图”。拆分后每个函数应当有一个有意义的名字，否则拆分只是增加跳转。</li><li><b>深模块</b>（Ousterhout）：接口简单、内部隐藏大量复杂度的模块才有价值。很多只有一两行、仅被调用一次的“浅”函数，会让读者在十个文件间跳转才能拼出逻辑。两种观点的交集：<b>按概念拆分，不按行数拆分</b>。</li><li><b>条件分支链</b>：根据类型选择行为的 <code>if/elif</code> 链如果在多处重复出现，用多态或查表替代，只在一处（工厂）出现一次。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 04</div><a class="big" href="l04.html">函数参数、副作用与命令查询分离 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l03.js"></script>
+</body></html>

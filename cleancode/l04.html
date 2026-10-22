@@ -1,0 +1,128 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 4 课 · 函数参数、副作用与命令查询分离</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 4 课</span><span class="sp"></span><a href="l03.html">← 第 3 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 4 课</div><h1>函数参数、副作用与命令查询分离</h1>
+<p>参数是函数接口的主要部分。本课讲参数数量（零元、一元、二元、三元及以上）与理解成本，标识参数（布尔参数）为什么是一种坏味道，参数对象，输出参数；然后讲副作用：名字没有说出的隐藏行为，时间耦合；命令查询分离（一个函数要么改变状态，要么返回信息）；以及 Python 特有的可变默认参数陷阱、仅限关键字参数如何让调用处自解释。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个函数，四个参数</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：找出问题</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">参数数量与测试成本</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">可变默认参数</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个函数，四个参数</h2><div class="goal">逐步让参数说明自己。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：找出问题</h2><div class="goal">每个按钮是一个函数签名或调用。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>参数数量与测试成本</h2><div class="goal">每增加一个参数，需要考虑的组合就成倍增加。</div></div></div>
+<table class="tbl"><tr><th>参数个数</th><th>例子</th><th>说明</th></tr>
+<tr><td>0</td><td><code>report.render()</code></td><td>最容易理解与测试</td></tr>
+<tr><td>1</td><td><code>is_valid(email)</code>、<code>parse(text)</code>、<code>on_click(event)</code></td><td>常见的三种形态：问一个问题、转换一个值、处理一个事件</td></tr>
+<tr><td>2</td><td><code>Point(x, y)</code>、<code>assert_equal(expected, actual)</code></td><td>有自然顺序时没问题；没有自然顺序时，调用处容易写反</td></tr>
+<tr><td>3</td><td><code>transfer(source, target, amount)</code></td><td>需要有充分理由；考虑参数对象或关键字参数</td></tr>
+<tr><td>更多</td><td><code>create(a, b, c, d, e, f)</code></td><td>几乎总是缺少一个概念（对象）</td></tr></table>
+<p><b>Python 的工具</b>：关键字参数让调用处自解释；<code>*</code> 之后的参数只能用关键字传递；<code>@dataclass</code> 可以快速定义参数对象。不要为了“减少参数”而改用 <code>**kwargs</code> 吞下一切——那只是把参数藏了起来。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>可变默认参数</h2><div class="goal">在 Python 解释器中观察它。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">把一个有标识参数、隐藏副作用和输出参数的函数改为清晰的接口。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>之前：一个参数过多、做了两件事的函数。</p><pre class="cmd">cat &gt; invoice.py &lt;&lt;&#x27;EOF&#x27;
+sent = []
+
+def make_invoice(customer, items, discount, send, lines=[]):
+    total = 0
+    for name, price in items:
+        lines.append(f&quot;{name}: {price}&quot;)
+        total += price
+    total = total * (1 - discount)
+    lines.append(f&quot;total: {total:.2f}&quot;)
+    if send:
+        sent.append(customer)
+    return lines
+EOF
+python3 -c &quot;
+import invoice
+print(invoice.make_invoice(&#x27;ann&#x27;, [(&#x27;pen&#x27;, 10)], 0, False))
+print(invoice.make_invoice(&#x27;bob&#x27;, [(&#x27;ink&#x27;, 20)], 0.1, True))
+print(invoice.sent)&quot;</pre><pre class="out">[&#x27;pen: 10&#x27;, &#x27;total: 10.00&#x27;]
+[&#x27;pen: 10&#x27;, &#x27;total: 10.00&#x27;, &#x27;ink: 20&#x27;, &#x27;total: 18.00&#x27;]
+[&#x27;bob&#x27;]</pre></div></div><div class="st"><span class="n">02</span><div><p>可变默认参数让 bob 的发票里出现了 ann 的行。重构：参数对象、拆掉标识参数、返回新值。</p><pre class="cmd">cat &gt; invoice.py &lt;&lt;&#x27;EOF&#x27;
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class LineItem:
+    name: str
+    price: float
+
+@dataclass(frozen=True)
+class Invoice:
+    customer: str
+    items: tuple
+    discount: float = 0.0
+
+    def total(self):
+        return sum(i.price for i in self.items) * (1 - self.discount)
+
+    def lines(self):
+        return [f&quot;{i.name}: {i.price}&quot; for i in self.items] + [f&quot;total: {self.total():.2f}&quot;]
+
+class Mailer:
+    def __init__(self):
+        self.sent = []
+
+    def send(self, invoice):
+        self.sent.append(invoice.customer)
+EOF
+python3 -c &quot;
+from invoice import *
+ann = Invoice(&#x27;ann&#x27;, (LineItem(&#x27;pen&#x27;, 10),))
+bob = Invoice(&#x27;bob&#x27;, (LineItem(&#x27;ink&#x27;, 20),), discount=0.1)
+print(ann.lines()); print(bob.lines())
+mailer = Mailer(); mailer.send(bob); print(mailer.sent)&quot;</pre><pre class="out">[&#x27;pen: 10&#x27;, &#x27;total: 10.00&#x27;]
+[&#x27;ink: 20&#x27;, &#x27;total: 18.00&#x27;]
+[&#x27;bob&#x27;]</pre></div></div><div class="st"><span class="n">03</span><div><p>发送是独立的命令，生成是独立的查询；<code>Invoice</code> 不可变，可以放心地传递。</p><pre class="cmd">python3 -c &quot;
+from invoice import *
+i = Invoice(&#x27;c&#x27;, (LineItem(&#x27;a&#x27;, 1),))
+try:
+    i.discount = 0.5
+except Exception as e:
+    print(type(e).__name__)&quot;</pre><pre class="out">FrozenInstanceError</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计一个接口</h3><p>你要写一个搜索订单的函数。需求：可以按客户、状态、日期范围（开始和结束）过滤，可以选择排序字段和方向，可以分页（页码、每页条数），可以选择是否包含已删除订单。写出函数签名，并说明你的选择。</p><details><summary>查看参考答案</summary><div><pre class="cmd">@dataclass(frozen=True)
+class DateRange:
+    start: date
+    end: date
+
+@dataclass(frozen=True)
+class Page:
+    number: int = 1
+    size: int = 50
+
+def search_orders(
+    *,
+    customer_id: str | None = None,
+    status: OrderStatus | None = None,
+    placed_within: DateRange | None = None,
+    sort_by: str = "placed_at",
+    descending: bool = True,
+    page: Page = Page(),
+    include_deleted: bool = False,
+) -> list[Order]: ...</pre><ul><li>全部为<b>仅限关键字参数</b>：9 个维度没有自然顺序，调用处必须写名字，如 <code>search_orders(status=PAID, page=Page(2))</code>。</li><li><code>DateRange</code>、<code>Page</code> 是总是成对出现的概念，组成参数对象，也可以在别处复用并单独校验（start ≤ end）。</li><li><code>include_deleted</code> 是标识参数，但它<b>不改变函数做的事</b>（仍然是“搜索”），只是过滤条件之一，以关键字形式保留是合理的。</li><li>参数很多时，也可以定义一个 <code>OrderQuery</code> 对象，让函数只接受一个参数：<code>search_orders(query)</code>。</li></ul></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>参数越少越好</b>：每个参数都是读者必须理解、测试必须覆盖的维度。三个以上的参数通常说明一些参数应该组成一个对象（<code>Point(x, y)</code>、<code>DateRange(start, end)</code>）。</li><li><b>标识参数是坏味道</b>：<code>render(page, True)</code> 中的 <code>True</code> 是什么？它说明函数做了两件事。拆成 <code>render_for_print(page)</code> 与 <code>render_for_screen(page)</code>，或至少要求关键字参数。</li><li><b>仅限关键字参数</b>（Python 的 <code>*</code>）让调用处必须写出名字：<code>transfer(a, b, amount=100, *, notify=False)</code> → 调用时 <code>notify=True</code> 一目了然。</li><li><b>避免隐藏的副作用</b>：<code>check_password()</code> 内部顺便初始化会话，就制造了时间耦合——只有在“可以初始化会话”的时候才能调用它。副作用要么移出去，要么写进名字。</li><li><b>命令查询分离（CQS）</b>：<code>set(attr, value)</code> 既修改又返回成功与否，导致 <code>if set("name", "x")</code> 这种含混的代码。要么做事（命令，返回 None），要么回答问题（查询，无副作用）。例外：<code>pop()</code> 这类约定俗成的操作。</li><li><b>不修改传入的参数</b>：输出参数让读者困惑“它会被改吗”。返回新值；Python 中尤其要警惕可变默认参数 <code>def f(items=[])</code>，它在多次调用之间共享。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 05</div><a class="big" href="l05.html">注释：何时该写，何时该删 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l04.js"></script>
+</body></html>
