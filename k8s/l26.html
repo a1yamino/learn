@@ -26,7 +26,7 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 kind 集群中体验 PDB 与 drain，并给 etcd 做一次快照和恢复验证。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 kind 集群中体验 PDB 与 drain，并给 etcd 做一次快照并检查完整性。恢复演练需另建隔离集群，不能仅凭 snapshot status 就认定恢复成功。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>3 副本应用加 PDB：任何时候至少 2 个可用。</p><pre class="cmd">kubectl create deploy web --image=nginx:alpine --replicas=3
 kubectl create pdb web --selector=app=web --min-available=2
 kubectl get pdb web</pre><pre class="out">NAME   MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
@@ -44,7 +44,7 @@ web-6d4b9-k2p9x learn-worker2</pre></div></div><div class="st"><span class="n">0
 kubectl get nodes</pre><pre class="out">NAME                  STATUS   ROLES           AGE   VERSION
 learn-control-plane   Ready    control-plane   2d    v1.31.0
 learn-worker          Ready    &lt;none&gt;          2d    v1.31.0
-learn-worker2         Ready    &lt;none&gt;          2d    v1.31.0</pre></div></div><div class="st"><span class="n">04</span><div><p>在控制平面节点上给 etcd 做快照。</p><pre class="cmd">docker exec learn-control-plane sh -c &quot;ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd-snap.db&quot; 2&gt;&amp;1 | tail -1</pre><pre class="out">Snapshot saved at /var/lib/etcd-snap.db</pre></div></div><div class="st"><span class="n">05</span><div><p>检查快照。</p><pre class="cmd">docker exec learn-control-plane etcdutl snapshot status /var/lib/etcd-snap.db -w table</pre><pre class="out">+----------+----------+------------+------------+
+learn-worker2         Ready    &lt;none&gt;          2d    v1.31.0</pre></div></div><div class="st"><span class="n">04</span><div><p>在控制平面节点上给 etcd 做快照。</p><pre class="cmd">kubectl -n kube-system exec etcd-learn-control-plane -- etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd/snapshot.db 2&gt;&amp;1 | tail -1</pre><pre class="out">Snapshot saved at /var/lib/etcd/snapshot.db</pre></div></div><div class="st"><span class="n">05</span><div><p>检查快照。</p><pre class="cmd">kubectl -n kube-system exec etcd-learn-control-plane -- etcdutl snapshot status /var/lib/etcd/snapshot.db -w table</pre><pre class="out">+----------+----------+------------+------------+
 |   HASH   | REVISION | TOTAL KEYS | TOTAL SIZE |
 +----------+----------+------------+------------+
 | 5c2b8e91 |   184213 |       1207 |     6.1 MB |

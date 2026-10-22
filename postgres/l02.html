@@ -83,9 +83,11 @@ SELECT created_at FROM users;</pre><pre class="out">          created_at
   CHECK (meta ? 'channel') NOT VALID;
 -- 新写入立即受检查；旧数据先修复
 UPDATE orders SET meta = meta || '{"channel":"unknown"}' WHERE NOT meta ? 'channel';
-ALTER TABLE orders VALIDATE CONSTRAINT orders_meta_channel;</pre><pre class="out">ALTER TABLE
+ALTER TABLE orders VALIDATE CONSTRAINT orders_meta_channel;
+-- 本挑战验证完毕后，恢复后续课程使用的表结构
+ALTER TABLE orders DROP CONSTRAINT orders_meta_channel;</pre><pre class="out">ALTER TABLE
 UPDATE 1
-ALTER TABLE</pre><p>直接 ADD CONSTRAINT 会在持有 ACCESS EXCLUSIVE 锁的情况下扫描全表验证，大表上会长时间阻塞所有读写；有一行不满足就整个失败。<code>NOT VALID</code> 只需短暂加锁，从此对新写入和更新生效；<code>VALIDATE CONSTRAINT</code> 只持有较弱的 SHARE UPDATE EXCLUSIVE 锁，扫描期间读写都可以继续。旧数据不满足时先分批修复（大表的 UPDATE 也要分批，见第 25 课）。外键约束同样支持这个两步做法。</p></div></details></div>
+ALTER TABLE</pre><p>直接 ADD CONSTRAINT 会在持有 ACCESS EXCLUSIVE 锁的情况下扫描全表验证，大表上会长时间阻塞所有读写；有一行不满足就整个失败。<code>NOT VALID</code> 只需短暂加锁，从此对新写入和更新生效；<code>VALIDATE CONSTRAINT</code> 只持有较弱的 SHARE UPDATE EXCLUSIVE 锁，扫描期间读写都可以继续。旧数据不满足时先分批修复（大表的 UPDATE 也要分批，见第 25 课）。外键约束同样支持这个两步做法。最后一条 DROP 仅用于恢复课程练习环境：后续章节仍允许 meta 省略 channel；实际业务若需要此约束，应保留它并更新所有写入方。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>

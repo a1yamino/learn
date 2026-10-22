@@ -15,4 +15,4 @@ P
 bash /workspace/cleancode-course/sync.sh
 git add -A
 git status --porcelain | grep -E 'manifest.json|\.publish\.json' && exit 1 || true
-git -c user.name=a1yamino -c user.email=a1yamino@users.noreply.github.com commit -qm "Clean Code course complete" && git push -q && git rev-parse --short HEAD
+git -c user.name=a1yamino -c user.email=a1yamino@users.noreply.github.com commit -qm "Clean Code course complete" && (git pull -q --rebase --autostash || (git rebase --abort; false)) && git push -q && git rev-parse --short HEAD

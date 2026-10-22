@@ -63,7 +63,9 @@ COMMIT
  B    |     110</pre></div></div><div class="st"><span class="n">07</span><div><p>窗口 1 开着事务不动，窗口 2 查看。</p><pre class="cmd">-- 窗口 1
 BEGIN; SELECT * FROM accounts;
 -- 窗口 2
-SELECT pid, state, now() - xact_start AS age FROM pg_stat_activity WHERE state LIKE &#x27;idle in%&#x27;;</pre><pre class="out">  pid  |        state        |       age
+SELECT pid, state, now() - xact_start AS age FROM pg_stat_activity WHERE state LIKE &#x27;idle in%&#x27;;
+-- 观察完后回到窗口 1，结束本练习事务
+ROLLBACK;</pre><pre class="out">  pid  |        state        |       age
 -------+---------------------+-----------------
   1873 | idle in transaction | 00:00:41.20391</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一个安全的转账</h3><p>写一段转账脚本：从 A 转 30 给 B。要求：任何一步失败都整体回滚；余额不足时不能出现负数；并发执行两次也不会多扣。说明每一点由什么保证。</p><details><summary>查看参考答案</summary><div><pre class="cmd">BEGIN;
 UPDATE accounts SET balance = balance - 30 WHERE name = 'A' AND balance &gt;= 30;

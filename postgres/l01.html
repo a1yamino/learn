@@ -61,11 +61,12 @@ SELECT current_database(), current_user, pg_backend_pid();</pre><pre class="out"
 \c shop
 \conninfo</pre><pre class="out">CREATE DATABASE
 You are now connected to database &quot;shop&quot; as user &quot;postgres&quot;.
-You are connected to database &quot;shop&quot; as user &quot;postgres&quot; via socket in &quot;/var/run/postgresql&quot; at port &quot;5432&quot;.</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>连接用完了会怎样</h3><p>在 psql 中执行 <code>ALTER SYSTEM SET max_connections = 5;</code> 并重启容器，然后用一个 shell 循环在后台打开 6 个连接（每个执行 <code>SELECT pg_sleep(60)</code>）。哪些连接会失败、看到什么错误？为什么超级用户此时仍然可以连接？最后恢复设置。</p><details><summary>查看参考答案</summary><div><pre class="cmd">docker exec pg psql -U postgres -c "ALTER SYSTEM SET max_connections = 5"
+You are connected to database &quot;shop&quot; as user &quot;postgres&quot; via socket in &quot;/var/run/postgresql&quot; at port &quot;5432&quot;.</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>连接用完了会怎样</h3><p>在 psql 中执行 <code>ALTER SYSTEM SET max_connections = 5;</code> 并重启容器，然后用一个 shell 循环在后台打开 6 个连接（每个执行 <code>SELECT pg_sleep(60)</code>）。哪些连接会失败、看到什么错误？为什么超级用户此时仍然可以连接？最后恢复设置。</p><details><summary>查看参考答案</summary><div><pre class="cmd">docker exec pg psql -U postgres -c "CREATE ROLE app LOGIN PASSWORD 'pg'; GRANT CONNECT ON DATABASE shop TO app;"
+docker exec pg psql -U postgres -c "ALTER SYSTEM SET max_connections = 5"
 docker restart pg
 for i in 1 2 3 4 5 6; do
   docker exec -e PGPASSWORD=pg pg psql -h 127.0.0.1 -U app -d shop -c "SELECT pg_sleep(60)" &amp;
-done</pre><pre class="out">psql: error: connection to server at "127.0.0.1", port 5432 failed: FATAL:  remaining connection slots are reserved for roles with the SUPERUSER attribute</pre><p>（先用 <code>CREATE ROLE app LOGIN PASSWORD 'pg'; GRANT CONNECT ON DATABASE shop TO app;</code> 创建一个普通用户。）<code>superuser_reserved_connections</code> 默认 3，max_connections=5 时普通用户只能用 2 个，所以第 3 个起就被拒绝；超级用户还能用保留的连接登录进来排查和终止会话（<code>pg_terminate_backend</code>）。这个参数需要重启才能生效，因为共享内存按最大连接数分配。恢复：<code>ALTER SYSTEM RESET max_connections;</code> 后再次重启。生产中连接耗尽的正确解决方式是连接池，而不是无限调大。</p></div></details></div>
+done</pre><pre class="out">psql: error: connection to server at "127.0.0.1", port 5432 failed: FATAL:  remaining connection slots are reserved for roles with the SUPERUSER attribute</pre><p>上面的第一条命令先创建本练习使用的普通用户。<code>superuser_reserved_connections</code> 默认 3，max_connections=5 时普通用户只能用 2 个，所以第 3 个起就被拒绝；超级用户还能用保留的连接登录进来排查和终止会话（<code>pg_terminate_backend</code>）。这个参数需要重启才能生效，因为共享内存按最大连接数分配。恢复：<code>ALTER SYSTEM RESET max_connections;</code> 后再次重启。生产中连接耗尽的正确解决方式是连接池，而不是无限调大。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>

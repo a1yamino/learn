@@ -73,11 +73,11 @@ docker exec rd sh -c &#x27;du -b /data/appendonlydir/*.incr.aof&#x27;
 docker exec rd redis-cli BGREWRITEAOF</pre><pre class="out">OK
 … 30000 左右 …
 Background append only file rewriting started</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>给 kv.py 加上 SSTable</h3><p>把练习 1 的 kv.py 改造成一个小 LSM：① 写入先进内存中的 dict（内存表），超过 100 个键时按键排序写成 <code>seg-N.sst</code>；② 为每个段在内存中保存稀疏索引（每 10 个键记一个偏移量）；③ 读取时先查内存表，再从新到旧查各个段；④ 实现 compact()，把所有段合并成一个。写出关键代码，并说明崩溃时内存表中的数据如何不丢。</p><details><summary>查看参考答案</summary><div><pre style="overflow-x:auto">import bisect, glob, os
-mem, segs = {}, []          # segs: [(文件名, [(键, 偏移量), ...]), ...]，旧的在前
+mem, segs, next_seg = {}, [], 0   # segs: [(文件名, [(键, 偏移量), ...]), ...]，旧的在前
 
 def flush():
-    global mem
-    name = f"seg-{len(segs)}.sst"; sparse = []
+    global mem, next_seg
+    name = f"seg-{next_seg}.sst"; next_seg += 1; sparse = []
     with open(name, "wb") as f:
         for i, k in enumerate(sorted(mem)):
             if i % 10 == 0: sparse.append((k, f.tell()))
@@ -97,7 +97,7 @@ def get(k):
         if i &lt; 0: continue
         with open(name, "rb") as f:
             f.seek(sparse[i][1])
-            for line in f:                      # 最多扫描 10 行
+            for line in f:                      # 扫描候选块；遇到下一个更大的键即停止
                 kk, v = line.decode().rstrip("\n").split(",", 1)
                 if kk == k: return v
                 if kk &gt; k: break
@@ -105,12 +105,16 @@ def get(k):
 
 def compact():
     global segs
+    if mem: flush()                           # 先持久化待写数据，不能在合并时丢掉它的 WAL
+    if not segs: return
+    old_segs = segs.copy()
     merged = {}
     for name, _ in segs:                        # 旧 → 新，新值覆盖旧值
         for line in open(name):
             k, v = line.rstrip("\n").split(",", 1); merged[k] = v
-    for name, _ in segs: os.remove(name)
-    segs = []; saved = mem.copy(); mem.clear(); mem.update(merged); flush(); mem.update(saved)</pre><p>崩溃恢复：每次写入先追加到 <code>wal.log</code> 再改内存表；启动时读取 WAL 重放到内存表。刷盘成功后才清空 WAL。（真实实现会在合并时同时处理墓碑，并用后台线程合并、原子地替换段列表。）</p></div></details></div>
+    mem.update(merged); flush()               # 新段写完后才删除旧段
+    segs = segs[-1:]
+    for name, _ in old_segs: os.remove(name)</pre><p>这段关键代码演示单进程的查找、刷盘和合并：合并先刷出尚未刷盘的写入，新段写完后才删除旧段，段编号持续递增，避免覆盖仍有效的段。它尚未实现可直接运行的崩溃恢复。真实恢复需要先读取持久化的段清单、重建稀疏索引和下一段编号，再重放 WAL；确认持久性还需要 fsync、原子切换并持久化段清单，最后才能安全截断 WAL、回收旧段。仅关闭 Python 文件不等于已抗断电持久化。墓碑也只能在确认不存在更旧值和仍需该版本的快照后清理。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
@@ -118,7 +122,7 @@ def compact():
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>只追加的日志</b>：写入就是在文件末尾追加一行，顺序写非常快；读取要从头扫描，O(n)。<b>索引</b>是从主数据派生出来的额外结构，用来加速读取——但每个索引都会拖慢写入，所以数据库不会默认索引一切。</li><li><b>哈希索引</b>：在内存里保存“键 → 文件偏移量”的哈希表，读取一次寻址即可（Bitcask 的做法）。前提是所有键都放得进内存；不支持范围查询。为了不让日志无限增长，把日志切成<b>段</b>，对旧段做<b>压缩</b>（只保留每个键的最新值）并合并；删除用一条特殊的<b>墓碑</b>记录表示。崩溃恢复要重建哈希表（可以保存快照加速）。</li><li><b>SSTable</b>（排序字符串表）：段内的键按顺序排列。好处：合并多个段就像归并排序，简单高效；不需要把所有键放进内存，稀疏索引（每隔几 KB 记一个键）就够了，块还可以压缩；天然支持范围查询。</li><li><b>LSM 树</b>的写路径：写入先进<b>内存表</b>（memtable，有序结构如跳表），同时追加到预写日志（WAL）以防崩溃；内存表达到阈值后作为新的 SSTable 写到磁盘。读路径：依次查内存表、最新的段、较旧的段……为了避免为不存在的键读遍所有段，每个 SSTable 带一个<b>布隆过滤器</b>，能确定地回答“不在这里”。后台不断合并段，丢弃被覆盖的值和墓碑。RocksDB、Cassandra、ScyllaDB、HBase 都是 LSM 结构。</li><li><b>合并策略</b>：<b>大小分级</b>（size-tiered）把大小相近的段合并成更大的段，写放大小，但空间占用和读放大较大；<b>分层</b>（leveled）把键范围切成小文件分到多层，每层大小递增，读和空间更省，写放大更大。写放大还会消耗 SSD 寿命。</li><li>同样的思想在你学过的系统里随处可见：Redis 的 AOF 只追加并定期重写（<a href="../redis/index.html">Redis 课程</a>），Kafka 的分区就是分段的追加日志，日志压缩只保留每个键的最新值（<a href="../kafka/l12.html">Kafka 第 12 课</a>）。</li></ol></section>
+<ol class="sum"><li><b>只追加的日志</b>：写入就是在文件末尾追加一行，顺序写非常快；读取要从头扫描，O(n)。<b>索引</b>是从主数据派生出来的额外结构，用来加速读取——但每个索引都会拖慢写入，所以数据库不会默认索引一切。</li><li><b>哈希索引</b>：在内存里保存“键 → 文件偏移量”的哈希表，读取一次寻址即可（Bitcask 的做法）。前提是所有键都放得进内存；不支持范围查询。为了不让日志无限增长，把日志切成<b>段</b>，对旧段做<b>压缩</b>（只保留每个键的最新值）并合并；删除用一条特殊的<b>墓碑</b>记录表示。崩溃恢复要重建哈希表（可以保存快照加速）。</li><li><b>SSTable</b>（排序字符串表）：段内的键按顺序排列。好处：合并多个段就像归并排序，简单高效；不需要把所有键放进内存，稀疏索引（每隔几 KB 记一个键）就够了，块还可以压缩；天然支持范围查询。</li><li><b>LSM 树</b>的写路径：写入先进<b>内存表</b>（memtable，有序结构如跳表），同时追加到预写日志（WAL）以防崩溃；内存表达到阈值后作为新的 SSTable 写到磁盘。读路径：依次查内存表、最新的段、较旧的段……为了避免为不存在的键读遍所有段，每个 SSTable 带一个<b>布隆过滤器</b>，能确定地回答“不在这里”。后台不断合并段，丢弃不再需要的旧值；墓碑只有在确认不会让更旧值复活、且没有快照仍需旧版本时才能清理。RocksDB、Cassandra、ScyllaDB、HBase 都是 LSM 结构。</li><li><b>合并策略</b>：<b>大小分级</b>（size-tiered）把大小相近的段合并成更大的段，写放大小，但空间占用和读放大较大；<b>分层</b>（leveled）把键范围切成小文件分到多层，每层大小递增，读和空间更省，写放大更大。写放大还会消耗 SSD 寿命。</li><li>同样的思想在你学过的系统里随处可见：Redis 的 AOF 只追加并定期重写（<a href="../redis/index.html">Redis 课程</a>），Kafka 的分区就是分段的追加日志，日志压缩只保留每个键的最新值（<a href="../kafka/l12.html">Kafka 第 12 课</a>）。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 07</div><a class="big" href="l07.html">B 树、二级索引与内存数据库 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>

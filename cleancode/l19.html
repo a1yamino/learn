@@ -1,0 +1,110 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 19 课 · 并发代码的整洁</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 19 课</span><span class="sp"></span><a href="l18.html">← 第 18 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 19 课</div><h1>并发代码的整洁</h1>
+<p>并发代码的 bug 很难复现，所以设计上的整洁更为重要。本课讲：并发代码的单一职责（把并发管理与业务逻辑分开）；限制共享数据的作用域；使用数据副本与不可变数据；线程尽量独立；了解标准库提供的安全工具（队列、线程池、锁、asyncio）；三种经典模型（生产者—消费者、读者—写者、哲学家就餐）及其问题；保持同步区域很小；正确地关闭；以及如何测试并发代码。示例使用 Python 的 threading、concurrent.futures 与 asyncio，并说明 GIL 不能替你保证正确性。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">丢失的更新</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这段并发代码安全吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">三种经典模型</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">让竞态现形</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>丢失的更新</h2><div class="goal">两个线程同时执行 counter += 1。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这段并发代码安全吗？</h2><div class="goal">选择一段代码。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>三种经典模型</h2><div class="goal">大多数并发问题都是它们的变体。</div></div></div>
+<table class="tbl"><tr><th>模型</th><th>问题</th><th>Python 中的做法</th></tr>
+<tr><td>生产者—消费者</td><td>速度不匹配；如何结束</td><td><code>queue.Queue(maxsize=N)</code>（背压）+ 哨兵值或 <code>q.shutdown()</code>（3.13+）</td></tr>
+<tr><td>读者—写者</td><td>读多写少时，既要并发读又要写一致</td><td>写时复制：构造新的不可变对象后整体替换引用（引用赋值在 CPython 中是原子的）</td></tr>
+<tr><td>哲学家就餐</td><td>多个资源，死锁与饥饿</td><td>固定的获取顺序；或用一个更粗粒度的锁；或带超时的 <code>acquire</code></td></tr></table>
+<p><b>线程、进程还是 asyncio？</b> I/O 密集且并发数大（成千上万个连接）→ asyncio；I/O 密集、使用阻塞库 → 线程池；CPU 密集 → 进程池（或使用自由线程构建的 Python 3.13+、或把计算交给 NumPy 等释放 GIL 的库）。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>让竞态现形</h2><div class="goal">反复运行，偶发的失败就会出现。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">观察丢失的更新，然后用两种方式修复：加锁，以及“不共享”。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>竞态：多运行几次，看看结果是否每次都等于 800000。（结果可能因 Python 版本和机器不同而不同。）</p><pre class="cmd">cat &gt; race.py &lt;&lt;&#x27;EOF&#x27;
+import sys, threading
+
+sys.setswitchinterval(1e-6)   # 让线程切换更频繁，更容易观察到竞态
+THREADS, N = 8, 100_000
+
+def plus_one(x):   # 读—改—写之间有一次函数调用，真实代码中常常如此
+    return x + 1
+
+count = 0
+def unsafe():
+    global count
+    for _ in range(N):
+        count = plus_one(count)
+
+lock = threading.Lock()
+safe_count = 0
+def safe():
+    global safe_count
+    for _ in range(N):
+        with lock:
+            safe_count = plus_one(safe_count)
+
+for target in (unsafe, safe):
+    ts = [threading.Thread(target=target) for _ in range(THREADS)]
+    for t in ts: t.start()
+    for t in ts: t.join()
+print(f&quot;unsafe={count} safe={safe_count} expected={THREADS * N}&quot;)
+EOF
+for i in 1 2 3; do python3 race.py; done</pre><pre class="out">unsafe=310349 safe=800000 expected=800000
+unsafe=313514 safe=800000 expected=800000
+unsafe=287960 safe=800000 expected=800000</pre></div></div><div class="st"><span class="n">02</span><div><p>更好的方式：不共享。每个任务返回自己的结果，线程池负责收集。</p><pre class="cmd">cat &gt; noshare.py &lt;&lt;&#x27;EOF&#x27;
+from concurrent.futures import ThreadPoolExecutor
+
+def count_words(text):          # 纯函数：可以单独测试
+    return len(text.split())
+
+docs = [&quot;a b c&quot;, &quot;d e&quot;, &quot;f g h i&quot;] * 1000
+with ThreadPoolExecutor(max_workers=8) as pool:
+    total = sum(pool.map(count_words, docs))
+print(total)
+EOF
+python3 noshare.py</pre><pre class="out">9000</pre></div></div><div class="st"><span class="n">03</span><div><p>生产者—消费者：有界队列 + 哨兵，正确关闭。</p><pre class="cmd">cat &gt; pc.py &lt;&lt;&#x27;EOF&#x27;
+import queue, threading
+
+DONE = object()
+q = queue.Queue(maxsize=10)
+results = []
+
+def producer():
+    for i in range(25):
+        q.put(i)
+    q.put(DONE)
+
+def consumer():
+    while (item := q.get()) is not DONE:
+        results.append(item * item)
+
+threads = [threading.Thread(target=producer), threading.Thread(target=consumer)]
+for t in threads: t.start()
+for t in threads: t.join()
+print(len(results), sum(results))
+EOF
+python3 pc.py</pre><pre class="out">25 4900</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>重新设计</h3><p>一个爬虫用 20 个线程抓取网页，所有线程共享一个 <code>visited = set()</code> 和一个 <code>results = []</code>，每个线程在抓取前检查 <code>if url not in visited: visited.add(url)</code>。指出问题，给出一个更整洁的设计。</p><details><summary>查看参考答案</summary><div><p><b>问题</b>：“检查后添加”不是原子的，两个线程可能同时通过检查而重复抓取；共享的结构让业务逻辑（解析页面）与并发控制交织在一起。</p><p><b>设计</b>：</p><ul><li>一个<b>协调者</b>（单线程）独占 <code>visited</code>，负责去重与调度：它从结果队列取出新链接，未访问过的放入任务队列。</li><li><b>工作者</b>只做一件事：<code>fetch_and_parse(url) -> Page(links, data)</code>，纯粹、可单独测试，不接触共享状态。</li><li>两个队列（任务、结果）连接它们；用有界队列控制并发与内存；用哨兵或计数正确结束。</li><li>如果使用 asyncio，协调者与工作者都在同一个事件循环中，<code>visited</code> 只在 await 点之间被访问，天然不需要锁——但抓取函数要是异步的。</li></ul></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>把并发与业务分开</b>：业务逻辑写成普通的、可单独测试的函数；线程、队列、事件循环放在外层。并发代码有自己的生命周期和失败模式，应当有自己的模块。</li><li><b>限制共享可变数据</b>：共享的东西越少，需要保护的就越少。优先选择：不共享（每个任务自己的数据）→ 共享不可变数据 → 通过队列传递消息 → 最后才是加锁的共享状态。</li><li><b>GIL 不保证正确性</b>：<code>counter += 1</code> 是“读—改—写”多条字节码，线程切换可能发生在中间。在较新的 CPython 中，简单的 <code>+=</code> 很少表现出竞态，但这只是实现细节而不是保证；只要读与写之间有函数调用或 I/O，问题马上出现。需要原子性时使用锁或线程安全的数据结构。</li><li><b>使用标准库的高层工具</b>：<code>queue.Queue</code>、<code>concurrent.futures.ThreadPoolExecutor</code>、<code>asyncio.TaskGroup</code>，而不是自己用裸线程和条件变量拼装。</li><li><b>同步区域保持很小</b>：锁内只做必要的读写，不做 I/O、不调用外部回调；多个锁按固定顺序获取以避免死锁。</li><li><b>正确关闭与测试</b>：设计时就考虑如何停止（哨兵值、取消、超时）。测试并发代码：先让业务逻辑在单线程下正确，再用更多线程、更多迭代、随机延迟反复运行；把偶发失败当作真问题对待。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 20</div><a class="big" href="l20.html">综合项目：一步步重构一个混乱的订单模块 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l19.js"></script>
+</body></html>

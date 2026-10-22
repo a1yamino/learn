@@ -1,0 +1,207 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 15 课 · 扩展系统：工具、命令与事件钩子</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 15 课</span><span class="sp"></span><a href="l14.html">← 第 14 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 15 课</div><h1>扩展系统：工具、命令与事件钩子</h1>
+<p>pi 的核心刻意保持很小，几乎所有“额外”的能力——权限确认、子 agent、计划模式、MCP、自定义 UI——都应该由<b>扩展</b>实现。扩展就是一个导出默认函数的 TypeScript 文件，函数接收 <code>ExtensionAPI</code>，可以注册工具、命令、快捷键、提供方，订阅三十多种生命周期事件，并在会话中保存自己的状态。本课写一个小小的“guard”扩展，覆盖最常用的五种能力。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">扩展挂在哪里</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：选择一种能力</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>扩展挂在哪里</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：选择一种能力</h2><div class="goal">看它在本课 guard 扩展中的实际效果。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>ExtensionAPI（节选）：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/extensions/types.ts#L1671-L1680" target="_blank" rel="noopener">packages/coding-agent/src/core/extensions/types.ts  L1671–1680, L1731–1747, L1778 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">registerTool&lt;TParams extends TSchema = TSchema, TDetails = unknown, TState = any&gt;(
+  tool: ToolDefinition&lt;TParams, TDetails, TState&gt;,
+): void;
+
+// =========================================================================
+// Command, Shortcut, Flag Registration
+// =========================================================================
+
+/** Register a custom command. */
+registerCommand(name: string, options: Omit&lt;RegisteredCommand, &quot;name&quot; | &quot;sourceInfo&quot;&gt;): void;
+  // …
+sendMessage&lt;T = unknown&gt;(
+  message: Pick&lt;CustomMessage&lt;T&gt;, &quot;customType&quot; | &quot;content&quot; | &quot;display&quot; | &quot;details&quot;&gt;,
+  options?: { triggerTurn?: boolean; deliverAs?: &quot;steer&quot; | &quot;followUp&quot; | &quot;nextTurn&quot; },
+): void;
+
+/**
+ * Send a user message to the agent. Always triggers a turn.
+ * When the agent is streaming, use deliverAs to specify how to queue the message.
+ * Set expandPromptTemplates to dispatch extension commands and expand skill commands and prompt templates.
+ */
+sendUserMessage(
+  content: string | (TextContent | ImageContent)[],
+  options?: { deliverAs?: &quot;steer&quot; | &quot;followUp&quot;; expandPromptTemplates?: boolean },
+): void;
+
+/** Append a custom entry to the session for state persistence (not sent to LLM). */
+appendEntry&lt;T = unknown&gt;(customType: string, data?: T): void;
+  // …
+setActiveTools(toolNames: string[]): void;</pre><p>AgentSession 把循环的工具钩子接到扩展事件：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/agent-session.ts#L652-L681" target="_blank" rel="noopener">packages/coding-agent/src/core/agent-session.ts  L652–681 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">private _installAgentToolHooks(): void {
+  this.agent.beforeToolCall = (context) =&gt; this._beforeToolCall(context);
+  this.agent.afterToolCall = (context) =&gt; this._afterToolCall(context);
+}
+
+/** `tool_call` handlers. `parentToolCallId` is set for calls another tool made. */
+private async _beforeToolCall(
+  { toolCall, args }: BeforeToolCallContext,
+  parentToolCallId?: string,
+): Promise&lt;BeforeToolCallResult | undefined&gt; {
+  const runner = this._extensionRunner;
+  if (!runner.hasHandlers(&quot;tool_call&quot;)) {
+    return undefined;
+  }
+
+  try {
+    return await runner.emitToolCall({
+      type: &quot;tool_call&quot;,
+      toolName: toolCall.name,
+      toolCallId: toolCall.id,
+      ...(parentToolCallId ? { parentToolCallId } : {}),
+      input: args as Record&lt;string, unknown&gt;,
+    });
+  } catch (err) {
+    if (err instanceof Error) {
+      throw err;
+    }
+    throw new Error(`Extension failed, blocking execution: ${String(err)}`);
+  }
+}</pre><p>扩展可以直接导入的模块：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/extensions/virtual-modules.ts#L15-L33" target="_blank" rel="noopener">packages/coding-agent/src/core/extensions/virtual-modules.ts  L15–33 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export const VIRTUAL_MODULES: Record&lt;string, unknown&gt; = {
+  typebox: bundledTypebox,
+  &quot;typebox/compile&quot;: bundledTypeboxCompile,
+  &quot;typebox/value&quot;: bundledTypeboxValue,
+  &quot;@sinclair/typebox&quot;: bundledTypebox,
+  &quot;@sinclair/typebox/compile&quot;: bundledTypeboxCompile,
+  &quot;@sinclair/typebox/value&quot;: bundledTypeboxValue,
+  &quot;@earendil-works/pi-agent-core&quot;: bundledPiAgentCore,
+  &quot;@earendil-works/pi-tui&quot;: bundledPiTui,
+  // Extensions resolve the pi-ai root to the compat entrypoint (a strict
+  // superset of the core entrypoint): existing extensions using the old
+  // global API keep working at runtime until compat is removed.
+  &quot;@earendil-works/pi-ai&quot;: bundledPiAiCompat,
+  &quot;@earendil-works/pi-ai/compat&quot;: bundledPiAiCompat,
+  &quot;@earendil-works/pi-ai/models&quot;: bundledPiAiModels,
+  &quot;@earendil-works/pi-ai/oauth&quot;: bundledPiAiOauth,
+  &quot;@earendil-works/pi-ai/providers/all&quot;: bundledPiAiProviders,
+  &quot;@earendil-works/pi-coding-agent&quot;: bundledPiCodingAgent,
+  &quot;@mariozechner/pi-agent-core&quot;: bundledPiAgentCore,</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 把许多 pi 交给扩展的能力内置进核心（审批、计划、MCP、子 agent），对外的扩展点是 <b>MCP 服务器</b>、<b>hooks</b>（在特定事件运行外部命令）、技能与插件。见 <a href="../codex/l17.html">Codex 第 17 课 · MCP 客户端与服务端</a> 与 <a href="../codex/l21.html">Codex 第 21 课 · hooks、技能与插件</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">把扩展写进临时项目的 <code>.pi/extensions/guard.ts</code>，用真实的 AgentSession 加载它。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l15.ts &lt;&lt;&#x27;EOF&#x27;
+import { fauxAssistantMessage, fauxToolCall } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { fauxSession } from &quot;./faux-session.ts&quot;;
+
+// 一个项目扩展：注册工具、注册命令、拦截危险命令、改写输入、保存状态
+const extension = `
+import { Type } from &quot;typebox&quot;;
+export default function (pi) {
+  let calls = 0;
+  pi.registerTool({
+    name: &quot;today&quot;, label: &quot;today&quot;, description: &quot;返回今天的日期&quot;,
+    parameters: Type.Object({}),
+    async execute() { calls++; return { content: [{ type: &quot;text&quot;, text: &quot;2026-10-22&quot; }], details: undefined }; },
+  });
+  pi.registerCommand(&quot;stats&quot;, {
+    description: &quot;显示扩展统计&quot;,
+    handler: async (_args, ctx) =&gt; { console.log(&quot;[/stats] today 被调用&quot;, calls, &quot;次；当前模型&quot;, ctx.model?.id); },
+  });
+  pi.on(&quot;tool_call&quot;, async (event) =&gt; {
+    if (event.toolName === &quot;bash&quot; &amp;&amp; /\\brm\\s+-rf\\b/.test(event.input.command)) return { block: true, reason: &quot;guard 扩展：禁止 rm -rf&quot; };
+  });
+  pi.on(&quot;input&quot;, async (event) =&gt; {
+    if (event.text.startsWith(&quot;!!&quot;)) return { action: &quot;transform&quot;, text: &quot;请用一句话回答：&quot; + event.text.slice(2) };
+  });
+  pi.on(&quot;agent_settled&quot;, async () =&gt; { pi.appendEntry(&quot;guard-stats&quot;, { calls }); });
+}`;
+
+const { session } = await fauxSession([
+  fauxAssistantMessage([fauxToolCall(&quot;today&quot;, {}), fauxToolCall(&quot;bash&quot;, { command: &quot;rm -rf build&quot; })], { stopReason: &quot;toolUse&quot; }),
+  fauxAssistantMessage(&quot;今天是 2026-10-22，删除被拒绝了。&quot;),
+], { files: { &quot;.pi/extensions/guard.ts&quot;: extension } });
+
+console.log(&quot;活动工具:&quot;, session.agent.state.tools.map((t) =&gt; t.name).join(&quot;, &quot;));
+await session.prompt(&quot;!!今天几号？顺便清理 build&quot;);
+for (const m of session.messages as any[]) {
+  if (m.role === &quot;user&quot;) console.log(&quot;user       &quot;, m.content[0].text);
+  if (m.role === &quot;toolResult&quot;) console.log(&quot;toolResult &quot;, m.toolName, m.isError ? &quot;(错误)&quot; : &quot;&quot;, m.content[0].text);
+}
+await session.prompt(&quot;/stats&quot;);
+const custom = session.sessionManager.getEntries().filter((e: any) =&gt; e.type === &quot;custom&quot;);
+console.log(&quot;custom 条目:&quot;, JSON.stringify(custom.map((e: any) =&gt; ({ customType: e.customType, data: e.data }))));
+console.log(&quot;/stats 产生了发给模型的消息吗？&quot;, session.messages.some((m: any) =&gt; m.role === &quot;user&quot; &amp;&amp; JSON.stringify(m.content).includes(&quot;stats&quot;)));
+session.dispose();
+EOF
+cd pi-mono/scratch &amp;&amp; node l15.ts</pre><pre class="out">活动工具: read, bash, edit, write, today
+user        请用一句话回答：今天几号？顺便清理 build
+toolResult  today  2026-10-22
+toolResult  bash (错误) guard 扩展：禁止 rm -rf
+[/stats] today 被调用 1 次；当前模型 faux-1
+custom 条目: [{&quot;customType&quot;:&quot;guard-stats&quot;,&quot;data&quot;:{&quot;calls&quot;:1}}]
+/stats 产生了发给模型的消息吗？ false</pre></div></div><div class="st"><span class="n">02</span><div><p>pi 自带了大量扩展示例：</p><pre class="cmd">cd pi-mono/packages/coding-agent/examples/extensions &amp;&amp; ls | head -30 &amp;&amp; ls | wc -l</pre><pre class="out">README.md
+auto-commit-on-exit.ts
+bash-spawn-hook.ts
+bookmark.ts
+border-status-editor.ts
+built-in-tool-renderer.ts
+claude-rules.ts
+commands.ts
+confirm-destructive.ts
+custom-compaction.ts
+custom-footer.ts
+custom-header.ts
+custom-provider-anthropic
+custom-provider-gitlab-duo
+debug-provider.ts
+dirty-repo-guard.ts
+doom-overlay
+dynamic-resources
+dynamic-tools.ts
+entry-renderer.ts
+event-bus.ts
+file-trigger.ts
+git-checkpoint.ts
+git-merge-and-resolve.ts
+github-issue-autocomplete.ts
+gondolin
+handoff.ts
+hello.ts
+hidden-thinking-label.ts
+inline-bash.ts
+80</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>权限确认扩展</h3><p>写一个扩展：对 bash 工具，命令匹配 <code>git push|npm publish|rm -rf</code> 时调用 <code>ctx.ui.confirm()</code> 询问用户，拒绝则 block。在 print 模式（没有交互 UI）下应该怎么处理才安全？</p><details><summary>查看参考答案</summary><div><pre>export default function (pi) {
+  const risky = /\b(git push|npm publish|rm -rf)\b/;
+  pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName !== "bash" || !risky.test(event.input.command)) return;
+    if (!ctx.hasUI) return { block: true, reason: "非交互模式下禁止高风险命令" };
+    const ok = await ctx.ui.confirm("允许执行？", event.input.command);
+    if (!ok) return { block: true, reason: "用户拒绝" };
+  });
+}</pre><p>没有 UI 时默认<b>拒绝</b>（fail closed）：print/JSON 模式常用于脚本和 CI，无人值守时宁可阻止。注意正则只是启发式，<code>git  push</code>、<code>sh -c</code> 包装、别名都可能绕过；它防的是模型的失误，不是恶意。确切的 API（例如 <code>ctx.hasUI</code>）以 <code>extensions/types.ts</code> 中的 ExtensionContext 为准；examples/extensions 中有完整的权限示例可参考。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>加载</b>：<code>~/.pi/agent/extensions/</code>、项目 <code>.pi/extensions/</code>（需信任）、pi 包、<code>pi --extension ./x.ts</code>。通过 jiti 直接加载 TypeScript，无需编译；<code>typebox</code>、<code>@earendil-works/pi-*</code> 等导入被映射到 pi 自带的模块（virtual modules），扩展不需要自己安装它们。</li><li><b>注册</b>：<code>registerTool</code>（与内置工具同样的形状，可设置 exposure：direct / model-only / codemode / deferred / hidden）、<code>registerCommand</code>、<code>registerShortcut</code>、<code>registerFlag</code>、<code>registerProvider</code>、<code>registerToolRenderer</code>。</li><li><b>事件</b>：输入（<code>input</code> 可改写或消费）、<code>before_agent_start</code>（改提示段落、工具）、<code>context</code>（每次请求前过滤消息）、提供方请求/响应、<code>tool_call</code>（可 block）、<code>tool_result</code>（可改写）、<code>turn_end</code>、<code>agent_before_settle</code>、<code>agent_settled</code>、会话事件（start、switch、fork、compact、shutdown）等。</li><li><b>与循环的连接</b>：AgentSession 把 Agent 的 <code>beforeToolCall</code>/<code>afterToolCall</code> 钩子接到扩展的 <code>tool_call</code>/<code>tool_result</code> 事件上——第 7 课看到的钩子正是扩展的入口。处理器抛错会阻止工具执行（失败即关闭）。</li><li><b>状态与消息</b>：<code>appendEntry</code> 写 custom 条目（持久化、不进上下文）；<code>sendMessage</code> 注入自定义消息（进上下文）；<code>sendUserMessage</code> 以用户身份发送。</li><li><b>UI</b>：<code>ctx.ui</code> 提供 notify、confirm、select、input、自定义组件等；在 print/RPC 模式下有对应的降级或协议实现。</li><li><b>生命周期纪律</b>：工厂函数中不要启动进程、定时器；在 <code>session_start</code> 中启动，在 <code>session_shutdown</code> 中清理。reload 会替换整个扩展运行时。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 16</div><a class="big" href="l16.html">斜杠命令与提示模板 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l15.js"></script>
+</body></html>

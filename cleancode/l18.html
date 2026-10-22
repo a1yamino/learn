@@ -1,0 +1,121 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 18 课 · 遗留代码：特征测试与接缝</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 18 课</span><span class="sp"></span><a href="l17.html">← 第 17 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 18 课</div><h1>遗留代码：特征测试与接缝</h1>
+<p>Michael Feathers 把遗留代码定义为“没有测试的代码”。要安全地修改它，首先要把它放进测试里，但它往往难以测试：直接连接数据库、读当前时间、调用外部服务。本课讲遗留代码修改算法（找到修改点 → 找到测试点 → 解除依赖 → 写测试 → 修改与重构），特征测试（记录现有行为，而不是“应有”的行为），接缝（不修改代码就能替换行为的位置），以及几种安全地解除依赖的手法：参数化、提取并覆盖、包装方法、萌芽方法 / 萌芽类、快照（golden master）测试。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">遗留代码修改算法</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：选择一个接缝</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">特征测试的写法</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">快照测试</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>遗留代码修改算法</h2><div class="goal">五步，每一步都尽量小。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：选择一个接缝</h2><div class="goal">同一段难测的代码，几种解除依赖的方式。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>特征测试的写法</h2><div class="goal">让测试告诉你代码现在做什么。</div></div></div>
+<ol><li>写一个你知道会失败的断言：<code>self.assertEqual(format_price(1234.5), "???")</code>。</li>
+<li>运行，失败消息会告诉你实际值：<code>AssertionError: '1,234.50 元' != '???'</code>。</li>
+<li>把实际值填进去，测试变绿。这就是一个特征测试。</li>
+<li>为边界值重复：0、负数、很大的数、None。</li></ol>
+<p>如果实际行为看起来是错误的（例如负数被格式化成 <code>"-0.00"</code>），<b>先记录它</b>，在测试名中写明（<code>test_negative_currently_formats_as_zero</code>），再与业务方确认是否修复。在测试中固定下来的“bug”至少不会在重构中被意外改变。</p>
+<p><b>快照测试</b>是特征测试的批量版：把一批输入的输出保存为文件，之后与之比较。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>快照测试</h2><div class="goal">把复杂输出固定下来，重构后对比。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">给一个依赖当前时间与外部服务的函数加参数接缝，写特征测试，然后用萌芽方法加需求。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>遗留代码：无法测试。</p><pre class="cmd">cat &gt; billing.py &lt;&lt;&#x27;EOF&#x27;
+import datetime
+
+INVOICES = [  # 代表数据库
+    {&quot;id&quot;: 1, &quot;email&quot;: &quot;a@x.com&quot;, &quot;due&quot;: datetime.date(2026, 1, 10), &quot;disputed&quot;: False},
+    {&quot;id&quot;: 2, &quot;email&quot;: &quot;b@x.com&quot;, &quot;due&quot;: datetime.date(2026, 3, 1), &quot;disputed&quot;: True},
+    {&quot;id&quot;: 3, &quot;email&quot;: &quot;c@x.com&quot;, &quot;due&quot;: datetime.date(2099, 1, 1), &quot;disputed&quot;: False},
+]
+
+class SmtpClient:
+    def send(self, to, text):
+        raise RuntimeError(&quot;测试中不能真的发邮件&quot;)
+
+def overdue_notices():
+    today = datetime.date.today()
+    sent = 0
+    for inv in INVOICES:
+        if inv[&quot;due&quot;] &lt; today:
+            SmtpClient().send(inv[&quot;email&quot;], f&quot;发票 {inv[&#x27;id&#x27;]} 已逾期&quot;)
+            sent += 1
+    return sent
+EOF
+python3 -c &quot;import billing; billing.overdue_notices()&quot; 2&gt;&amp;1 | tail -n 1</pre><pre class="out">RuntimeError: 测试中不能真的发邮件</pre></div></div><div class="st"><span class="n">02</span><div><p>参数接缝：加带默认值的参数，现有调用方不受影响。</p><pre class="cmd">python3 - &lt;&lt;&#x27;EOF&#x27;
+s = open(&quot;billing.py&quot;).read()
+s = s.replace(&quot;def overdue_notices():\n    today = datetime.date.today()&quot;,
+              &quot;def overdue_notices(today=None, invoices=None, mailer=None):\n    today = today or datetime.date.today()\n    invoices = INVOICES if invoices is None else invoices\n    mailer = mailer or SmtpClient()&quot;)
+s = s.replace(&quot;for inv in INVOICES:&quot;, &quot;for inv in invoices:&quot;).replace(&quot;SmtpClient().send(&quot;, &quot;mailer.send(&quot;)
+open(&quot;billing.py&quot;, &quot;w&quot;).write(s)
+EOF
+sed -n &quot;/def overdue/,\$p&quot; billing.py</pre><pre class="out">def overdue_notices(today=None, invoices=None, mailer=None):
+    today = today or datetime.date.today()
+    invoices = INVOICES if invoices is None else invoices
+    mailer = mailer or SmtpClient()
+    sent = 0
+    for inv in invoices:
+        if inv[&quot;due&quot;] &lt; today:
+            mailer.send(inv[&quot;email&quot;], f&quot;发票 {inv[&#x27;id&#x27;]} 已逾期&quot;)
+            sent += 1
+    return sent</pre></div></div><div class="st"><span class="n">03</span><div><p>特征测试：记录现在的行为（包括“有争议的发票也会被提醒”）。</p><pre class="cmd">cat &gt; test_billing.py &lt;&lt;&#x27;EOF&#x27;
+import datetime, unittest
+from billing import overdue_notices, INVOICES
+
+class Recorder:
+    def __init__(self): self.sent = []
+    def send(self, to, text): self.sent.append((to, text))
+
+class Characterization(unittest.TestCase):
+    def test_current_behaviour_includes_disputed_invoices(self):
+        mail = Recorder()
+        n = overdue_notices(today=datetime.date(2026, 6, 1), invoices=INVOICES, mailer=mail)
+        self.assertEqual(n, 2)
+        self.assertEqual(mail.sent, [(&quot;a@x.com&quot;, &quot;发票 1 已逾期&quot;), (&quot;b@x.com&quot;, &quot;发票 2 已逾期&quot;)])
+
+unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;], exit=False)
+EOF
+python3 test_billing.py 2&gt;&amp;1 | grep -E &quot;ok$|FAIL|Ran&quot;</pre><pre class="out">test_current_behaviour_includes_disputed_invoices (__main__.Characterization.test_current_behaviour_includes_disputed_invoices) ... ok
+Ran 1 test in 0.000s</pre></div></div><div class="st"><span class="n">04</span><div><p>新需求“有争议的发票不提醒”：萌芽方法 + 先修改特征测试为新期望。</p><pre class="cmd">python3 - &lt;&lt;&#x27;EOF&#x27;
+s = open(&quot;billing.py&quot;).read()
+s = s.replace(&#x27;if inv[&quot;due&quot;] &lt; today:&#x27;, &quot;if is_overdue(inv, today):&quot;)
+s += &quot;\n\ndef is_overdue(invoice, today):\n    return invoice[\&quot;due\&quot;] &lt; today and not invoice[\&quot;disputed\&quot;]\n&quot;
+open(&quot;billing.py&quot;, &quot;w&quot;).write(s)
+t = open(&quot;test_billing.py&quot;).read()
+t = t.replace(&quot;includes_disputed&quot;, &quot;skips_disputed&quot;).replace(&quot;assertEqual(n, 2)&quot;, &quot;assertEqual(n, 1)&quot;).replace(&#x27;, (&quot;b@x.com&quot;, &quot;发票 2 已逾期&quot;)&#x27;, &quot;&quot;)
+open(&quot;test_billing.py&quot;, &quot;w&quot;).write(t)
+EOF
+python3 test_billing.py 2&gt;&amp;1 | grep -E &quot;ok$|FAIL|Ran&quot;</pre><pre class="out">test_current_behaviour_skips_disputed_invoices (__main__.Characterization.test_current_behaviour_skips_disputed_invoices) ... ok
+Ran 1 test in 0.000s</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为这个类找接缝</h3><p><pre class="cmd">class PriceUpdater:
+    def run(self):
+        rates = requests.get("https://fx.example.com/latest").json()
+        for p in Product.objects.all():
+            p.price_usd = round(p.price_cny / rates["CNY"], 2)
+            p.save()
+        logging.info("updated at %s", datetime.now())</pre>列出每个依赖可以使用的接缝，并给出一个让核心计算可以测试的最小修改。</p><details><summary>查看参考答案</summary><div><ul><li><b>汇率</b>（HTTP）：参数接缝 <code>run(self, fetch_rates=fetch_rates_from_api)</code>，或构造函数注入一个 <code>RateSource</code>。</li><li><b>产品</b>（ORM）：注入 <code>products</code> 可迭代对象与 <code>save</code> 函数；或在第一步用 <code>mock.patch</code>。</li><li><b>当前时间</b>：日志里的时间不影响结果，可以不处理。</li></ul><p><b>最小修改</b>：用萌芽方法把计算提取为纯函数，并为它写测试：</p><pre class="cmd">def usd_price(price_cny, cny_per_usd):
+    return round(price_cny / cny_per_usd, 2)</pre><p><code>run()</code> 中只改一行，改为调用 <code>usd_price</code>。I/O 仍在旧代码中，但最容易出错的计算已经有了测试；之后再逐步把 I/O 依赖改为注入。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>遗留代码 = 没有测试的代码</b>。修改它的困境：要重构需要测试，要写测试需要先重构。出路是先做最小、最安全的结构修改（通常可借助编辑器自动完成），只为让测试成为可能。</li><li><b>特征测试</b>：不问“应该输出什么”，而是问“现在输出什么”，并把它固定下来。哪怕现有行为看起来像 bug，也先记录；是否修复是另一个决定（可能有调用方依赖它）。</li><li><b>接缝</b>：程序中可以不编辑该处代码就改变行为的地方。Python 中最常用的是<b>对象接缝</b>（传入替身）与<b>参数接缝</b>（给函数加一个带默认值的参数），以及测试时的 <code>unittest.mock.patch</code>（链接期接缝的类比）。</li><li><b>萌芽方法 / 萌芽类</b>：新功能写在一个新的、经过测试的函数或类里，只在旧代码中加一行调用。旧代码不必先完全进入测试。</li><li><b>包装方法</b>：需要在旧行为前后添加行为时，把旧方法改名，用原名写一个新方法调用它并加上新行为。</li><li><b>快照测试（golden master）</b>：对复杂输出（报表、HTML）先保存当前输出作为基准，之后每次运行与之比对。适合在大规模重构前快速建立安全网。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 19</div><a class="big" href="l19.html">并发代码的整洁 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l18.js"></script>
+</body></html>

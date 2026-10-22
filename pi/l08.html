@@ -1,0 +1,197 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 8 课 · Agent 类：状态、事件订阅、steering 与 follow-up</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 8 课</span><span class="sp"></span><a href="l07.html">← 第 7 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 8 课</div><h1>Agent 类：状态、事件订阅、steering 与 follow-up</h1>
+<p><code>runAgentLoop</code> 是无状态的函数；<code>Agent</code> 类（<code>packages/agent/src/agent.ts</code>）把它包装成一个有状态的对象：持有转录与运行时状态、把循环事件“归约”进状态再分发给订阅者、管理两个消息队列、提供中止。理解它，你就理解了“用户在 agent 工作时插话”到底是怎么实现的。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">插话是怎么进入转录的</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：选择操作</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>插话是怎么进入转录的</h2><div class="goal">steering 模式 one-at-a-time。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：选择操作</h2><div class="goal">agent 正在执行一个工具。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>队列本身很简单：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent.ts#L149-L179" target="_blank" rel="noopener">packages/agent/src/agent.ts  L149–179 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">class PendingMessageQueue {
+  private messages: AgentMessage[] = [];
+  public mode: QueueMode;
+
+  constructor(mode: QueueMode) {
+    this.mode = mode;
+  }
+
+  enqueue(message: AgentMessage): void {
+    this.messages.push(message);
+  }
+
+  hasItems(): boolean {
+    return this.messages.length &gt; 0;
+  }
+
+  peek(): AgentMessage[] {
+    if (this.mode === &quot;all&quot;) return this.messages.slice();
+    const first = this.messages[0];
+    return first ? [first] : [];
+  }
+
+  drain(): AgentMessage[] {
+    const drained = this.peek();
+    this.messages = this.messages.slice(drained.length);
+    return drained;
+  }
+
+  clear(): void {
+    this.messages = [];
+  }</pre><p>Agent 把队列接到循环配置上：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent.ts#L476-L480" target="_blank" rel="noopener">packages/agent/src/agent.ts  L476–480, L506–514 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">private createLoopConfig(options: { skipInitialSteeringPoll?: boolean } = {}): AgentLoopConfig {
+  let skipInitialSteeringPoll = options.skipInitialSteeringPoll === true;
+  return {
+    model: this._state.model,
+    reasoning: this._state.thinkingLevel === &quot;off&quot; ? undefined : this._state.thinkingLevel,
+  // …
+  getSteeringMessages: async () =&gt; {
+    if (skipInitialSteeringPoll) {
+      skipInitialSteeringPoll = false;
+      return [];
+    }
+    return this.steeringQueue.drain();
+  },
+  getFollowUpMessages: async () =&gt; this.followUpQueue.drain(),
+};</pre><p>prompt 与运行生命周期：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent.ts#L382-L391" target="_blank" rel="noopener">packages/agent/src/agent.ts  L382–391, L517–540 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">async prompt(input: string | AgentMessage | AgentMessage[], images?: ImageContent[]): Promise&lt;void&gt; {
+  if (this.activeRun) {
+    throw new Error(
+      &quot;Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.&quot;,
+    );
+  }
+  const messages = this.normalizePromptInput(input, images);
+  await this.runPromptMessages(messages);
+}
+
+  // …
+private async runWithLifecycle(executor: (signal: AbortSignal) =&gt; Promise&lt;void&gt;): Promise&lt;void&gt; {
+  if (this.activeRun) {
+    throw new Error(&quot;Agent is already processing.&quot;);
+  }
+
+  const abortController = new AbortController();
+  let resolvePromise = () =&gt; {};
+  const promise = new Promise&lt;void&gt;((resolve) =&gt; {
+    resolvePromise = resolve;
+  });
+  this.activeRun = { promise, resolve: resolvePromise, abortController };
+
+  this._state.isStreaming = true;
+  this._state.streamingMessage = undefined;
+  this._state.errorMessage = undefined;
+
+  try {
+    await executor(abortController.signal);
+  } catch (error) {
+    await this.handleRunFailure(error, abortController.signal.aborted);
+  } finally {
+    this.finishRun();
+  }
+}</pre><p>事件归约：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent.ts#L575-L596" target="_blank" rel="noopener">packages/agent/src/agent.ts  L575–596, L614–622 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">private async processEvents(event: AgentEvent): Promise&lt;void&gt; {
+  switch (event.type) {
+    case &quot;message_start&quot;:
+      this._state.streamingMessage = event.message;
+      break;
+
+    case &quot;message_update&quot;:
+      this._state.streamingMessage = event.message;
+      break;
+
+    case &quot;message_end&quot;:
+      this._state.streamingMessage = undefined;
+      this._state.messages.push(event.message);
+      break;
+
+    case &quot;tool_execution_start&quot;: {
+      const pendingToolCalls = new Set(this._state.pendingToolCalls);
+      pendingToolCalls.add(event.toolCallId);
+      this._state.pendingToolCalls = pendingToolCalls;
+      break;
+    }
+
+  // …
+
+  const signal = this.activeRun?.abortController.signal;
+  if (!signal) {
+    throw new Error(&quot;Agent listener invoked outside active run&quot;);
+  }
+  for (const listener of this.listeners) {
+    await listener(event, signal);
+  }
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 中这一层是“会话/线程”：界面通过提交队列发送 <code>Op::UserInput</code>、<code>Op::Interrupt</code> 等操作，正在进行的 turn 可以接收追加输入。Codex 还在此之上实现了长时间运行任务的 <code>/goal</code>。见 <a href="../codex/l08.html">Codex 第 8 课 · 会话线程、中断与转向</a> 与 <a href="../codex/l20.html">Codex 第 20 课 · /goal</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 Agent 类实验两种队列模式、并发 prompt 与 abort。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l08.ts &lt;&lt;&#x27;EOF&#x27;
+import { Type } from &quot;@earendil-works/pi-ai&quot;;
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, streamSimple } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { Agent } from &quot;@earendil-works/pi-agent-core&quot;;
+
+const faux = registerFauxProvider();
+const wait = {
+  name: &quot;wait&quot;, label: &quot;wait&quot;, description: &quot;等待&quot;, parameters: Type.Object({}),
+  execute: async (_id: string, _p: {}, signal?: AbortSignal) =&gt; {
+    await new Promise&lt;void&gt;((r, j) =&gt; { const t = setTimeout(r, 200); signal?.addEventListener(&quot;abort&quot;, () =&gt; { clearTimeout(t); j(new Error(&quot;被中止&quot;)); }); });
+    return { content: [{ type: &quot;text&quot; as const, text: &quot;done&quot; }], details: {} };
+  },
+};
+const user = (t: string) =&gt; ({ role: &quot;user&quot; as const, content: t, timestamp: Date.now() });
+const text = (m: any) =&gt; (typeof m.content === &quot;string&quot; ? m.content : m.content.map((c: any) =&gt; c.text ?? `&lt;${c.type}:${c.name}&gt;`).join(&quot;&quot;));
+
+function makeAgent(mode: &quot;one-at-a-time&quot; | &quot;all&quot;) {
+  faux.setResponses([fauxAssistantMessage([fauxToolCall(&quot;wait&quot;, {})], { stopReason: &quot;toolUse&quot; }), ...Array.from({ length: 4 }, (_, i) =&gt; fauxAssistantMessage(`回复${i + 1}`))]);
+  return new Agent({ streamFn: streamSimple, steeringMode: mode,
+    initialState: { systemPrompt: &quot;&quot;, model: faux.getModel(), thinkingLevel: &quot;off&quot;, tools: [wait] } });
+}
+
+for (const mode of [&quot;one-at-a-time&quot;, &quot;all&quot;] as const) {
+  const agent = makeAgent(mode);
+  agent.subscribe((e) =&gt; { if (e.type === &quot;tool_execution_start&quot;) { agent.steer(user(&quot;插话A&quot;)); agent.steer(user(&quot;插话B&quot;)); } });
+  await agent.prompt(&quot;开始&quot;);
+  console.log(`== steeringMode=${mode}`);
+  console.log(&quot;  &quot;, agent.state.messages.filter((m) =&gt; m.role !== &quot;system&quot;).map((m) =&gt; `${m.role}:${text(m)}`).join(&quot; | &quot;));
+}
+
+const agent = makeAgent(&quot;all&quot;);
+agent.subscribe((e) =&gt; { if (e.type === &quot;tool_execution_start&quot;) setTimeout(() =&gt; agent.abort(), 50); });
+const run = agent.prompt(&quot;开始&quot;);
+try { await agent.prompt(&quot;再来一个&quot;); } catch (e) { console.log(&quot;== 运行中再次 prompt:&quot;, (e as Error).message.slice(0, 60)); }
+await run;
+const last = agent.state.messages.at(-1) as any;
+console.log(&quot;== abort 后: 最后一条&quot;, last.role, last.stopReason ?? &quot;&quot;, &quot;| 工具结果:&quot;, text(agent.state.messages.find((m) =&gt; m.role === &quot;toolResult&quot;)));
+console.log(&quot;   isStreaming =&quot;, agent.state.isStreaming);
+EOF
+cd pi-mono/scratch &amp;&amp; node l08.ts</pre><pre class="out">== steeringMode=one-at-a-time
+   user:开始 | assistant:&lt;toolCall:wait&gt; | toolResult:done | user:插话A | assistant:回复1 | user:插话B | assistant:回复2
+== steeringMode=all
+   user:开始 | assistant:&lt;toolCall:wait&gt; | toolResult:done | user:插话A | user:插话B | assistant:回复1
+== 运行中再次 prompt: Agent is already processing a prompt. Use steer() or followU
+== abort 后: 最后一条 assistant aborted | 工具结果: 被中止
+   isStreaming = false</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>慢订阅者</h3><p>给 agent 添加一个订阅者：在 <code>message_end</code> 时 <code>await</code> 300ms（模拟写磁盘）。总运行时间如何变化？如果改成不 await（fire-and-forget），会有什么风险？</p><details><summary>查看参考答案</summary><div><p>processEvents 会依次 await 每个订阅者，所以每条完成的消息都会让循环多等 300ms：本例中约 5 条消息 → 运行时间增加约 1.5 秒。这是有意的设计：AgentSession 的持久化就在 message_end 订阅者里，保证消息按顺序、在下一步开始前写入。</p><p>如果不 await，循环不会等待，但可能出现：进程在写入完成前退出导致会话丢失消息；多次写入交错导致顺序错乱；<code>waitForIdle()</code> resolve 时数据其实还没落盘。真正需要慢操作又不想阻塞时，应在订阅者内部自己排队并在合适时机刷新。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>AgentState</b>：<code>systemPrompt</code>、<code>model</code>、<code>thinkingLevel</code>、<code>tools</code>、<code>messages</code>，以及运行时字段 <code>isStreaming</code>、<code>streamingMessage</code>（正在流入的消息）、<code>pendingToolCalls</code>、<code>errorMessage</code>。</li><li><b>processEvents</b>：每个循环事件先更新状态（message_end 时把消息加入 <code>messages</code>；tool_execution_start/end 维护 pendingToolCalls），再<b>依次 await</b> 每个订阅者。订阅者变慢，循环就等待——这保证了持久化等副作用的顺序。</li><li><b>两个队列</b>：<code>steer()</code> 进入 steering 队列，在当前 turn 的工具执行完后、下一次模型请求前注入；<code>followUp()</code> 进入 follow-up 队列，只在 agent 本来要停下时注入。正在执行的工具不会被跳过。</li><li><b>队列模式</b>：<code>one-at-a-time</code>（默认）每次只取一条，每条插话都得到一次单独的模型回复；<code>all</code> 一次取出全部。</li><li><b>单一活动运行</b>：运行中调用 <code>prompt()</code> 会抛错并提示使用 steer/followUp；<code>continue()</code> 从现有转录继续（最后一条是 assistant 时，先消费队列）。</li><li><b>中止</b>：<code>abort()</code> 触发当前运行的 AbortSignal；工具与提供方都收到它。运行中的未预期异常被转换为一条 error/aborted 的 assistant 消息，事件序列保持完整。<code>waitForIdle()</code> 在 agent_end 的订阅者全部完成后才 resolve。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 09</div><a class="big" href="l09.html">编码工具集：read、write、ls、grep、find →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l08.js"></script>
+</body></html>

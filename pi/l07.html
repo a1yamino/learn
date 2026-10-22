@@ -1,0 +1,263 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 7 课 · 工具调用：参数校验、并行执行与钩子</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 7 课</span><span class="sp"></span><a href="l06.html">← 第 6 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 7 课</div><h1>工具调用：参数校验、并行执行与钩子</h1>
+<p>模型在一条回复里可能请求多个工具。agent 循环要回答一连串问题：工具存在吗？参数合法吗？可以执行吗（权限钩子）？并行还是顺序？执行抛异常怎么办？结果要不要改写？本课精读 <code>agent-loop.ts</code> 中从 <code>executeToolCalls</code> 到 <code>finalizeExecutedToolCall</code> 的全过程，以及 <code>validateToolArguments</code>。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次工具调用经过的关卡</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这次工具调用的结果是？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">计时</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次工具调用经过的关卡</h2><div class="goal">任何关卡失败都变成一条 isError 结果，而不是异常。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这次工具调用的结果是？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>选择并行或顺序：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent-loop.ts#L518-L534" target="_blank" rel="noopener">packages/agent/src/agent-loop.ts  L518–534 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">async function executeToolCalls(
+  currentContext: AgentContext,
+  assistantMessage: AssistantMessage,
+  config: AgentLoopConfig,
+  signal: AbortSignal | undefined,
+  emit: AgentEventSink,
+): Promise&lt;ExecutedToolCallBatch&gt; {
+  const toolCalls = assistantMessage.content.filter((c) =&gt; c.type === &quot;toolCall&quot;);
+  const hasSequentialToolCall = toolCalls.some(
+    (tc) =&gt; currentContext.tools?.find((t) =&gt; t.name === tc.name)?.executionMode === &quot;sequential&quot;,
+  );
+  if (config.toolExecution === &quot;sequential&quot; || hasSequentialToolCall) {
+    return executeToolCallsSequential(currentContext, assistantMessage, toolCalls, config, signal, emit);
+  }
+  return executeToolCallsParallel(currentContext, assistantMessage, toolCalls, config, signal, emit);
+}
+</pre><p>并行执行：顺序准备，并发执行，按原顺序发出结果：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent-loop.ts#L596-L668" target="_blank" rel="noopener">packages/agent/src/agent-loop.ts  L596–668 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">async function executeToolCallsParallel(
+  currentContext: AgentContext,
+  assistantMessage: AssistantMessage,
+  toolCalls: AgentToolCall[],
+  config: AgentLoopConfig,
+  signal: AbortSignal | undefined,
+  emit: AgentEventSink,
+): Promise&lt;ExecutedToolCallBatch&gt; {
+  const finalizedCalls: FinalizedToolCallEntry[] = [];
+
+  for (const toolCall of toolCalls) {
+    await emit({
+      type: &quot;tool_execution_start&quot;,
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      args: toolCall.arguments,
+    });
+
+    const preparation = await prepareToolCall(currentContext, assistantMessage, toolCall, config, signal);
+    if (preparation.kind === &quot;immediate&quot;) {
+      const finalized = {
+        toolCall,
+        result: preparation.result,
+        isError: preparation.isError,
+      } satisfies FinalizedToolCallOutcome;
+      await emitToolExecutionEnd(finalized, emit);
+      finalizedCalls.push(finalized);
+      if (signal?.aborted) {
+        break;
+      }
+      continue;
+    }
+
+    finalizedCalls.push(async () =&gt; {
+      if (signal?.aborted) {
+        const finalized = {
+          toolCall,
+          result: createErrorToolResult(&quot;Operation aborted&quot;),
+          isError: true,
+        } satisfies FinalizedToolCallOutcome;
+        await emitToolExecutionEnd(finalized, emit);
+        return finalized;
+      }
+      const executed = await executePreparedToolCall(preparation, signal, emitToolExecutionUpdate(toolCall, emit));
+      const finalized = await finalizeExecutedToolCall(
+        currentContext,
+        assistantMessage,
+        preparation,
+        executed,
+        config,
+        signal,
+      );
+      await emitToolExecutionEnd(finalized, emit);
+      return finalized;
+    });
+    if (signal?.aborted) {
+      break;
+    }
+  }
+
+  const orderedFinalizedCalls = await Promise.all(
+    finalizedCalls.map((entry) =&gt; (typeof entry === &quot;function&quot; ? entry() : Promise.resolve(entry))),
+  );
+  const messages: ToolResultMessage[] = [];
+  for (const finalized of orderedFinalizedCalls) {
+    const toolResultMessage = createToolResultMessage(finalized);
+    await emitToolResultMessage(toolResultMessage, emit);
+    messages.push(toolResultMessage);
+  }
+
+  return {
+    messages,
+    terminate: shouldTerminateToolBatch(orderedFinalizedCalls),</pre><p>准备阶段：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent-loop.ts#L718-L765" target="_blank" rel="noopener">packages/agent/src/agent-loop.ts  L718–765 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">async function prepareToolCall(
+  currentContext: AgentContext,
+  assistantMessage: AssistantMessage,
+  toolCall: AgentToolCall,
+  config: ToolCallHooks,
+  signal: AbortSignal | undefined,
+  tools: readonly AgentTool&lt;any&gt;[] = currentContext.tools ?? [],
+): Promise&lt;PreparedToolCall | ImmediateToolCallOutcome&gt; {
+  const tool = tools.find((t) =&gt; t.name === toolCall.name);
+  if (!tool) {
+    return {
+      kind: &quot;immediate&quot;,
+      result: createErrorToolResult(`Tool ${toolCall.name} not found`),
+      isError: true,
+    };
+  }
+
+  try {
+    const preparedToolCall = prepareToolCallArguments(tool, toolCall);
+    const validatedArgs = validateToolArguments(tool, preparedToolCall);
+    if (config.beforeToolCall) {
+      const beforeResult = await config.beforeToolCall(
+        {
+          assistantMessage,
+          toolCall,
+          args: validatedArgs,
+          context: currentContext,
+        },
+        signal,
+      );
+      if (signal?.aborted) {
+        return {
+          kind: &quot;immediate&quot;,
+          result: createErrorToolResult(&quot;Operation aborted&quot;),
+          isError: true,
+        };
+      }
+      if (beforeResult?.block) {
+        const result = createErrorToolResult(beforeResult.reason || &quot;Tool execution was blocked&quot;);
+        if (beforeResult.terminate === true) {
+          result.terminate = true;
+        }
+        return {
+          kind: &quot;immediate&quot;,
+          result,
+          isError: true,
+        };
+      }</pre><p>参数校验：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/ai/src/utils/validation.ts#L317-L325" target="_blank" rel="noopener">packages/ai/src/utils/validation.ts  L317–325, L340–347 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
+  if (toolCall.argumentsError) {
+    throw new Error(`Invalid arguments for tool &quot;${toolCall.name}&quot;: ${toolCall.argumentsError}`);
+  }
+  const args = structuredClone(toolCall.arguments);
+  normalizeOptionalNulls(args, tool.parameters as JsonSchemaObject);
+  Value.Convert(tool.parameters, args);
+
+  const validator = getValidator(tool.parameters);
+  // …
+if (validator.Check(args)) {
+  return args;
+}
+
+const errors =
+  validator
+    .Errors(args)
+    .map((error) =&gt; `  - ${formatValidationPath(error)}: ${error.message}`)</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 的工具由“规格（spec）+ 路由（router）+ 处理器（handler）”组成，并按工具是否支持并行来调度；最大的不同是在执行前插入了<b>审批</b>与<b>沙箱</b>两个关卡，而 pi 把这两件事留给钩子与扩展。见 <a href="../codex/l07.html">Codex 第 7 课 · 工具规格、路由与并行</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>计时</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">四个场景：并行、顺序、校验失败与未知工具、钩子拦截与改写。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l07.ts &lt;&lt;&#x27;EOF&#x27;
+import { Type } from &quot;@earendil-works/pi-ai&quot;;
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, streamSimple } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { runAgentLoop, type AgentLoopConfig } from &quot;@earendil-works/pi-agent-core&quot;;
+
+const faux = registerFauxProvider();
+const t0 = () =&gt; performance.now();
+let start = 0;
+const at = () =&gt; `${Math.round((performance.now() - start) / 100) * 100}ms`;
+const sleep = {
+  name: &quot;sleep&quot;, label: &quot;sleep&quot;, description: &quot;等待&quot;, parameters: Type.Object({ ms: Type.Number() }),
+  execute: async (_id: string, p: { ms: number }) =&gt; {
+    console.log(`   [${at()}] sleep(${p.ms}) 开始`);
+    await new Promise((r) =&gt; setTimeout(r, p.ms));
+    console.log(`   [${at()}] sleep(${p.ms}) 结束`);
+    return { content: [{ type: &quot;text&quot; as const, text: &quot;ok&quot; }], details: {} };
+  },
+};
+const sh = {
+  name: &quot;sh&quot;, label: &quot;sh&quot;, description: &quot;执行命令&quot;, parameters: Type.Object({ cmd: Type.String() }),
+  execute: async (_id: string, p: { cmd: string }) =&gt; ({ content: [{ type: &quot;text&quot; as const, text: `(执行了 ${p.cmd})` }], details: {} }),
+};
+
+async function run(title: string, calls: [string, any][], extra: Partial&lt;AgentLoopConfig&gt; = {}) {
+  console.log(&quot;==&quot;, title);
+  faux.setResponses([fauxAssistantMessage(calls.map(([n, a]) =&gt; fauxToolCall(n, a)), { stopReason: &quot;toolUse&quot; }), fauxAssistantMessage(&quot;好&quot;)]);
+  start = t0();
+  const msgs = await runAgentLoop([{ role: &quot;user&quot;, content: &quot;go&quot;, timestamp: Date.now() }],
+    { systemPrompt: &quot;&quot;, messages: [], tools: [sleep, sh] },
+    { model: faux.getModel(), convertToLlm: (m) =&gt; m as any, ...extra }, () =&gt; {}, undefined, streamSimple);
+  for (const m of msgs as any[]) if (m.role === &quot;toolResult&quot;) console.log(`   结果 ${m.toolName}: ${m.isError ? &quot;错误 &quot; : &quot;&quot;}${m.content[0].text.replace(/\n/g, &quot; ⏎ &quot;).slice(0, 80)}`);
+  console.log(`   总耗时约 ${at()}`);
+}
+
+await run(&quot;并行（默认）&quot;, [[&quot;sleep&quot;, { ms: 300 }], [&quot;sleep&quot;, { ms: 200 }]]);
+await run(&quot;顺序执行&quot;, [[&quot;sleep&quot;, { ms: 300 }], [&quot;sleep&quot;, { ms: 200 }]], { toolExecution: &quot;sequential&quot; });
+await run(&quot;参数校验与未知工具&quot;, [[&quot;sleep&quot;, { ms: &quot;很久&quot; }], [&quot;nope&quot;, {}]]);
+await run(&quot;钩子：拦截与改写&quot;, [[&quot;sh&quot;, { cmd: &quot;rm -rf /&quot; }], [&quot;sh&quot;, { cmd: &quot;ls&quot; }]], {
+  beforeToolCall: async ({ args }) =&gt; ((args as any).cmd.startsWith(&quot;rm&quot;) ? { block: true, reason: &quot;策略禁止 rm&quot; } : undefined),
+  afterToolCall: async ({ result }) =&gt; ({ content: [{ type: &quot;text&quot;, text: (result.content[0] as any).text + &quot; [已审计]&quot; }] }),
+});
+EOF
+cd pi-mono/scratch &amp;&amp; node l07.ts</pre><pre class="out">== 并行（默认）
+   [0ms] sleep(300) 开始
+   [0ms] sleep(200) 开始
+   [200ms] sleep(200) 结束
+   [300ms] sleep(300) 结束
+   结果 sleep: ok
+   结果 sleep: ok
+   总耗时约 300ms
+== 顺序执行
+   [0ms] sleep(300) 开始
+   [300ms] sleep(300) 结束
+   [300ms] sleep(200) 开始
+   [500ms] sleep(200) 结束
+   结果 sleep: ok
+   结果 sleep: ok
+   总耗时约 500ms
+== 参数校验与未知工具
+   结果 sleep: 错误 Validation failed for tool &quot;sleep&quot;: ⏎   - ms: must be number ⏎  ⏎ Received argum
+   结果 nope: 错误 Tool nope not found
+   总耗时约 0ms
+== 钩子：拦截与改写
+   结果 sh: 错误 策略禁止 rm
+   结果 sh: (执行了 ls) [已审计]
+   总耗时约 0ms</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>一个确认钩子</h3><p>写一个 <code>beforeToolCall</code>：对 <code>sh</code> 工具，命令中含有 <code>git push</code> 时阻止并返回 “需要人工确认”，其他命令放行。如果模型在同一条回复中请求了 <code>git status</code> 和 <code>git push</code>，两个工具的结果分别是什么？下一次模型请求会发生吗？</p><details><summary>查看参考答案</summary><div><pre>beforeToolCall: async ({ toolCall, args }) =>
+  toolCall.name === "sh" &amp;&amp; /\bgit push\b/.test((args as any).cmd)
+    ? { block: true, reason: "需要人工确认" }
+    : undefined,</pre><p>结果：<code>git status</code> 正常执行；<code>git push</code> 得到 isError 结果“需要人工确认”。下一次模型请求<b>会</b>发生（模型看到被拒绝，可以向用户解释）。只有当批次中所有结果都带 <code>terminate:true</code>（可以在 block 时设置 <code>terminate:true</code>）时，循环才会停下。注意：钩子拿到的是<b>校验后</b>的参数；真正的权限系统还要考虑命令的各种变形（<code>git  push</code>、别名、<code>sh -c</code>），这是第 19 课和 Codex 的 execpolicy 要面对的问题。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>工具的形状</b>（<code>AgentTool</code>）：<code>name</code>、<code>label</code>、<code>description</code>、<code>parameters</code>（TypeBox/JSON Schema）、<code>execute(id, args, signal, onUpdate)</code>，可选 <code>prepareArguments</code>（兼容旧参数形状）与 <code>executionMode</code>。</li><li><b>准备阶段</b>（<code>prepareToolCall</code>）：查找工具（找不到 → “Tool X not found”）→ <code>prepareArguments</code> → <code>validateToolArguments</code>（先按 schema 做类型转换，如 "300"→300，再校验；失败 → “Validation failed…”，附上收到的参数）→ <code>beforeToolCall</code> 钩子（可 <code>block</code>，附 reason）。任何一步失败都直接产生错误结果，不执行。</li><li><b>执行阶段</b>：<code>execute</code> 抛出的异常被捕获为错误结果；执行中可通过 <code>onUpdate</code> 推送部分结果（<code>tool_execution_update</code> 事件，例如 bash 的实时输出）。</li><li><b>收尾阶段</b>：<code>afterToolCall</code> 钩子可以替换 content、details、isError——例如审计、脱敏、追加提示。</li><li><b>并行是默认</b>：各工具按顺序做准备（因此 beforeToolCall 依次被调用），然后并发执行；结果消息<b>按原始顺序</b>发出。配置 <code>toolExecution:"sequential"</code>，或批次中任一工具声明 <code>executionMode:"sequential"</code>，则整批顺序执行。</li><li><b>提前终止</b>：只有当批次中<b>每个</b>结果都带 <code>terminate:true</code> 时，循环才在这批之后停止（不再请求模型）。</li><li><b>runToolCall</b>：工具调用其他工具（例如 codemode 脚本）时走同一条路径，所以权限钩子同样生效。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 08</div><a class="big" href="l08.html">Agent 类：状态、事件订阅、steering 与 follow-up →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l07.js"></script>
+</body></html>

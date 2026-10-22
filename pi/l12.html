@@ -1,0 +1,238 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 12 课 · 系统提示、上下文文件与技能</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 12 课</span><span class="sp"></span><a href="l11.html">← 第 11 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 12 课</div><h1>系统提示、上下文文件与技能</h1>
+<p>模型对你的项目一无所知，它知道的一切都来自上下文。pi 的系统提示由 <code>core/system-prompt.ts</code> 拼装成若干<b>命名段落</b>：preamble、tools、rules、docs、addendum、project_context、skills、cwd。本课阅读它的构造方式，看 AGENTS.md 如何从全局目录和祖先目录逐级收集，以及“技能”如何做到<b>渐进披露</b>：系统提示里只放名字和描述，完整说明在需要时才被读取。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">系统提示的组装</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这个文件会进入上下文吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>系统提示的组装</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这个文件会进入上下文吗？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>分段构造：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/system-prompt.ts#L150-L161" target="_blank" rel="noopener">packages/coding-agent/src/core/system-prompt.ts  L150–161, L172–192 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">const declaredTools = selectedTools.filter((name) =&gt; !hiddenTools.includes(name));
+const promptSections: Record&lt;string, string&gt; = {};
+if (customPrompt) {
+  promptSections.preamble = customPrompt;
+} else {
+  promptSections.preamble =
+    &quot;You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.&quot;;
+  const visibleTools = declaredTools.filter((name) =&gt; !!toolSnippets[name]);
+  const tools =
+    visibleTools.length &gt; 0 ? visibleTools.map((name) =&gt; `- ${name}: ${toolSnippets[name]}`).join(&quot;\n&quot;) : &quot;(none)&quot;;
+  promptSections.tools = `${tools}\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.`;
+  promptSections.rules = buildRules(declaredTools, toolGuidelines, promptGuidelines);
+  // …
+if (appendSystemPrompt) promptSections.addendum = appendSystemPrompt;
+if (contextFiles.length &gt; 0) promptSections.project_context = renderProjectContext(contextFiles);
+// A hidden reader is still reachable through another tool, so skills stay but the hint names no tool.
+const readers = [&quot;read&quot;, &quot;bash&quot;] as const;
+const skillFileReadTool =
+  readers.find((tool) =&gt; declaredTools.includes(tool)) ??
+  (readers.some((tool) =&gt; selectedTools.includes(tool)) ? &quot;indirect&quot; : undefined);
+if (skillFileReadTool &amp;&amp; skills.length &gt; 0) {
+  const skillsPrompt = formatSkillsForPrompt(skills, skillFileReadTool).trim();
+  if (skillsPrompt) promptSections.skills = skillsPrompt;
+}
+promptSections.cwd = cwd.replace(/\\/g, &quot;/&quot;);
+for (const [name, content] of Object.entries(customSections)) {
+  if (content) promptSections[name] = content;
+}
+
+const sections: SystemPromptSections = { preamble: promptSections.preamble };
+for (const [name, content] of Object.entries(promptSections)) {
+  if (name !== &quot;preamble&quot;) sections[name] = `&lt;${name}&gt;\n${content}\n&lt;/${name}&gt;`;
+}
+return sections;</pre><p>收集上下文文件：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/resource-loader.ts#L184-L186" target="_blank" rel="noopener">packages/coding-agent/src/core/resource-loader.ts  L184–186, L233–272 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
+  const candidates = [&quot;AGENTS.override.md&quot;, &quot;AGENTS.md&quot;, &quot;AGENTS.MD&quot;, &quot;CLAUDE.md&quot;, &quot;CLAUDE.MD&quot;];
+  for (const filename of candidates) {
+  // …
+  cwd: string;
+  agentDir: string;
+}): Array&lt;{ path: string; content: string }&gt; {
+  const resolvedCwd = resolvePath(options.cwd);
+  const resolvedAgentDir = resolvePath(options.agentDir);
+
+  const contextFiles: Array&lt;{ path: string; content: string }&gt; = [];
+  const seenPaths = new Set&lt;string&gt;();
+
+  const globalContext = loadContextFileFromDir(resolvedAgentDir);
+  if (globalContext) {
+    contextFiles.push(globalContext);
+    seenPaths.add(globalContext.path);
+  }
+
+  const ancestorContextFiles: Array&lt;{ path: string; content: string }&gt; = [];
+
+  const shadowedContextFile = findShadowedContextFile(resolvedCwd);
+  let currentDir = resolvedCwd;
+
+  while (true) {
+    const contextFile = loadContextFileFromDir(currentDir);
+    // Compare the directory&#x27;s real path, not the file&#x27;s: a worktree AGENTS.md that
+    // symlinks to the main repo&#x27;s file resolves to the shadowed path itself.
+    const isShadowed =
+      shadowedContextFile !== undefined &amp;&amp;
+      contextFile !== null &amp;&amp;
+      join(canonicalizePath(currentDir), basename(contextFile.path)) === shadowedContextFile;
+    if (contextFile &amp;&amp; !isShadowed &amp;&amp; !seenPaths.has(contextFile.path)) {
+      ancestorContextFiles.unshift(contextFile);
+      seenPaths.add(contextFile.path);
+    }
+
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) break;
+    currentDir = parentDir;
+  }
+
+  contextFiles.push(...ancestorContextFiles);
+</pre><p>技能在提示中的形式：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/skills.ts#L358-L388" target="_blank" rel="noopener">packages/coding-agent/src/core/skills.ts  L358–388 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export function formatSkillsForPrompt(skills: Skill[], fileReadTool: &quot;read&quot; | &quot;bash&quot; | &quot;indirect&quot; = &quot;read&quot;): string {
+  const visibleSkills = skills.filter((s) =&gt; !s.disableModelInvocation);
+
+  if (visibleSkills.length === 0) {
+    return &quot;&quot;;
+  }
+
+  const lines = [
+    &quot;\n\nThe following skills provide specialized instructions for specific tasks.&quot;,
+    fileReadTool === &quot;read&quot;
+      ? &quot;Use the read tool to load a skill&#x27;s file when the task matches its description.&quot;
+      : fileReadTool === &quot;bash&quot;
+        ? &quot;Use bash to load a skill&#x27;s file when the task matches its description.&quot;
+        : &quot;Load a skill&#x27;s file when the task matches its description.&quot;,
+    &quot;When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.&quot;,
+    &quot;&quot;,
+    &quot;&lt;available_skills&gt;&quot;,
+  ];
+
+  for (const skill of visibleSkills) {
+    lines.push(&quot;  &lt;skill&gt;&quot;);
+    lines.push(`    &lt;name&gt;${escapeXml(skill.name)}&lt;/name&gt;`);
+    lines.push(`    &lt;description&gt;${escapeXml(skill.description)}&lt;/description&gt;`);
+    lines.push(`    &lt;location&gt;${escapeXml(skill.filePath)}&lt;/location&gt;`);
+    lines.push(&quot;  &lt;/skill&gt;&quot;);
+  }
+
+  lines.push(&quot;&lt;/available_skills&gt;&quot;);
+
+  return lines.join(&quot;\n&quot;);
+}</pre><p>/skill 的展开：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/agent-session.ts#L2211-L2225" target="_blank" rel="noopener">packages/coding-agent/src/core/agent-session.ts  L2211–2225 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">private _expandSkillCommand(text: string): string {
+  if (!text.startsWith(&quot;/skill:&quot;)) return text;
+
+  const spaceIndex = text.indexOf(&quot; &quot;);
+  const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
+  const args = spaceIndex === -1 ? &quot;&quot; : text.slice(spaceIndex + 1).trim();
+
+  const skill = this.resourceLoader.getSkills().skills.find((s) =&gt; s.name === skillName);
+  if (!skill) return text; // Unknown skill, pass through
+
+  try {
+    const content = readFileSync(skill.filePath, &quot;utf-8&quot;);
+    const body = stripFrontmatter(content).trim();
+    const skillBlock = `&lt;skill name=&quot;${skill.name}&quot; location=&quot;${skill.filePath}&quot;&gt;\nReferences are relative to ${skill.baseDir}.\n\n${body}\n&lt;/skill&gt;`;
+    return args ? `${skillBlock}\n\n${args}` : skillBlock;</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 同样读取 AGENTS.md（从仓库根到 cwd 逐级合并），并有自己的基础指令文件与技能机制；它还在系统层面注入沙箱与审批策略的说明，让模型知道哪些操作会被拦截。见 <a href="../codex/l14.html">Codex 第 14 课 · 系统提示与 AGENTS.md</a> 与 <a href="../codex/l21.html">Codex 第 21 课 · hooks、技能与插件</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在临时项目中放置全局与项目 AGENTS.md、一个项目技能，查看生成的段落。把 HOME 指向空目录，避免你自己 <code>~/.agents/skills</code> 中的技能混入输出。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l12.ts &lt;&lt;&#x27;EOF&#x27;
+import { fauxAssistantMessage } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { fauxSession } from &quot;./faux-session.ts&quot;;
+
+const { session, faux } = await fauxSession([fauxAssistantMessage(&quot;好的&quot;)], {
+  files: {
+    &quot;AGENTS.md&quot;: &quot;# 项目约定\n- 用 pnpm，不要用 npm\n- 测试命令：pnpm test\n&quot;,
+    &quot;.pi-agent/AGENTS.md&quot;: &quot;全局：回答使用中文。\n&quot;,
+    &quot;.pi/skills/pdf-tools/SKILL.md&quot;: &quot;---\nname: pdf-tools\ndescription: 从 PDF 中提取文本与表格。处理 PDF 文件时使用。\n---\n# PDF 工具\n运行 scripts/extract.py &lt;文件&gt;\n&quot;,
+  },
+});
+await session.prompt(&quot;/skill:pdf-tools 提取 report.pdf 第 3 页&quot;);
+const sys = session.messages[0] as any;
+console.log(&quot;sections:&quot;, Object.keys(sys.sections).join(&quot;, &quot;));
+for (const name of [&quot;project_context&quot;, &quot;skills&quot;]) console.log(`\n---- ${name} ----\n` + (sys.sections[name] ?? &quot;(无)&quot;).replace(session.sessionManager.getCwd(), &quot;&lt;cwd&gt;&quot;).replaceAll(session.sessionManager.getCwd(), &quot;&lt;cwd&gt;&quot;));
+
+const u = session.messages.find((m) =&gt; m.role === &quot;user&quot;) as any;
+console.log(&quot;\n---- /skill 展开后的用户消息 ----\n&quot; + u.content.map((c: any) =&gt; c.text).join(&quot;&quot;).replaceAll(session.sessionManager.getCwd(), &quot;&lt;cwd&gt;&quot;));
+session.dispose();
+
+// 不信任项目目录时：项目的 .pi/skills 不会被加载（AGENTS.md 仍然加载）
+const { SettingsManager } = await import(&quot;@earendil-works/pi-coding-agent&quot;);
+const s2 = await fauxSession([fauxAssistantMessage(&quot;好的&quot;)], {
+  files: { &quot;AGENTS.md&quot;: &quot;x&quot;, &quot;.pi/skills/pdf-tools/SKILL.md&quot;: &quot;---\nname: pdf-tools\ndescription: d\n---\n&quot; },
+  extra: { settingsManager: SettingsManager.inMemory({}, { projectTrusted: false }) },
+});
+await s2.session.prompt(&quot;hi&quot;);
+const sys2 = s2.session.messages[0] as any;
+console.log(&quot;\n不信任项目时 sections:&quot;, Object.keys(sys2.sections).join(&quot;, &quot;));
+s2.session.dispose();
+EOF
+cd pi-mono/scratch &amp;&amp; HOME=$(mktemp -d) node l12.ts</pre><pre class="out">sections: preamble, tools, rules, docs, project_context, skills, cwd
+
+---- project_context ----
+&lt;project_context&gt;
+Project-specific instructions and guidelines:
+
+&lt;project_instructions path=&quot;&lt;cwd&gt;/.pi-agent/AGENTS.md&quot;&gt;
+全局：回答使用中文。
+
+&lt;/project_instructions&gt;
+
+&lt;project_instructions path=&quot;&lt;cwd&gt;/AGENTS.md&quot;&gt;
+# 项目约定
+- 用 pnpm，不要用 npm
+- 测试命令：pnpm test
+
+&lt;/project_instructions&gt;
+&lt;/project_context&gt;
+
+---- skills ----
+&lt;skills&gt;
+The following skills provide specialized instructions for specific tasks.
+Use the read tool to load a skill&#x27;s file when the task matches its description.
+When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.
+
+&lt;available_skills&gt;
+  &lt;skill&gt;
+    &lt;name&gt;pdf-tools&lt;/name&gt;
+    &lt;description&gt;从 PDF 中提取文本与表格。处理 PDF 文件时使用。&lt;/description&gt;
+    &lt;location&gt;&lt;cwd&gt;/.pi/skills/pdf-tools/SKILL.md&lt;/location&gt;
+  &lt;/skill&gt;
+&lt;/available_skills&gt;
+&lt;/skills&gt;
+
+---- /skill 展开后的用户消息 ----
+&lt;skill name=&quot;pdf-tools&quot; location=&quot;&lt;cwd&gt;/.pi/skills/pdf-tools/SKILL.md&quot;&gt;
+References are relative to &lt;cwd&gt;/.pi/skills/pdf-tools.
+
+# PDF 工具
+运行 scripts/extract.py &lt;文件&gt;
+&lt;/skill&gt;
+
+提取 report.pdf 第 3 页
+
+不信任项目时 sections: preamble, tools, rules, docs, project_context, cwd</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>估算上下文成本</h3><p>一个项目有 40 个技能，平均描述 300 字符。①它们在每次请求中大约占多少 token（按 4 字符/token 粗算，加上标签）？②为什么 pi 不把技能正文直接放进系统提示？③如果你有一个只想手动触发的危险技能（例如“发布到生产”），应该怎么配置？</p><details><summary>查看参考答案</summary><div><p>① 每个技能的 name+description+location+标签约 450–500 字符 → 约 120 token；40 个约 5000 token，每次请求都要付出（提示缓存可以降低成本但不能降低占用）。</p><p>② 渐进披露：正文可能有数千 token，且大多数任务用不上；只放描述，让模型在需要时用 read 加载，成本只在使用时发生。这也是描述必须写清楚“何时使用”的原因。</p><p>③ 在 frontmatter 中设置 <code>disable-model-invocation: true</code>：它不会出现在系统提示里，模型不知道它的存在，只有用户输入 <code>/skill:deploy-prod</code> 时才会展开。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>分段的系统提示</b>：<code>buildSystemPromptSections</code> 返回有序的段落；除 preamble 外每段都用同名标签包裹（如 <code>&lt;rules&gt;…&lt;/rules&gt;</code>），这样后续的 system 消息可以按名字替换某一段（第 3 课的 sections 机制），模型也能把更新对应到原文。</li><li><b>tools 与 rules</b>：tools 段列出每个工具的 <code>promptSnippet</code>；rules 段合并各工具的 <code>promptGuidelines</code>、扩展提供的规则，以及固定的“Be concise…”等，去重。只有 bash 而没有 grep/find/ls 时，会加上“Use bash for file operations like ls, rg, find”。</li><li><b>替换与追加</b>：<code>.pi/SYSTEM.md</code> 或全局 <code>SYSTEM.md</code> 替换默认的 preamble、tools、rules、docs 四段（project_context、skills、cwd 仍然保留）；<code>APPEND_SYSTEM.md</code> 作为 addendum 追加。扩展可以强制给出完整的系统提示。</li><li><b>上下文文件</b>：先加载全局目录（<code>~/.pi/agent</code>）中的，再从 cwd 一直向上到根目录，每个目录取第一个存在的 <code>AGENTS.override.md / AGENTS.md / CLAUDE.md</code>，越靠近根的越靠前。每个文件包在 <code>&lt;project_instructions path=…&gt;</code> 中。处理了 git worktree 嵌套时的重复。</li><li><b>技能</b>：遵循 Agent Skills 规范的 <code>SKILL.md</code>（frontmatter 必须有 name 与 description）。系统提示只列出 name、description、location，并告诉模型“任务匹配时用 read 加载”。来源：全局与项目的 <code>skills/</code>、<code>~/.agents/skills</code> 与项目祖先目录的 <code>.agents/skills</code>、pi 包。<code>disable-model-invocation: true</code> 的技能不出现在提示中，只能由用户调用。</li><li><b>/skill:name</b>：用户显式调用时，AgentSession 读取 SKILL.md 正文，包装成 <code>&lt;skill name location&gt;References are relative to …</code> 块放进用户消息。</li><li><b>信任</b>：项目目录中的 <code>.pi/</code> 资源（技能、扩展、设置、SYSTEM.md）只在项目被信任时加载；交互模式首次进入一个项目时会询问。SDK 默认信任。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 13</div><a class="big" href="l13.html">会话：JSONL 树、分支与恢复 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l12.js"></script>
+</body></html>

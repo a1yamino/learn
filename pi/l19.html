@@ -1,0 +1,123 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 19 课 · 信任边界：pi 刻意不做什么</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 19 课</span><span class="sp"></span><a href="l18.html">← 第 18 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 19 课</div><h1>信任边界：pi 刻意不做什么</h1>
+<p>pi 的哲学是“内核最小，策略交给扩展”。它<b>没有</b>内置沙箱，<b>不会</b>在每次工具调用前请求批准，也没有内置的计划模式或子 agent。官方文档写得很直接：模型生成的命令和代码应视为不可信，安全来自操作系统或虚拟化边界，而不是看着记录。本课用实验划清 pi 真正提供的唯一边界——<b>项目信任</b>——以及它不保护什么。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">谁能执行代码？</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：会发生什么？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>谁能执行代码？</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：会发生什么？</h2><div class="goal">预测，再看实验结果。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/docs/security.md#L3-L7" target="_blank" rel="noopener">packages/coding-agent/docs/security.md  L3–7 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">Treat model-generated commands and code as untrusted. Pi can read, change, and execute files with the permissions of the account that started it, and it does not ask for approval before every tool call. Extensions, package installers, language servers, and other child processes run with those same permissions unless an operating-system or virtualization boundary restricts them.
+
+Files, comments, instructions, command output, and model responses can steer the model through prompt injection. Project trust controls which project resources load at startup, but it does not make that content or the resulting actions safe.
+
+Safety comes from limiting the files, credentials, processes, and network services Pi can access and affect if a generated action is wrong or hostile. Watching the transcript, using project trust, and reviewing changes do not create a security boundary.</pre><p>需要信任决定的项目资源：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/trust-manager.ts#L30-L39" target="_blank" rel="noopener">packages/coding-agent/src/core/trust-manager.ts  L30–39 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">const TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES = [
+  &quot;settings.json&quot;,
+  &quot;mcp.json&quot;,
+  &quot;extensions&quot;,
+  &quot;skills&quot;,
+  &quot;prompts&quot;,
+  &quot;themes&quot;,
+  &quot;SYSTEM.md&quot;,
+  &quot;APPEND_SYSTEM.md&quot;,
+] as const;</pre><p>权限闸门只是一个 tool_call 钩子（第 15 课）：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/examples/extensions/permission-gate.ts#L10-L33" target="_blank" rel="noopener">packages/coding-agent/examples/extensions/permission-gate.ts  L10–33 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export default function (pi: ExtensionAPI) {
+  const dangerousPatterns = [/\brm\s+(-rf?|--recursive)/i, /\bsudo\b/i, /\b(chmod|chown)\b.*777/i];
+
+  pi.on(&quot;tool_call&quot;, async (event, ctx) =&gt; {
+    if (event.toolName !== &quot;bash&quot;) return undefined;
+
+    const command = event.input.command as string;
+    const isDangerous = dangerousPatterns.some((p) =&gt; p.test(command));
+
+    if (isDangerous) {
+      if (!ctx.hasUI) {
+        // In non-interactive mode, block by default
+        return { block: true, reason: &quot;Dangerous command blocked (no UI for confirmation)&quot; };
+      }
+
+      const choice = await ctx.ui.select(`⚠️ Dangerous command:\n\n  ${command}\n\nAllow?`, [&quot;Yes&quot;, &quot;No&quot;]);
+
+      if (choice !== &quot;Yes&quot;) {
+        return { block: true, reason: &quot;Blocked by user&quot; };
+      }
+    }
+
+    return undefined;
+  });</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 内置平台沙箱（<a href="../codex/l11.html">Codex 第 11 课 · 沙箱：macOS Seatbelt</a>、<a href="../codex/l12.html">Codex 第 12 课 · 沙箱：Linux</a>）与审批/执行策略（<a href="../codex/l13.html">Codex 第 13 课 · 审批与执行策略</a>）。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">脚本在临时目录里构造一个“陌生项目”：带一个项目扩展和一个 <code>build</code> 目录；faux 模型总是要求执行 <code>rm -rf build</code>。一切发生在临时 HOME 与临时目录中，不会碰你的文件。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>运行实验。</p><pre class="cmd">cat &gt; pi-mono/scratch/l19.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 信任边界实验：项目扩展是否加载？危险命令谁来拦？
+ROOT=&quot;$(cd .. &amp;&amp; pwd)&quot;; CLI=&quot;node $ROOT/packages/coding-agent/dist/cli.js&quot;
+export HOME=$(mktemp -d); W=$(mktemp -d)
+# 一个让模型执行 &quot;rm -rf build&quot; 的 faux 扩展
+cat &gt; $W/faux.ts &lt;&lt;&#x27;TS&#x27;
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from &quot;@earendil-works/pi-ai/compat&quot;;
+export default function (pi: any) {
+  const f = registerFauxProvider();
+  f.setResponses([
+    fauxAssistantMessage([fauxToolCall(&quot;bash&quot;, { command: &quot;rm -rf build &amp;&amp; echo 已删除&quot; })], { stopReason: &quot;toolUse&quot; }),
+    (ctx: any) =&gt; fauxAssistantMessage(&quot;工具结果：&quot; + JSON.stringify(ctx.messages.at(-1).content[0].text)),
+  ]);
+  pi.registerProvider(&quot;faux&quot;, { baseUrl: &quot;http://localhost:0&quot;, apiKey: &quot;k&quot;, api: f.api,
+    models: f.models.map((m: any) =&gt; ({ ...m, reasoning: false, input: [&quot;text&quot;] })) });
+}
+TS
+# 被测项目：带一个项目扩展
+P=$W/project; mkdir -p $P/.pi/extensions $P/build
+echo &#x27;export default function () { console.error(&quot;!! 项目扩展被加载并执行了&quot;); }&#x27; &gt; $P/.pi/extensions/hello.ts
+cd $P
+PI=&quot;$CLI --no-session -e $W/faux.ts --model faux/faux-1&quot;
+echo &quot;== 1. 默认（非交互，无保存的决定）&quot;; $PI -p &quot;清理&quot; &lt;/dev/null; ls -d build 2&gt;/dev/null || echo &quot;(build 已被删除)&quot;
+mkdir -p build
+echo &quot;== 2. --approve：信任本项目&quot;; $PI --approve -p &quot;清理&quot; &lt;/dev/null
+mkdir -p build
+echo &quot;== 3. 加载官方示例 permission-gate&quot;
+$PI -e $ROOT/packages/coding-agent/examples/extensions/permission-gate.ts -p &quot;清理&quot; &lt;/dev/null
+ls -d build &amp;&amp; echo &quot;(build 仍在)&quot;
+EOF
+cd pi-mono/scratch &amp;&amp; bash l19.sh 2&gt;&amp;1</pre><pre class="out">== 1. 默认（非交互，无保存的决定）
+工具结果：&quot;已删除\n&quot;
+(build 已被删除)
+== 2. --approve：信任本项目
+!! 项目扩展被加载并执行了
+工具结果：&quot;已删除\n&quot;
+== 3. 加载官方示例 permission-gate
+工具结果：&quot;Dangerous command blocked (no UI for confirmation)&quot;
+build
+(build 仍在)</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一个用户级信任策略</h3><p>写一个扩展，处理 <code>project_trust</code> 事件：路径位于 <code>~/work/</code> 下的项目自动信任，其他一律拒绝。用 <code>-e</code> 加载它重新运行实验，看第 1 步的结果。</p><details><summary>查看参考答案</summary><div><pre>import { homedir } from "node:os";
+export default function (pi: any) {
+  pi.on("project_trust", async (event: any) =&gt;
+    event.cwd.startsWith(homedir() + "/work/") ? { trusted: "yes" } : { trusted: "no" });
+}</pre><p>按文档，用户级与命令行扩展可以处理 <code>project_trust</code>，第一个给出是/否的扩展决定结果，优先于 trust.json 与 defaultProjectTrust。事件只有 <code>cwd</code>，返回 <code>{ trusted: "yes"|"no"|"undecided", remember? }</code>（<code>types.ts</code> 中的 <code>ProjectTrustEventResult</code>）；返回 undecided 则交给后续规则。注意：这仍然只控制资源加载，模型发出的命令照样执行。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>没有内置沙箱与审批</b>：工具以启动 pi 的用户权限运行。<code>docs/security.md</code> 建议把 pi 整个放进容器/虚拟机/沙箱（<code>docs/containerization.md</code> 列出 Docker、Docker Sandboxes、OpenShell 等方式）。</li><li><b>项目信任</b>（<code>trust-manager.ts</code>）：当前目录存在 <code>.pi/settings.json</code>、<code>mcp.json</code>、<code>extensions</code>、<code>skills</code>、<code>prompts</code>、<code>themes</code>、<code>SYSTEM.md</code>、<code>APPEND_SYSTEM.md</code>（或项目 <code>.agents/skills</code>）时需要决定是否加载。只有空 <code>.pi</code> 目录不需要。</li><li><b>决定顺序</b>：命令行 <code>--approve</code>/<code>--no-approve</code> → 用户级扩展处理 <code>project_trust</code> 事件 → <code>~/.pi/agent/trust.json</code> 中最近的父目录决定 → 设置 <code>defaultProjectTrust</code>（默认 ask）。非交互模式下 ask 等同于跳过。</li><li><b>信任不保护什么</b>：AGENTS.md/CLAUDE.md 不受信任控制、始终加载；项目信任也完全不限制工具调用能访问的路径。它只阻止一个文件夹<b>静默执行</b>扩展代码。</li><li><b>策略在扩展里</b>：官方示例 <code>permission-gate.ts</code>（危险命令确认，无 UI 时直接拦截）、<code>protected-paths.ts</code>、<code>confirm-destructive.ts</code>、<code>sandbox/</code>（用 sandbox-runtime 在 macOS sandbox-exec / Linux bubblewrap 中运行 bash）、<code>plan-mode/</code>（第 16 课）、<code>subagent/</code>。</li><li><b>对比</b>：Codex 把沙箱、审批策略与执行策略做成内置的核心功能——这是两者最大的设计分歧。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 20</div><a class="big" href="l20.html">毕业项目：用 SDK 写一个迷你编码 agent →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l19.js"></script>
+</body></html>

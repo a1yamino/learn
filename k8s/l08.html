@@ -35,13 +35,14 @@ nodes:
   extraPortMappings:
   - { containerPort: 30080, hostPort: 8080 }
 - role: worker
+- role: worker
 EOF
 kind delete cluster --name learn; kind create cluster --name learn --config kind-ing.yaml</pre><pre class="out">Set kubectl context to &quot;kind-learn&quot;</pre></div></div><div class="st"><span class="n">02</span><div><p>安装 Gateway API CRD 和 Traefik。</p><pre class="cmd">kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
 helm repo add traefik https://traefik.github.io/charts &amp;&amp; helm repo update
 helm install traefik traefik/traefik -n traefik --create-namespace \
   --set service.type=NodePort --set ports.web.nodePort=30080 \
   --set providers.kubernetesGateway.enabled=true
-kubectl -n traefik rollout status deploy traefik</pre><pre class="out">deployment &quot;traefik&quot; successfully rolled out</pre></div></div><div class="st"><span class="n">03</span><div><p>两个后端服务。</p><pre class="cmd">for s in web api; do kubectl create deployment $s --image=registry.k8s.io/e2e-test-images/agnhost:2.52 -- /agnhost netexec --http-port 8080; kubectl expose deployment $s --port 80 --target-port 8080; done</pre><pre class="out">service/web exposed
+kubectl -n traefik rollout status deploy traefik</pre><pre class="out">deployment &quot;traefik&quot; successfully rolled out</pre></div></div><div class="st"><span class="n">03</span><div><p>两个后端服务。serve-hostname 对任意路径返回主机名，便于验证路由选择；Ingress 的 Prefix 匹配不会自动去掉 /api。</p><pre class="cmd">for s in web api; do kubectl create deployment $s --image=registry.k8s.io/e2e-test-images/agnhost:2.52 -- /agnhost serve-hostname --port 8080; kubectl expose deployment $s --port 80 --target-port 8080; done</pre><pre class="out">service/web exposed
 service/api exposed</pre></div></div><div class="st"><span class="n">04</span><div><p>Ingress：/api 给 api，其余给 web。</p><pre class="cmd">kubectl create ingress shop --class=traefik --rule=&quot;shop.localhost/api*=api:80&quot; --rule=&quot;shop.localhost/*=web:80&quot;
 curl -s -H &quot;Host: shop.localhost&quot; localhost:8080/hostname; echo
 curl -s -H &quot;Host: shop.localhost&quot; localhost:8080/api/hostname; echo</pre><pre class="out">web-6d8f7c9b5-2kq8x
@@ -67,7 +68,7 @@ spec:
 EOF
 kubectl get gateway shop; curl -s -H &quot;Host: shop.localhost&quot; localhost:8080/api/hostname; echo</pre><pre class="out">NAME   CLASS     ADDRESS   PROGRAMMED   AGE
 shop   traefik             True         5s
-api-7b9c6d5f4-x7k2p</pre></div></div><div class="st"><span class="n">06</span><div><p>查看路由状态。</p><pre class="cmd">kubectl get httproute shop -o jsonpath=&quot;{.status.parents[0].conditions[*].type}&quot;</pre><pre class="out">Accepted ResolvedRefs</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>金丝雀发布</h3><p>部署 <code>web-v2</code>（同样的镜像即可，用于区分主机名）。修改 HTTPRoute，让 90% 的默认流量到 web、10% 到 web-v2；带请求头 <code>x-canary: 1</code> 的请求 100% 到 web-v2。用 100 次 curl 统计分布。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl create deployment web-v2 --image=registry.k8s.io/e2e-test-images/agnhost:2.52 -- /agnhost netexec --http-port 8080
+api-7b9c6d5f4-x7k2p</pre></div></div><div class="st"><span class="n">06</span><div><p>查看路由状态。</p><pre class="cmd">kubectl get httproute shop -o jsonpath=&quot;{.status.parents[0].conditions[*].type}&quot;</pre><pre class="out">Accepted ResolvedRefs</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>金丝雀发布</h3><p>部署 <code>web-v2</code>（同样的镜像即可，用于区分主机名）。修改 HTTPRoute，让 90% 的默认流量到 web、10% 到 web-v2；带请求头 <code>x-canary: 1</code> 的请求 100% 到 web-v2。用 100 次 curl 统计分布。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl create deployment web-v2 --image=registry.k8s.io/e2e-test-images/agnhost:2.52 -- /agnhost serve-hostname --port 8080
 kubectl expose deployment web-v2 --port 80 --target-port 8080
 kubectl apply -f - <<'EOF'
 apiVersion: gateway.networking.k8s.io/v1
@@ -85,7 +86,7 @@ spec:
     - { name: web, port: 80, weight: 90 }
     - { name: web-v2, port: 80, weight: 10 }
 EOF
-for i in $(seq 100); do curl -s -H "Host: shop.localhost" localhost:8080/hostname; echo; done | cut -d- -f1-2 | sort | uniq -c
+for i in $(seq 100); do curl -s -H "Host: shop.localhost" localhost:8080/hostname; echo; done | sed 's/-[^-]*$//' | sort | uniq -c
 curl -s -H "Host: shop.localhost" -H "x-canary: 1" localhost:8080/hostname</pre><pre class="out">     91 web-6d8f7c9b5
       9 web-v2-5f7d8c6b4
 web-v2-5f7d8c6b4-q2w8z</pre><p>权重和请求头匹配是 Gateway API 的标准字段，换一个实现（Envoy Gateway、Istio、云厂商）配置不变。用 Ingress 实现同样的效果，要靠各控制器不同的注解。逐步调大 v2 的权重即可完成发布，出问题时把权重调回 0。</p></div></details></div>

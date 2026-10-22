@@ -14,7 +14,8 @@
 | [Redis](https://a1yamino.github.io/learn/redis/) | 初级后端工程师 | 已完成（24 课） |
 | [Kafka](https://a1yamino.github.io/learn/kafka/) | 初级后端工程师 | 已完成（24 课） |
 | [DDIA：数据密集型应用设计](https://a1yamino.github.io/learn/ddia/) | 有一定经验的后端工程师 | 已完成（28 课） |
-| [Clean Code：代码整洁之道](https://a1yamino.github.io/learn/cleancode/) | 写过一段时间代码的开发者 | 更新中（20 课） |
+| [Clean Code：代码整洁之道](https://a1yamino.github.io/learn/cleancode/) | 写过一段时间代码的开发者 | 已完成（20 课） |
+| [pi 源码精读：编码 agent 的内核](https://a1yamino.github.io/learn/pi/) | 想理解编码 agent 如何构建的开发者 | 已完成（20 课） |
 
 ### Docker 课程大纲
 基础：1 为什么需要 Docker · 2 容器生命周期与核心命令 · 3 Dockerfile 与构建缓存 · 4 实战：把后端 API 打包成镜像 · 5 多阶段构建与镜像瘦身 · 6 数据卷与持久化 · 7 网络与端口映射 · 8 Docker Compose 入门 · 9 配置、环境变量与密钥 · 10 镜像仓库、标签与推送
@@ -104,6 +105,21 @@
 
 综合项目：20 综合项目：一步步重构一个混乱的订单模块
 
+### pi 源码精读 课程大纲
+阅读 [badlogic/pi-mono](https://github.com/badlogic/pi-mono) 在提交 db77405 的源码；代码摘录均链接到该提交。是 Codex CLI 课程的基础。
+
+第一部分 · 全景：1 pi 是什么：极简 agent harness 与 monorepo 地图 · 2 一次对话的生命周期：从输入到回复
+
+第二部分 · pi-ai：与模型对话：3 统一的消息模型与流式事件 · 4 Provider 抽象、模型目录与凭据 · 5 适配真实 API：消息转换与流式解析
+
+第三部分 · pi-agent-core：循环：6 Agent 循环：runLoop 逐行精读 · 7 工具调用：参数校验、并行执行与钩子 · 8 Agent 类：状态、事件订阅、steering 与 follow-up
+
+第四部分 · coding-agent：编码能力：9 编码工具集：read、write、ls、grep、find · 10 edit 工具：精确替换、diff 与文件修改队列 · 11 bash 工具：进程、输出截断与中止 · 12 系统提示、上下文文件与技能 · 13 会话：JSONL 树、分支与恢复 · 14 上下文压缩（compaction）
+
+第五部分 · 可扩展性与界面：15 扩展系统：工具、命令与事件钩子 · 16 斜杠命令与提示模板 · 17 pi-tui：差分渲染的终端界面 · 18 运行模式：交互、print/JSON、RPC 与 SDK · 19 信任边界，以及 pi 刻意不做的事
+
+综合项目：20 综合项目：用 SDK 构建自己的迷你编码 agent
+
 ## 每一课都有 / What's in each lesson
 - 讲解和自动播放的图解动画
 - 少量动手操作（只在动手比看更容易理解的地方）
@@ -121,6 +137,7 @@ redis/            Redis 课程
 kafka/            Kafka 课程
 ddia/             DDIA 课程
 cleancode/        Clean Code 课程
+pi/               pi 源码精读
 _src/             课程生成器源文件 / generator sources
 ```
 纯静态 HTML，无需构建；克隆后直接用浏览器打开 `index.html` 即可。

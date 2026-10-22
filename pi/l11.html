@@ -1,0 +1,216 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 11 课 · bash 工具：进程、输出截断与中止</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 11 课</span><span class="sp"></span><a href="l10.html">← 第 10 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 11 课</div><h1>bash 工具：进程、输出截断与中止</h1>
+<p>bash 是编码 agent 最强大的工具：编译、测试、git、包管理都靠它。pi 的实现（<code>core/tools/bash.ts</code>，442 行）要解决的是进程管理的老问题：合并 stdout/stderr、保留输出的<b>尾部</b>（错误通常在最后）、把完整输出存到临时文件、超时与中止时杀掉整棵进程树、执行中流式推送输出给界面。注意 pi 默认<b>不做任何沙箱</b>：命令以你的用户权限直接运行。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个命令的一生</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这条命令的结果？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个命令的一生</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这条命令的结果？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>进程启动、超时、中止：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/bash.ts#L112-L118" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/bash.ts  L112–118, L124–160 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">const child = spawn(shellConfig.shell, commandFromStdin ? shellConfig.args : [...shellConfig.args, command], {
+  cwd,
+  detached: process.platform !== &quot;win32&quot;,
+  env: env ?? getShellEnv(),
+  stdio: [commandFromStdin ? &quot;pipe&quot; : &quot;ignore&quot;, &quot;pipe&quot;, &quot;pipe&quot;],
+  windowsHide: true,
+});
+  // …
+let timedOut = false;
+let timeoutHandle: NodeJS.Timeout | undefined;
+const onAbort = () =&gt; {
+  if (child.pid) killProcessTree(child.pid);
+};
+
+try {
+  // Set timeout if provided.
+  if (timeoutMs !== undefined) {
+    timeoutHandle = setTimeout(() =&gt; {
+      timedOut = true;
+      if (child.pid) killProcessTree(child.pid);
+    }, timeoutMs);
+  }
+  // Stream stdout and stderr.
+  child.stdout?.on(&quot;data&quot;, onData);
+  child.stderr?.on(&quot;data&quot;, onData);
+  // Handle abort signal by killing the entire process tree.
+  if (signal) {
+    if (signal.aborted) onAbort();
+    else signal.addEventListener(&quot;abort&quot;, onAbort, { once: true });
+  }
+  // Handle shell spawn errors and wait for the process to terminate without hanging
+  // on inherited stdio handles held by detached descendants.
+  const exitCode = await waitForChildProcess(child);
+  if (signal?.aborted) {
+    throw new Error(&quot;aborted&quot;);
+  }
+  if (timedOut) {
+    throw new Error(`timeout:${timeout}`);
+  }
+  // A signal-killed shell has no exit code. Use the standard shell convention so
+  // callers do not mistake the termination for a successful command.
+  const signalCode = child.signalCode;
+  return { exitCode: exitCode ?? (signalCode ? 128 + (osConstants.signals[signalCode] ?? 0) : 1) };
+} finally {
+  if (child.pid) untrackDetachedChildPid(child.pid);</pre><p>截断提示：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/bash.ts#L337-L355" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/bash.ts  L337–355 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">
+const formatOutput = (snapshot: Awaited&lt;ReturnType&lt;typeof finishOutput&gt;&gt;, emptyText = &quot;(no output)&quot;) =&gt; {
+  const truncation = snapshot.truncation;
+  let text = snapshot.content || emptyText;
+  let details: BashToolDetails | undefined;
+  if (truncation.truncated) {
+    details = { truncation, fullOutputPath: snapshot.fullOutputPath };
+    const startLine = truncation.totalLines - truncation.outputLines + 1;
+    const endLine = truncation.totalLines;
+    if (truncation.lastLinePartial) {
+      const lastLineSize = formatSize(output.getLastLineBytes());
+      text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${snapshot.fullOutputPath}]`;
+    } else if (truncation.truncatedBy === &quot;lines&quot;) {
+      text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${snapshot.fullOutputPath}]`;
+    } else {
+      text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${snapshot.fullOutputPath}]`;
+    }
+  }
+  return { text, details };</pre><p>错误与退出码：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/bash.ts#L360-L384" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/bash.ts  L360–384, L400–408 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">
+try {
+  let exitCode: number | null;
+  try {
+    const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
+      onData: handleData,
+      signal,
+      timeout,
+      env: spawnContext.env,
+    });
+    exitCode = result.exitCode;
+  } catch (err) {
+    const snapshot = await finishOutput();
+    const { text } = formatOutput(snapshot, &quot;&quot;);
+    if (err instanceof Error &amp;&amp; err.message === &quot;aborted&quot;) {
+      throw new Error(appendStatus(text, &quot;Command aborted&quot;));
+    }
+    if (err instanceof Error &amp;&amp; err.message.startsWith(&quot;timeout:&quot;)) {
+      const timeoutSecs = err.message.split(&quot;:&quot;)[1];
+      throw new Error(appendStatus(text, `Command timed out after ${timeoutSecs} seconds`));
+    }
+    throw err;
+  }
+
+  const snapshot = await finishOutput();
+  // …
+if (exitCode !== 0) {
+  return {
+    content: [{ type: &quot;text&quot;, text: appendStatus(outputText, `Command exited with code ${exitCode}`) }],
+    details,
+    structuredContent,
+    isError: true,
+  };
+}
+return { content: [{ type: &quot;text&quot;, text: outputText }], details, structuredContent };</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：这是两者差别最大的地方。Codex 的 shell 命令在<b>沙箱</b>中执行（macOS Seatbelt、Linux Landlock/bubblewrap、Windows 受限令牌），并根据审批策略决定是否先询问用户；它还提供可交互的长驻进程（unified exec，可以向运行中的进程写入 stdin）。见 <a href="../codex/l09.html">Codex 第 9 课 · shell 与 unified exec</a>、<a href="../codex/l11.html">Codex 第 11 课 · 沙箱：macOS Seatbelt</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">直接调用 bash 工具：成功、失败、大输出、超时、中止、流式更新。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行（约 3 秒）。</p><pre class="cmd">cat &gt; pi-mono/scratch/l11.ts &lt;&lt;&#x27;EOF&#x27;
+import { mkdtempSync } from &quot;node:fs&quot;;
+import { tmpdir } from &quot;node:os&quot;;
+import { join } from &quot;node:path&quot;;
+import { createBashTool } from &quot;@earendil-works/pi-coding-agent&quot;;
+
+const dir = mkdtempSync(join(tmpdir(), &quot;l11-&quot;));
+const bash = createBashTool(dir);
+const short = (t: string) =&gt; t.replace(/\/tmp\/[^\s\]]+/g, &quot;&lt;临时文件&gt;&quot;);
+
+async function run(title: string, args: any, opts: { abortAfter?: number; updates?: boolean } = {}) {
+  const ac = new AbortController();
+  if (opts.abortAfter) setTimeout(() =&gt; ac.abort(), opts.abortAfter);
+  let n = 0;
+  const t = performance.now();
+  try {
+    const r: any = await bash.execute(&quot;id&quot;, args, ac.signal, opts.updates ? () =&gt; { n++; } : undefined);
+    const lines = r.content[0].text.split(&quot;\n&quot;);
+    console.log(`== ${title}${r.isError ? &quot;（isError）&quot; : &quot;&quot;}`);
+    console.log(&quot;  &quot; + (lines.length &gt; 5 ? [lines[0], &quot;  …&quot;, ...lines.slice(-3)] : lines).map(short).join(&quot;\n  &quot;));
+    if (r.structuredContent) console.log(`  structured: exit_code=${r.structuredContent.exit_code} truncated=${r.structuredContent.truncated}`);
+  } catch (e) {
+    console.log(`== ${title}（抛出）\n  ` + short((e as Error).message).split(&quot;\n&quot;).join(&quot;\n  &quot;));
+  }
+  console.log(`  用时约 ${Math.round((performance.now() - t) / 100) / 10}s` + (opts.updates ? `，收到部分输出更新 ${n &gt; 1 ? &quot;多&quot; : n} 次` : &quot;&quot;));
+}
+
+await run(&quot;成功&quot;, { command: &quot;echo hi; echo err &gt;&amp;2&quot; });
+await run(&quot;非零退出码&quot;, { command: &quot;ls /nope&quot; });
+await run(&quot;大量输出&quot;, { command: &quot;seq 1 5000&quot; });
+await run(&quot;超时&quot;, { command: &quot;echo start; sleep 5&quot;, timeout: 1 });
+await run(&quot;中止（含子进程）&quot;, { command: &quot;sleep 30 &amp; sleep 30; echo never&quot; }, { abortAfter: 300 });
+await run(&quot;流式更新&quot;, { command: &quot;for i in 1 2 3; do echo $i; sleep 0.3; done&quot; }, { updates: true });
+EOF
+cd pi-mono/scratch &amp;&amp; node l11.ts</pre><pre class="out">== 成功
+  hi
+  err
+  
+  structured: exit_code=0 truncated=false
+  用时约 0s
+== 非零退出码（isError）
+  ls: cannot access &#x27;/nope&#x27;: No such file or directory
+  
+  
+  Command exited with code 2
+  structured: exit_code=2 truncated=false
+  用时约 0s
+== 大量输出
+  3001
+    …
+  5000
+  
+  [Showing lines 3001-5000 of 5000. Full output: &lt;临时文件&gt;]
+  structured: exit_code=0 truncated=false
+  用时约 0s
+== 超时（抛出）
+  start
+  
+  
+  Command timed out after 1 seconds
+  用时约 1s
+== 中止（含子进程）（抛出）
+  Command aborted
+  用时约 0.3s
+== 流式更新
+  1
+  2
+  3
+  
+  structured: exit_code=0 truncated=false
+  用时约 0.9s，收到部分输出更新 多 次</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用 spawnHook 加一层保护</h3><p>使用 <code>createBashTool(dir, { spawnHook })</code>：把每条命令包装成 <code>timeout 60 bash -c &lt;原命令&gt;</code> 并设置环境变量 <code>PI_AGENT=1</code>。再思考：这能算沙箱吗？</p><details><summary>查看参考答案</summary><div><pre>const bash = createBashTool(dir, {
+  spawnHook: (ctx) => ({
+    ...ctx,
+    command: `timeout 60 bash -c ${JSON.stringify(ctx.command)}`,
+    env: { ...ctx.env, PI_AGENT: "1" },
+  }),
+});
+await bash.execute("1", { command: "echo $PI_AGENT" }); // 1</pre><p>这不是沙箱：命令仍以你的用户权限运行，可以读写任何你能访问的文件、访问网络。spawnHook 只是改写“怎么启动”。真正的隔离需要操作系统机制——把命令放进容器（pi 文档 <code>containerization.md</code> 的做法），或像 Codex 那样用 Seatbelt/Landlock 限制文件系统与网络。<code>JSON.stringify</code> 在这里只是演示用的引号处理，并不是可靠的 shell 转义。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>参数</b>：<code>command</code> 与可选的 <code>timeout</code>（秒，默认无超时，有上限）。命令在 cwd 中通过 shell 执行；非 Windows 平台以 <code>detached</code> 方式启动，使其成为独立进程组。</li><li><b>输出</b>：stdout 与 stderr 按到达顺序合并；<code>OutputAccumulator</code> 保留<b>最后</b> 2000 行或 50KB（<code>truncateTail</code>，与 read 相反），被截断时完整输出写入临时文件，并提示 <code>[Showing lines 3001-5000 of 5000. Full output: …]</code>。</li><li><b>退出码</b>：非 0 时结果标记 <code>isError</code> 并附 <code>Command exited with code N</code>；被信号杀死时按 shell 惯例使用 128+信号值。</li><li><b>超时与中止</b>：都调用 <code>killProcessTree</code> 杀掉整个进程组（包括后台子进程），然后抛出带已收集输出的错误：<code>Command timed out after N seconds</code> 或 <code>Command aborted</code>。</li><li><b>流式更新</b>：通过 <code>onUpdate</code> 推送部分输出（有节流），TUI 因此能实时显示命令输出；还会生成 <code>structuredContent</code>（output、exit_code、wall_time_seconds），供 codemode 等程序化调用者使用。</li><li><b>可定制</b>：<code>commandPrefix</code>（如先 source 某个环境）、<code>spawnHook</code>（改写命令/cwd/env，例如包一层容器或沙箱）、可替换的 <code>operations</code>（远程执行）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 12</div><a class="big" href="l12.html">系统提示、上下文文件与技能 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l11.js"></script>
+</body></html>

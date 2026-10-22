@@ -12,11 +12,11 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
  {t:'无共享',p:'水平扩展：节点间只通过网络协调，可以无限增加，但要处理分布式问题。',d:3400,set:{m1:[0,0],m2:[170,0],m3:[340,0],n:[0,140]}}]});
 (()=>{const q=document.getElementById('hq'),p=document.getElementById('hp'),m=document.getElementById('hm');const AFR=0.02;
  [[1,1],[2,1],[2,7],[3,1],[3,7]].forEach(([r,d])=>{const b=document.createElement('button');b.className='btn';b.textContent=`${r} 副本 · 修复 ${d} 天`;b.addEventListener('click',()=>{q.querySelectorAll('.btn').forEach(y=>y.classList.toggle('pri',y===b));
-  const pw=AFR*d/365;const pl=Math.pow(pw,r);p.textContent=`单盘在修复窗口内故障的概率：${pw.toExponential(2)}\n${r} 个副本在同一窗口内全部故障：${pl.toExponential(2)}\n一万份数据中预计每个窗口丢失：${(pl*10000).toExponential(2)} 份`;
-  m.className='msg '+(r>=3?'ok':r==2?'sig':'bad');m.innerHTML=r>=3?'副本数和修复速度都影响数据安全；注意这里假设故障相互独立。':'副本太少：一块盘坏了，数据就可能丢失。'});q.appendChild(b)});
+  const pw=AFR*d/365;const pl=Math.pow(pw,r);p.textContent=`单盘在修复窗口内故障的概率：${pw.toExponential(2)}\n${r} 个健康副本在固定窗口内独立全部故障：${pl.toExponential(2)}\n一万份数据中预计每个窗口丢失：${(pl*10000).toExponential(2)} 份`;
+  m.className='msg '+(r>=3?'ok':r==2?'sig':'bad');m.innerHTML=r>=3?'这是固定窗口内的独立故障近似；不是已坏一个副本后的条件概率，也不是全年丢失概率。':'副本太少：一块盘坏了，数据就可能丢失。'});q.appendChild(b)});
  m.className='msg';m.innerHTML='选择副本数和修复时间。'})();
 Term(document.getElementById('t4'),[
-['python3 disk.py','10000 块盘一年坏 226 块，平均每天 0.62 块\n单块盘某天坏的概率 5.48e-05\n3 副本在同一修复窗口内全坏的概率 1.65e-13','概率极小的前提是故障相互独立；同一批次的磁盘、同一个机柜电源会让故障相关。']]);
+['python3 disk.py','10000 块盘一年坏 226 块，平均每天 0.62 块\n单块盘某天坏的概率 5.48e-05\n3 个健康副本在固定 1 天窗口内独立全坏的概率 1.65e-13','概率极小的前提是故障相互独立；同一批次的磁盘、同一个机柜电源会让故障相关。']]);
 Quiz(document.getElementById('qs'),[
 ['故障（fault）与失效（failure）的区别？',['同义词','故障是组件偏离规格，失效是整个系统不再提供服务','失效更轻'],1,''],
 ['为什么软件故障常比硬件故障更危险？',['更常见','它们彼此相关，可能同时击中所有节点','更难修复'],1,''],
