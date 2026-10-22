@@ -3,7 +3,7 @@ SUM=['加锁：<code>SET lock:order:42 &lt;唯一值&gt; NX PX 30000</code>。NX
 '解锁：只能删除自己的锁。值用唯一 ID（UUID + 线程 ID），解锁用 Lua 原子地“比较再删除”：<code>if redis.call("GET",KEYS[1])==ARGV[1] then return redis.call("DEL",KEYS[1]) end return 0</code>。直接 DEL 可能删掉锁过期后别人拿到的锁。',
 '<b>续期</b>：业务耗时可能超过过期时间。持有者启动一个“看门狗”定时任务（如每 10 秒）把 TTL 延长到 30 秒（同样用 Lua 校验值），业务完成或进程退出后停止。Redisson 等客户端库已实现；进程卡顿（GC 停顿）时看门狗也会卡住，锁仍可能过期。',
 '<b>主从切换丢锁</b>：锁写在主库后、复制到副本前主库宕机，副本被提升后锁不存在，另一个客户端也能加锁。<b>Redlock</b> 在 N 个（通常 5 个）独立主库上加锁，多数成功且总耗时小于有效期才算成功；但它依赖时钟和进程停顿的假设，Martin Kleppmann 等人认为它不足以保证正确性。',
-'对<b>正确性</b>有要求时（同时两个持有者会造成数据错误），锁必须配合 <b>fencing token</b>：每次加锁得到一个单调递增的号码（如 <code>INCR lock:order:42:token</code>），写存储时带上号码，存储拒绝比已见过的更小的号码；或者直接用数据库的行锁/唯一约束/乐观锁版本号，或使用 etcd/ZooKeeper 这类基于共识的协调服务。',
+'对<b>正确性</b>有要求时（同时两个持有者会造成数据错误），锁必须配合 <b>fencing token</b>：每次获得锁时同时得到一个单调递增的号码；令牌授予要与锁所有权绑定，令牌序列跨故障不能回退。单独在 SET 成功后再执行 INCR 不满足绑定要求；可以用一个 Lua 脚本原子地执行 SET NX 和 INCR，让授锁和发号同时完成，但普通 Redis 的异步故障切换仍可能让号码回退，跨故障单调需要持久化或共识服务。写存储时带上号码，存储拒绝比已见过的更小的号码；也可以直接用数据库的行锁/唯一约束/乐观锁版本号，或使用 etcd/ZooKeeper 这类基于共识的协调服务。',
 'Redis 锁适合<b>效率</b>场景：避免重复计算、避免同一定时任务在多个实例上同时运行，偶尔两个实例同时执行只是浪费资源。还要考虑：可重入（哈希记录持有者和次数）、等待锁时用退避重试或 Pub/Sub 通知而不是忙等、锁的粒度要小。']
 def secs(prac,E):
     return [
@@ -16,8 +16,8 @@ def secs(prac,E):
  ('B 不能删除 A 的锁（比较再删除）。','EVAL "if redis.call(\'GET\',KEYS[1])==ARGV[1] then return redis.call(\'DEL\',KEYS[1]) end return 0" 1 lock:job b-91d2','(integer) 0'),
  ('A 的看门狗续期。','EVAL "if redis.call(\'GET\',KEYS[1])==ARGV[1] then return redis.call(\'PEXPIRE\',KEYS[1],ARGV[2]) end return 0" 1 lock:job a-7f3c 30000\nPTTL lock:job','(integer) 1\n(integer) 29996'),
  ('A 完成后释放。','EVAL "if redis.call(\'GET\',KEYS[1])==ARGV[1] then return redis.call(\'DEL\',KEYS[1]) end return 0" 1 lock:job a-7f3c','(integer) 1'),
- ('fencing token：每次加锁成功后取一个递增号码。','SET lock:job b-91d2 NX PX 30000\nINCR lock:job:token','OK\n(integer) 1'),
- ('观察过期：设置很短的锁，等它过期后再看。','SET lock:x me NX PX 2000\n\\! sleep 3\nGET lock:x','OK\n(nil)')],
+ ('INCR 只演示递增号码，不是可靠的 fencing 实现。','INCR lock:job:token','(integer) 1'),
+ ('观察过期：设置很短的锁，等它过期后再看。','SET lock:x me NX PX 2000\n# 手工等待至少 3 秒后再输入：\nGET lock:x','OK\n(nil)')],
  ('判断哪些场景可以用 Redis 锁','对下面四个需求，判断能否只用 Redis 锁（SET NX PX + 比较删除 + 续期），不能的话给出方案：① 每天凌晨的报表任务在 10 个实例上只运行一次；② 用户提现时防止同一用户并发提交两笔导致超额；③ 缓存重建时只让一个请求回源；④ 多个工作进程修改对象存储中同一个文件，同时写会损坏文件。',
- '<ol><li><b>可以</b>。偶尔两个实例都执行只是重复计算；报表写入最好按日期幂等（覆盖同一份结果）。</li><li><b>不能只靠 Redis 锁</b>。可以用它挡住绝大多数并发提交，但正确性必须由数据库保证：在事务中 <code>SELECT … FOR UPDATE</code> 锁定账户行并检查余额，或用 <code>UPDATE … SET balance = balance - x WHERE id = ? AND balance &gt;= x</code> 判断影响行数；提现请求带幂等号并有唯一约束。</li><li><b>可以</b>。失败的代价只是多一次回源（第 18 课）。</li><li><b>不能只靠 Redis 锁</b>。GC 停顿或网络延迟时，锁过期后的旧持有者仍会写入。需要 fencing：加锁时 <code>INCR</code> 得到 token，写入时使用存储的条件写（如对象存储的 If-Match/版本号，或在元数据中记录最大 token，小于它的写入被拒绝）；或改用 etcd/ZooKeeper 的租约加 revision。</li></ol>'))),
+ '<ol><li><b>可以</b>。偶尔两个实例都执行只是重复计算；报表写入最好按日期幂等（覆盖同一份结果）。</li><li><b>不能只靠 Redis 锁</b>。可以用它挡住绝大多数并发提交，但正确性必须由数据库保证：在事务中 <code>SELECT … FOR UPDATE</code> 锁定账户行并检查余额，或用 <code>UPDATE … SET balance = balance - x WHERE id = ? AND balance &gt;= x</code> 判断影响行数；提现请求带幂等号并有唯一约束。</li><li><b>可以</b>。失败的代价只是多一次回源（第 18 课）。</li><li><b>不能只靠 Redis 锁</b>。GC 停顿或网络延迟时，锁过期后的旧持有者仍会写入。需要 fencing：由具备共识和持久化保证的锁服务在授予锁时生成单调 token，存储原子校验并记录最高 token。普通 Redis 的异步故障切换可能让 INCR 回退，不能据此保证正确性。写入时使用存储的条件写（如对象存储的 If-Match/版本号，或在元数据中记录最大 token，小于它的写入被拒绝）；或改用 etcd/ZooKeeper 的租约加 revision。</li></ol>'))),
 ('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
