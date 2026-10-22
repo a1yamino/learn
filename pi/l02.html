@@ -90,8 +90,8 @@ if (event.type === &quot;message_end&quot;) {
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">写一个后续各课都会复用的工具：用 faux 模型创建真实的 <code>AgentSession</code>（使用真实的内置工具、真实的会话逻辑），然后跟踪一次完整的请求。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p><code>scratch/faux-session.ts</code>：注册 faux provider，把它登记到 <code>ModelRuntime</code>（这样会话的凭据检查能通过），再用 SDK 的 <code>createAgentSession</code> 创建会话。工作目录是一个临时目录。</p><pre class="cmd">cat &gt; pi-mono/scratch/faux-session.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">除首次克隆外，以下命令均在 pi-mono 仓库根目录执行，完成一个代码块后仍留在根目录。写一个后续各课都会复用的工具：用 faux 模型创建真实的 <code>AgentSession</code>（使用真实的内置工具、真实的会话逻辑），然后跟踪一次完整的请求。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p><code>scratch/faux-session.ts</code>：注册 faux provider，把它登记到 <code>ModelRuntime</code>（这样会话的凭据检查能通过），再用 SDK 的 <code>createAgentSession</code> 创建会话。工作目录是一个临时目录。</p><pre class="cmd">cat &gt; scratch/faux-session.ts &lt;&lt;&#x27;EOF&#x27;
 // 课程练习用的小工具：用 faux 模型创建一个真实的 AgentSession（无需 API key）。
 import { type FauxResponseStep, registerFauxProvider } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { type CreateAgentSessionOptions, createAgentSession, ModelRuntime, SessionManager, SettingsManager } from &quot;@earendil-works/pi-coding-agent&quot;;
@@ -133,7 +133,7 @@ export function show(messages: readonly any[]) {
     console.log(m.role.padEnd(11), c.replace(/\s+/g, &quot; &quot;).slice(0, 90));
   }
 }
-EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>跟踪一次请求：脚本化的模型先调用真实的 <code>read</code> 工具，再回答。</p><pre class="cmd">cat &gt; pi-mono/scratch/l02.ts &lt;&lt;&#x27;EOF&#x27;
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>跟踪一次请求：脚本化的模型先调用真实的 <code>read</code> 工具，再回答。</p><pre class="cmd">cat &gt; scratch/l02.ts &lt;&lt;&#x27;EOF&#x27;
 import { fauxAssistantMessage, fauxToolCall } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { fauxSession, show } from &quot;./faux-session.ts&quot;;
 
@@ -150,7 +150,7 @@ await session.prompt(&quot;读一下 hello.txt&quot;);
 show(session.messages);
 session.dispose();
 EOF
-cd pi-mono/scratch &amp;&amp; node l02.ts</pre><pre class="out">[工具开始] read {&quot;path&quot;:&quot;hello.txt&quot;}
+node scratch/l02.ts</pre><pre class="out">[工具开始] read {&quot;path&quot;:&quot;hello.txt&quot;}
 [turn_end] 本轮工具结果 1 个
 [turn_end] 本轮工具结果 0 个
 [agent_settled]
@@ -158,14 +158,14 @@ system      sections=preamble,tools,rules,docs,skills,cwd tools=read,bash,edit,w
 user        [{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;读一下 hello.txt&quot;}]
 assistant   [{&quot;type&quot;:&quot;toolCall&quot;,&quot;id&quot;:&quot;tool:1792663049910:vsecmit8n5i&quot;,&quot;name&quot;:&quot;read&quot;,&quot;arguments&quot;:{&quot;path
 toolResult  [{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;你好，pi\n&quot;}]
-assistant   [{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;文件里写着：你好，pi&quot;}]</pre></div></div><div class="st"><span class="n">03</span><div><p>读一下真实的系统提示的开头（它来自 coding-agent 的 system-prompt.ts，第 12 课详解）。</p><pre class="cmd">cd pi-mono/scratch &amp;&amp; cat &gt; sp.ts &lt;&lt;&#x27;EOF&#x27;
+assistant   [{&quot;type&quot;:&quot;text&quot;,&quot;text&quot;:&quot;文件里写着：你好，pi&quot;}]</pre></div></div><div class="st"><span class="n">03</span><div><p>读一下真实的系统提示的开头（它来自 coding-agent 的 system-prompt.ts，第 12 课详解）。</p><pre class="cmd">cat &gt; scratch/sp.ts &lt;&lt;&#x27;EOF&#x27;
 import { fauxAssistantMessage } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { fauxSession } from &quot;./faux-session.ts&quot;;
 const { session } = await fauxSession([fauxAssistantMessage(&quot;ok&quot;)]);
 console.log(session.systemPrompt.split(&quot;\n&quot;).slice(0, 8).join(&quot;\n&quot;));
 session.dispose();
 EOF
-node sp.ts</pre><pre class="out">You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+node scratch/sp.ts</pre><pre class="out">You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 &lt;tools&gt;
 - read: Read file contents
