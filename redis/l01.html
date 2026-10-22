@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 1 课 · Redis 是什么：内存数据库、单线程与许可证</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 1 课</span><span class="sp"></span><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 1 课</div><h1>Redis 是什么：内存数据库、单线程与许可证</h1>
+<p>Redis 是一个把数据放在内存里、通过网络提供命令的键值数据库，最常见的用途是缓存，也常用作计数器、排行榜、队列和分布式锁。本课讲它为什么快、一条命令从客户端到返回经历了什么、和关系型数据库的分工，并说明 2024 年以来 Redis 与 Valkey 的许可证变化，最后在 Docker 里启动本课程使用的环境。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条命令的旅程</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">为什么单线程还能这么快</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：这条命令会阻塞别人吗</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一条命令的旅程</h2><div class="goal">从客户端到内存再返回。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>为什么单线程还能这么快</h2><div class="goal">内存访问、I/O 多路复用与没有锁。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：这条命令会阻塞别人吗</h2><div class="goal">服务器上有一个包含 100 万个成员的集合 <code>users:all</code>。选择一条命令，看它的执行时间以及对同时到达的其他请求的影响。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">连接、查看服务器信息。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">需要 Docker。本课程所有练习都使用这个容器。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>启动 Redis 8。</p><pre class="cmd">docker run -d --name redis -p 6379:6379 redis:8.10</pre><pre class="out">Unable to find image &#x27;redis:8.10&#x27; locally
+8.10: Pulling from library/redis
+…
+3f1c0a9e…</pre></div></div><div class="st"><span class="n">02</span><div><p>用容器里的 redis-cli 连接并测试。</p><pre class="cmd">docker exec -it redis redis-cli
+PING</pre><pre class="out">PONG</pre></div></div><div class="st"><span class="n">03</span><div><p>读写一个键。</p><pre class="cmd">SET greeting &quot;hello&quot;
+GET greeting
+DEL greeting
+GET greeting</pre><pre class="out">OK
+&quot;hello&quot;
+(integer) 1
+(nil)</pre></div></div><div class="st"><span class="n">04</span><div><p>服务器版本和运行模式。</p><pre class="cmd">INFO server</pre><pre class="out"># Server
+redis_version:8.10.2
+…
+redis_mode:standalone
+os:Linux 6.8.0 x86_64
+arch_bits:64
+multiplexing_api:epoll
+…
+tcp_port:6379</pre></div></div><div class="st"><span class="n">05</span><div><p>内存占用。</p><pre class="cmd">INFO memory</pre><pre class="out"># Memory
+used_memory:1052336
+used_memory_human:1.00M
+…
+maxmemory:0
+maxmemory_human:0B
+maxmemory_policy:noeviction</pre></div></div><div class="st"><span class="n">06</span><div><p>测一下往返延迟（在容器里另开一个终端）。</p><pre class="cmd">docker exec -it redis redis-cli --latency</pre><pre class="out">min: 0, max: 1, avg: 0.07 (1520 samples)</pre></div></div><div class="st"><span class="n">07</span><div><p>官方压测工具：10 万次 SET/GET。</p><pre class="cmd">docker exec redis redis-benchmark -q -t set,get -n 100000</pre><pre class="out">SET: 142045.45 requests per second, p50=0.183 msec
+GET: 147275.40 requests per second, p50=0.175 msec</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用 Valkey 跑同样的命令</h3><p>另起一个 Valkey 容器（端口 6380），对它执行本课的读写命令和 <code>INFO server</code>，比较两者的输出差异。说明在应用代码中切换两者需要改什么，以及选择时应该考虑的许可证问题。</p><details><summary>查看参考答案</summary><div><pre class="cmd">docker run -d --name valkey -p 6380:6379 valkey/valkey:9.1
+docker exec -it valkey valkey-cli
+SET greeting "hello"
+GET greeting
+INFO server</pre><pre class="out">OK
+"hello"
+# Server
+redis_version:7.2.4
+server_name:valkey
+valkey_version:9.1.2
+…</pre><p>命令、返回值和 RESP 协议相同，所以应用代码通常只需要改连接地址；Valkey 为了兼容，在 <code>redis_version</code> 字段中报告 7.2.4，真实版本在 <code>valkey_version</code>。客户端库（redis-py、Jedis、Lettuce、go-redis 等）都可以直接连接 Valkey，Valkey 也提供了自己的客户端 Valkey GLIDE。</p><p>差异主要在 Redis 7.4 / 8 之后新增的功能：Redis 8 内置的 JSON、搜索、时间序列、向量集合等在 Valkey 中需要另外的模块或不存在；Valkey 也有自己独有的改进。许可证方面：只是把 Redis 当作服务内部使用，三种许可通常都没有影响；如果你修改了 Redis 源码并作为网络服务提供给他人，选择 AGPLv3 就需要公开修改后的源码；把 Redis 作为托管服务出售则受 RSALv2/SSPLv1 的限制。对这些有顾虑的团队会选择 BSD 许可的 Valkey。具体以法务意见为准。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>Redis 把所有数据放在<b>内存</b>中，读写一个键通常在微秒级完成；持久化（第 9 课）只是把内存数据保存到磁盘，用于重启后恢复。</li><li>执行命令的主线程是<b>单线程</b>的：命令一条接一条地执行，单条命令天然是原子的，不需要锁。代价是一条慢命令（如对百万元素的集合做 <code>SMEMBERS</code>、<code>KEYS *</code>）会阻塞其他所有客户端。</li><li>客户端与服务器使用 <b>RESP</b> 文本协议通过 TCP（默认端口 6379）通信。延迟大部分花在网络往返上，所以批量操作要用 Pipeline（第 3 课）。</li><li>Redis 不是关系型数据库的替代品：没有 SQL、没有复杂查询，内存成本高，默认持久化可能丢失最近的写入。典型分工是数据库存权威数据，Redis 存热点数据和需要极低延迟的结构。</li><li><b>许可证</b>：Redis 7.2 及以前为 BSD-3-Clause；7.4 改为 RSALv2 / SSPLv1 双许可（不是 OSI 开源许可）；<b>Redis 8 起</b>增加 AGPLv3 选项，成为三选一（RSALv2 / SSPLv1 / AGPLv3），并把 JSON、搜索、时间序列、概率结构等模块并入 Redis Open Source。</li><li><b>Valkey</b> 是 2024 年 3 月从 Redis 7.2.4 分叉、由 Linux 基金会托管的项目，保持 BSD-3-Clause，命令和协议与 Redis 兼容，许多云厂商的托管服务已转向它。本课程以 Redis 8（Docker 镜像 <code>redis:8.10</code>）为准，绝大多数内容同样适用于 Valkey；只在两者不同之处单独说明。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 02</div><a class="big" href="l02.html">基础数据类型与常用命令 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l01.js"></script>
+</body></html>

@@ -11,6 +11,7 @@
 | [Docker](https://a1yamino.github.io/learn/docker/) | 初级后端工程师 | 已完成（25 课） |
 | [Kubernetes](https://a1yamino.github.io/learn/k8s/) | 学完 Docker 的工程师 | 已完成（27 课） |
 | [PostgreSQL](https://a1yamino.github.io/learn/postgres/) | 初级后端工程师 | 已完成（26 课） |
+| [Redis](https://a1yamino.github.io/learn/redis/) | 初级后端工程师 | 更新中（24 课） |
 
 ### Docker 课程大纲
 基础：1 为什么需要 Docker · 2 容器生命周期与核心命令 · 3 Dockerfile 与构建缓存 · 4 实战：把后端 API 打包成镜像 · 5 多阶段构建与镜像瘦身 · 6 数据卷与持久化 · 7 网络与端口映射 · 8 Docker Compose 入门 · 9 配置、环境变量与密钥 · 10 镜像仓库、标签与推送
@@ -45,6 +46,21 @@
 
 综合项目：26 综合项目：一个生产级数据库从设计到运维
 
+### Redis 课程大纲
+基础：1 Redis 是什么：内存数据库、单线程与许可证 · 2 基础数据类型与常用命令 · 3 从应用连接：客户端、连接池与 Pipeline
+
+内部原理：4 数据结构编码：SDS、listpack、intset 与 quicklist · 5 哈希表与渐进式 rehash、有序集合与跳表 · 6 事件循环、单线程与 I/O 线程 · 7 过期：惰性删除与定期删除 · 8 内存管理与淘汰策略 · 9 持久化：RDB 与 AOF
+
+进阶命令：10 事务、Lua 脚本与 Functions · 11 发布订阅与 Stream · 12 位图、HyperLogLog 与地理位置
+
+高可用与扩展：13 主从复制 · 14 Sentinel：自动故障切换 · 15 Cluster：槽、重定向与扩缩容
+
+缓存设计：16 缓存模式：Cache-Aside 与读写策略 · 17 缓存一致性：更新数据库与删除缓存 · 18 缓存穿透、击穿与雪崩 · 19 热 key 与大 key · 20 分布式锁 · 21 限流、排行榜与计数器
+
+生产：22 安全：ACL、TLS 与危险命令 · 23 可观测性与调优：延迟、内存与慢日志
+
+综合项目：24 综合项目：一个高并发商品服务的缓存层
+
 ## 每一课都有 / What's in each lesson
 - 讲解和自动播放的图解动画
 - 少量动手操作（只在动手比看更容易理解的地方）
@@ -58,6 +74,7 @@ assets/           所有课程共享的样式与脚本 / shared CSS & JS
 docker/           Docker 课程（index.html + lNN.html）
 k8s/              Kubernetes 课程
 postgres/         PostgreSQL 课程
+redis/            Redis 课程
 _src/             课程生成器源文件 / generator sources
 ```
 纯静态 HTML，无需构建；克隆后直接用浏览器打开 `index.html` 即可。
