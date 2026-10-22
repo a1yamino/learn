@@ -1,0 +1,70 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 12 课 · 位图、HyperLogLog 与地理位置</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 12 课</span><span class="sp"></span><a href="l11.html">← 第 11 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 12 课</div><h1>位图、HyperLogLog 与地理位置</h1>
+<p>有些统计问题用普通集合会占用大量内存。本课讲三种特殊结构：用每个用户一个比特记录签到和活跃的位图，用 12 KB 估算上亿个不同元素的 HyperLogLog，以及基于有序集合和 geohash 的地理位置查询，并说明它们的精度与代价。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">位图：每个用户一个比特</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：三种方式统计 UV</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">地理位置：geohash 与有序集合</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>位图：每个用户一个比特</h2><div class="goal">用 ID 作为偏移量。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：三种方式统计 UV</h2><div class="goal">选择数据规模，比较集合、位图、HyperLogLog 的内存和精度。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>地理位置：geohash 与有序集合</h2><div class="goal">附近的人、附近的门店。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">更多用法。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 redis-cli 中。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>记录签到：用户 7 和 100 在 10 月 21 日活跃。</p><pre class="cmd">SETBIT active:20261021 7 1
+SETBIT active:20261021 100 1
+GETBIT active:20261021 7
+BITCOUNT active:20261021</pre><pre class="out">(integer) 0
+(integer) 0
+(integer) 1
+(integer) 2</pre></div></div><div class="st"><span class="n">02</span><div><p>两天都活跃的用户数。</p><pre class="cmd">SETBIT active:20261022 7 1
+BITOP AND both active:20261021 active:20261022
+BITCOUNT both</pre><pre class="out">(integer) 0
+(integer) 13
+(integer) 1</pre></div></div><div class="st"><span class="n">03</span><div><p>偏移量决定内存。</p><pre class="cmd">SETBIT big 80000000 1
+MEMORY USAGE big</pre><pre class="out">(integer) 0
+(integer) 10485816</pre></div></div><div class="st"><span class="n">04</span><div><p>HyperLogLog 估算 UV。</p><pre class="cmd">PFADD uv:1021 u1 u2 u3 u2
+PFADD uv:1022 u3 u4
+PFCOUNT uv:1021
+PFMERGE uv:week uv:1021 uv:1022
+PFCOUNT uv:week</pre><pre class="out">(integer) 1
+(integer) 1
+(integer) 3
+OK
+(integer) 4</pre></div></div><div class="st"><span class="n">05</span><div><p>添加门店并查附近。</p><pre class="cmd">GEOADD shops 121.5654 25.0330 taipei101 121.5170 25.0478 station 121.5440 25.0330 daan
+GEOSEARCH shops FROMLONLAT 121.5600 25.0340 BYRADIUS 3 km ASC WITHDIST</pre><pre class="out">(integer) 3
+1) 1) &quot;taipei101&quot;
+   2) &quot;0.5536&quot;
+2) 1) &quot;daan&quot;
+   2) &quot;1.6177&quot;</pre></div></div><div class="st"><span class="n">06</span><div><p>底层是有序集合。</p><pre class="cmd">TYPE shops
+ZSCORE shops daan</pre><pre class="out">zset
+&quot;4054803575137891&quot;</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计签到与活跃统计</h3><p>APP 有 5000 万用户（ID 为 1 到 5000 万的整数）。需求：① 用户每天签到，展示本月签到日历和连续签到天数；② 运营看每日活跃用户数、最近 7 天每天都活跃的人数；③ 每个活动页面的大致 UV（页面上千个，访客可能是未登录设备 ID）。给出键设计和命令，并估算内存。</p><details><summary>查看参考答案</summary><div><ol><li><b>个人签到</b>：每个用户每月一个位图 <code>sign:&lt;uid&gt;:202610</code>，偏移量为日期 0–30，<code>SETBIT</code> 签到，<code>BITFIELD sign:… GET u31 0</code> 一次取出整月，在应用里算日历和连续天数；每个键 4 字节数据（加键开销约几十字节），只为签到过的用户创建。</li><li><b>日活</b>：<code>active:&lt;yyyymmdd&gt;</code> 以 uid 为偏移量，5000 万位约 6 MB/天，<code>BITCOUNT</code> 得日活；7 天都活跃用 <code>BITOP AND</code> 七个键后 BITCOUNT，结果键设 TTL。保留 90 天约 540 MB，过期旧键。</li><li><b>页面 UV</b>：访客是任意字符串且不需要精确，用 <code>PFADD uv:page:&lt;id&gt;:&lt;day&gt; &lt;device&gt;</code>，每个最多 12 KB，1000 页约 12 MB/天；周 UV 用 PFMERGE。误差约 0.81%，向运营说明是估算值。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>位图</b>不是独立类型，而是对字符串按位操作：<code>SETBIT key offset 1</code>、<code>GETBIT</code>、<code>BITCOUNT</code>。用户 ID 做偏移量，1 亿用户一天的活跃记录只要约 12 MB。<code>BITOP AND/OR</code> 求连续活跃、任一天活跃。</li><li>位图要求 ID 连续且密集：偏移量 4 亿会直接分配 50 MB；ID 稀疏时用集合更省。<code>BITFIELD</code> 可以把字符串当作一组任意宽度的整数计数器使用。</li><li><b>HyperLogLog</b>：<code>PFADD</code>、<code>PFCOUNT</code>、<code>PFMERGE</code>。不管多少个元素，最多 12 KB（小基数时用稀疏编码更小），标准误差 0.81%。只能估算数量，不能判断某个元素在不在、不能列出元素。</li><li>适合 UV、搜索词去重数这类“大约多少个”的统计；需要精确值或要知道“谁”时用集合（或位图）。多个 HLL 可以 PFMERGE 得到并集的估计，例如把每天的 UV 合并成周 UV。</li><li><b>地理位置</b>：<code>GEOADD</code> 把经纬度编码成 52 位 geohash 作为有序集合的分数，所以底层就是 ZSET。<code>GEOSEARCH key FROMLONLAT lng lat BYRADIUS 3 km ASC COUNT 20 WITHDIST</code> 查附近的点；<code>GEODIST</code> 求距离。</li><li>Redis 8 已把概率数据结构（布隆过滤器、Cuckoo、Count-Min Sketch、Top-K、t-digest）并入 Redis Open Source，第 18 课用布隆过滤器防缓存穿透；Valkey 通过单独的 valkey-bloom 模块提供布隆过滤器。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 13</div><a class="big" href="l13.html">主从复制 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l12.js"></script>
+</body></html>
