@@ -13,6 +13,7 @@
 | [PostgreSQL](https://a1yamino.github.io/learn/postgres/) | 初级后端工程师 | 已完成（26 课） |
 | [Redis](https://a1yamino.github.io/learn/redis/) | 初级后端工程师 | 已完成（24 课） |
 | [Kafka](https://a1yamino.github.io/learn/kafka/) | 初级后端工程师 | 已完成（24 课） |
+| [DDIA：数据密集型应用设计](https://a1yamino.github.io/learn/ddia/) | 有一定经验的后端工程师 | 更新中（28 课） |
 
 ### Docker 课程大纲
 基础：1 为什么需要 Docker · 2 容器生命周期与核心命令 · 3 Dockerfile 与构建缓存 · 4 实战：把后端 API 打包成镜像 · 5 多阶段构建与镜像瘦身 · 6 数据卷与持久化 · 7 网络与端口映射 · 8 Docker Compose 入门 · 9 配置、环境变量与密钥 · 10 镜像仓库、标签与推送
@@ -79,6 +80,18 @@
 
 综合项目：24 综合项目：一个订单事件平台
 
+
+### DDIA 课程大纲
+依照《Designing Data-Intensive Applications》第 2 版（Martin Kleppmann、Chris Riccomini，2026）的章节结构，内容为原创讲解。
+
+第一部分 · 数据系统基础：1 架构中的权衡：事务型与分析型、记录系统与派生数据 · 2 非功能需求：以社交网络时间线为例 · 3 可靠性、可扩展性与可维护性 · 4 数据模型：关系、文档与规范化 · 5 图模型、查询语言与事件溯源 · 6 存储引擎：日志结构与 LSM 树 · 7 B 树、二级索引与内存数据库 · 8 分析型存储：列存、向量化与物化视图 · 9 编码格式：JSON、Protocol Buffers 与 Avro · 10 数据流的模式：数据库、服务、工作流与事件
+
+第二部分 · 分布式数据：11 单主复制 · 12 复制延迟带来的问题与对策 · 13 多主复制、同步引擎与冲突解决 · 14 无主复制：Quorum 与并发写 · 15 分片：按键范围、按哈希与热点 · 16 再平衡、请求路由与二级索引 · 17 事务与 ACID · 18 弱隔离级别：读已提交与快照隔离 · 19 写偏斜、幻读与可串行化 · 20 分布式事务：两阶段提交与精确一次 · 21 分布式系统的麻烦：网络、超时与部分失效 · 22 不可靠的时钟、进程暂停与多数决 · 23 线性一致性 · 24 逻辑时钟、ID 生成与共识
+
+第三部分 · 派生数据：25 批处理 · 26 流处理 · 27 流式系统的哲学：数据集成与正确性
+
+综合项目：28 综合项目：设计一个协作文档平台的数据架构
+
 ## 每一课都有 / What's in each lesson
 - 讲解和自动播放的图解动画
 - 少量动手操作（只在动手比看更容易理解的地方）
@@ -94,6 +107,7 @@ k8s/              Kubernetes 课程
 postgres/         PostgreSQL 课程
 redis/            Redis 课程
 kafka/            Kafka 课程
+ddia/             DDIA 课程
 _src/             课程生成器源文件 / generator sources
 ```
 纯静态 HTML，无需构建；克隆后直接用浏览器打开 `index.html` 即可。
