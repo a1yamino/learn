@@ -19,7 +19,7 @@
 </section>
 
 <section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
-<p>流解析主循环（节选）：finish_reason、文本、工具调用参数的累积：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/ai/src/api/openai-completions.ts#L564-L564" target="_blank" rel="noopener">packages/ai/src/api/openai-completions.ts  L564, L587–595, L642–697 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">for await (const chunk of openaiStream) {
+<p>流解析主循环（节选）：finish_reason、文本、工具调用参数的累积：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/ai/src/api/openai-completions.ts#L564-L564" target="_blank" rel="noopener">packages/ai/src/api/openai-completions.ts  L564, L587–595, L646–691 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">for await (const chunk of openaiStream) {
   // …
 if (choice.finish_reason) {
   output.rawStopReason = choice.finish_reason;
@@ -31,10 +31,6 @@ if (choice.finish_reason) {
   hasFinishReason = true;
 }
   // …
-        appendOpenAIReasoningDetail(streamedReasoningDetails, detail);
-      }
-    }
-
     if (
       choice.delta.content !== null &amp;&amp;
       choice.delta.content !== undefined &amp;&amp;
@@ -80,49 +76,40 @@ if (choice.finish_reason) {
       }
     }
   }
-}
-
-for (const block of blocks) {
+}</pre><p>结束与错误处理：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/ai/src/api/openai-completions.ts#L693-L714" target="_blank" rel="noopener">packages/ai/src/api/openai-completions.ts  L693–714, L715–724, L736–741 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">for (const block of blocks) {
   finishBlock(block);
 }
 if (options?.signal?.aborted) {
-  throw new Error(&quot;Request was aborted&quot;);</pre><p>结束与错误处理：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/ai/src/api/openai-completions.ts#L700-L717" target="_blank" rel="noopener">packages/ai/src/api/openai-completions.ts  L700–717, L718–741 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">  if (output.stopReason === &quot;aborted&quot;) {
-    throw new Error(&quot;Request was aborted&quot;);
-  }
-  if (!hasFinishReason &amp;&amp; !compat.supportsFinishReason) {
-    output.stopReason = output.content.some((block) =&gt; block.type === &quot;toolCall&quot;) ? &quot;toolUse&quot; : &quot;stop&quot;;
-  }
-  if (output.stopReason === &quot;error&quot;) {
-    throw new Error(output.errorMessage || &quot;Provider returned an error stop reason&quot;);
-  }
-  if ((compat.supportsFinishReason &amp;&amp; !hasFinishReason) || output.stopReason === &quot;pending&quot;) {
-    throw new Error(&quot;Stream ended without finish_reason&quot;);
-  }
+  throw new Error(&quot;Request was aborted&quot;);
+}
 
-  stream.push({ type: &quot;done&quot;, reason: output.stopReason, message: output });
-  stream.end();
+if (output.stopReason === &quot;aborted&quot;) {
+  throw new Error(&quot;Request was aborted&quot;);
+}
+if (!hasFinishReason &amp;&amp; !compat.supportsFinishReason) {
+  output.stopReason = output.content.some((block) =&gt; block.type === &quot;toolCall&quot;) ? &quot;toolUse&quot; : &quot;stop&quot;;
+}
+if (output.stopReason === &quot;error&quot;) {
+  throw new Error(output.errorMessage || &quot;Provider returned an error stop reason&quot;);
+}
+if ((compat.supportsFinishReason &amp;&amp; !hasFinishReason) || output.stopReason === &quot;pending&quot;) {
+  throw new Error(&quot;Stream ended without finish_reason&quot;);
+}
+
+stream.push({ type: &quot;done&quot;, reason: output.stopReason, message: output });
+stream.end();
+  // …
 } catch (error) {
   for (const block of output.content) {
     if (block.type === &quot;thinking&quot;) {
+      applyStreamedReasoningDetails(block);
+    }
+    delete (block as { index?: number }).index;
+    // Streaming scratch buffers are only used during parsing; never persist them.
+    delete (block as { partialArgs?: string }).partialArgs;
+    delete (block as { customInput?: unknown }).customInput;
+    delete (block as { streamIndex?: number }).streamIndex;
   // …
-        applyStreamedReasoningDetails(block);
-      }
-      delete (block as { index?: number }).index;
-      // Streaming scratch buffers are only used during parsing; never persist them.
-      delete (block as { partialArgs?: string }).partialArgs;
-      delete (block as { customInput?: unknown }).customInput;
-      delete (block as { streamIndex?: number }).streamIndex;
-    }
-    output.stopReason = options?.signal?.aborted ? &quot;aborted&quot; : &quot;error&quot;;
-    output.errorMessage = formatProviderError(normalizeProviderError(error));
-    // Some providers via OpenRouter give additional information in this field.
-    // normalizeProviderError already stringifies the parsed body (error.error)
-    // into errorMessage, so only append the raw metadata when it is not already
-    // present to avoid double-printing it.
-    const rawMetadata = (error as any)?.error?.metadata?.raw;
-    if (rawMetadata &amp;&amp; !output.errorMessage.includes(String(rawMetadata))) {
-      output.errorMessage += `\n${rawMetadata}`;
-    }
     stream.push({ type: &quot;error&quot;, reason: output.stopReason, error: output });
     stream.end();
   }
@@ -152,17 +139,7 @@ return stream;</pre><p>停止原因映射：</p><p class="src" style="font:500 1
         errorMessage: `Provider finish_reason: ${reason}`,
       };
   }
-}</pre><p>跨模型清理（所有协议共用）：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/ai/src/api/transform-messages.ts#L109-L135" target="_blank" rel="noopener">packages/ai/src/api/transform-messages.ts  L109–135 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">
-// Handle toolResult messages - normalize toolCallId if we have a mapping
-if (msg.role === &quot;toolResult&quot;) {
-  const normalizedId = toolCallIdMap.get(msg.toolCallId);
-  if (normalizedId &amp;&amp; normalizedId !== msg.toolCallId) {
-    return { ...msg, toolCallId: normalizedId };
-  }
-  return msg;
-}
-
-// Assistant messages need transformation check
+}</pre><p>跨模型清理（所有协议共用）：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/ai/src/api/transform-messages.ts#L119-L139" target="_blank" rel="noopener">packages/ai/src/api/transform-messages.ts  L119–139 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// Assistant messages need transformation check
 if (msg.role === &quot;assistant&quot;) {
   const assistantMsg = msg as AssistantMessage;
   const isSameModel =
@@ -178,7 +155,11 @@ if (msg.role === &quot;assistant&quot;) {
       if (!isSameModel) return [];
       // Keep redacted and signed blocks even if the thinking text is empty
       // (OpenAI encrypted reasoning); they are needed for replay.
-      if (block.redacted || block.thinkingSignature) return block;</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 只需支持很少的线上协议（以 Responses API 为主），但在传输层投入更多：SSE 与 WebSocket 两种传输、带退避的重试、流空闲超时。见 <a href="../codex/l05.html">Codex 第 5 课 · 模型客户端：SSE、WebSocket 与重试</a>。</div>
+      if (block.redacted || block.thinkingSignature) return block;
+      if (!block.thinking || block.thinking.trim() === &quot;&quot;) return [];
+      return block;
+    }
+</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 只需支持很少的线上协议（以 Responses API 为主），但在传输层投入更多：SSE 与 WebSocket 两种传输、带退避的重试、流空闲超时。见 <a href="../codex/l05.html">Codex 第 5 课 · 模型客户端：SSE、WebSocket 与重试</a>。</div>
 </section>
 
 <section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>请求与事件</h2><div class="goal"></div></div></div>

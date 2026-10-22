@@ -1,0 +1,233 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 10 课 · edit 工具：精确替换、diff 与文件修改队列</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 10 课</span><span class="sp"></span><a href="l09.html">← 第 9 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 10 课</div><h1>edit 工具：精确替换、diff 与文件修改队列</h1>
+<p>编码 agent 最常做、也最容易出错的事情是修改文件。pi 的 edit 工具采用“精确文本替换”：模型给出 <code>oldText</code> 与 <code>newText</code>，旧文本必须在文件中唯一出现。看似简单，实现里却处理了大量现实问题：多处修改如何避免偏移错乱、模型把弯引号写成直引号怎么办、Windows 换行与 BOM、重叠修改、旧版参数格式。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">多处修改的匹配</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这次 edit 的结果？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>多处修改的匹配</h2><div class="goal">所有 edit 都在原文件中定位。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这次 edit 的结果？</h2><div class="goal">文件第一行是 <code>const greeting = “hello”;␠␠</code>（弯引号、两个尾随空格）。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>参数定义——描述就是给模型的使用说明：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/edit.ts#L21-L41" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/edit.ts  L21–41 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">const replaceEditSchema = Type.Object(
+  {
+    oldText: Type.String({
+      description:
+        &quot;Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call.&quot;,
+    }),
+    newText: Type.String({ description: &quot;Replacement text for this targeted edit.&quot; }),
+  },
+  {},
+);
+
+const editSchema = Type.Object(
+  {
+    path: Type.String({ description: &quot;Path to the file to edit (relative or absolute)&quot; }),
+    edits: Type.Array(replaceEditSchema, {
+      description:
+        &quot;One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead.&quot;,
+    }),
+  },
+  {},
+);</pre><p>执行：BOM、换行、匹配、写回、diff：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/edit.ts#L185-L201" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/edit.ts  L185–201 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// Read the file.
+const buffer = await ops.readFile(absolutePath);
+const rawContent = buffer.toString(&quot;utf-8&quot;);
+throwIfAborted();
+
+// Strip BOM before matching. The model will not include an invisible BOM in oldText.
+const { bom, text: content } = splitBom(rawContent);
+const originalEnding = detectLineEnding(content);
+const normalizedContent = normalizeToLF(content);
+const { baseContent, newContent } = applyEditsToNormalizedContent(normalizedContent, edits, path);
+throwIfAborted();
+
+const finalContent = bom + restoreLineEndings(newContent, originalEnding);
+await ops.writeFile(absolutePath, finalContent);
+throwIfAborted();
+
+const diffResult = generateDiffString(baseContent, newContent);</pre><p>模糊规范化：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/edit-diff.ts#L34-L55" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/edit-diff.ts  L34–55 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export function normalizeForFuzzyMatch(text: string): string {
+  return (
+    text
+      .normalize(&quot;NFKC&quot;)
+      // Strip trailing whitespace per line
+      .split(&quot;\n&quot;)
+      .map((line) =&gt; line.trimEnd())
+      .join(&quot;\n&quot;)
+      // Smart single quotes → &#x27;
+      .replace(/[\u2018\u2019\u201A\u201B]/g, &quot;&#x27;&quot;)
+      // Smart double quotes → &quot;
+      .replace(/[\u201C\u201D\u201E\u201F]/g, &#x27;&quot;&#x27;)
+      // Various dashes/hyphens → -
+      // U+2010 hyphen, U+2011 non-breaking hyphen, U+2012 figure dash,
+      // U+2013 en-dash, U+2014 em-dash, U+2015 horizontal bar, U+2212 minus
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, &quot;-&quot;)
+      // Special spaces → regular space
+      // U+00A0 NBSP, U+2002-U+200A various spaces, U+202F narrow NBSP,
+      // U+205F medium math space, U+3000 ideographic space
+      .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, &quot; &quot;)
+  );
+}</pre><p>匹配所有 edits：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/edit-diff.ts#L300-L362" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/edit-diff.ts  L300–362 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export function applyEditsToNormalizedContent(
+  normalizedContent: string,
+  edits: Edit[],
+  path: string,
+): AppliedEditsResult {
+  const normalizedEdits = edits.map((edit) =&gt; ({
+    oldText: normalizeToLF(edit.oldText),
+    newText: normalizeToLF(edit.newText),
+  }));
+
+  for (let i = 0; i &lt; normalizedEdits.length; i++) {
+    if (normalizedEdits[i].oldText.length === 0) {
+      throw getEmptyOldTextError(path, i, normalizedEdits.length);
+    }
+  }
+
+  const initialMatches = normalizedEdits.map((edit) =&gt; fuzzyFindText(normalizedContent, edit.oldText));
+  const usedFuzzyMatch = initialMatches.some((match) =&gt; match.usedFuzzyMatch);
+  const replacementBaseContent = usedFuzzyMatch ? normalizeForFuzzyMatch(normalizedContent) : normalizedContent;
+
+  const matchedEdits: MatchedEdit[] = [];
+  for (let i = 0; i &lt; normalizedEdits.length; i++) {
+    const edit = normalizedEdits[i];
+    const matchResult = fuzzyFindText(replacementBaseContent, edit.oldText);
+    if (!matchResult.found) {
+      throw getNotFoundError(path, i, normalizedEdits.length);
+    }
+
+    const occurrences = countOccurrences(replacementBaseContent, edit.oldText);
+    if (occurrences &gt; 1) {
+      throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
+    }
+
+    matchedEdits.push({
+      editIndex: i,
+      matchIndex: matchResult.index,
+      matchLength: matchResult.matchLength,
+      newText: edit.newText,
+    });
+  }
+
+  matchedEdits.sort((a, b) =&gt; a.matchIndex - b.matchIndex);
+  for (let i = 1; i &lt; matchedEdits.length; i++) {
+    const previous = matchedEdits[i - 1];
+    const current = matchedEdits[i];
+    if (previous.matchIndex + previous.matchLength &gt; current.matchIndex) {
+      throw new Error(
+        `edits[${previous.editIndex}] and edits[${current.editIndex}] overlap in ${path}. Merge them into one edit or target disjoint regions.`,
+      );
+    }
+  }
+
+  const baseContent = normalizedContent;
+  const newContent = usedFuzzyMatch
+    ? applyReplacementsPreservingUnchangedLines(normalizedContent, replacementBaseContent, matchedEdits)
+    : applyReplacements(replacementBaseContent, matchedEdits);
+
+  if (baseContent === newContent) {
+    throw getNoChangeError(path, normalizedEdits.length);
+  }
+
+  return { baseContent, newContent };
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 用 <code>apply_patch</code> 修改文件：模型输出一种自定义的补丁格式（*** Begin Patch / *** Update File / @@ 上下文……），可以在一次调用中新增、删除、移动多个文件；补丁会被解析、校验，并经过审批与沙箱。见 <a href="../codex/l10.html">Codex 第 10 课 · apply_patch</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在一个带 BOM 与 CRLF、含弯引号的文件上尝试各种 edit。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l10.ts &lt;&lt;&#x27;EOF&#x27;
+import { mkdtempSync, readFileSync, writeFileSync } from &quot;node:fs&quot;;
+import { tmpdir } from &quot;node:os&quot;;
+import { join } from &quot;node:path&quot;;
+import { createEditTool } from &quot;@earendil-works/pi-coding-agent&quot;;
+import { runToolCall } from &quot;@earendil-works/pi-agent-core&quot;;
+
+const dir = mkdtempSync(join(tmpdir(), &quot;l10-&quot;));
+const reset = () =&gt; writeFileSync(join(dir, &quot;app.ts&quot;), &quot;\uFEFFconst greeting = \u201Chello\u201D;  \r\nlet n = 1;\r\nlet m = 1;\r\nexport { greeting };\r\n&quot;);
+const edit = createEditTool(dir);
+
+async function tryEdit(title: string, args: any) {
+  reset();
+  try {
+    const r: any = await edit.execute(&quot;id&quot;, { path: &quot;app.ts&quot;, ...args });
+    console.log(`== ${title}\n  ${r.content[0].text}`);
+    console.log(&quot;  &quot; + r.details.diff.split(&quot;\n&quot;).join(&quot;\n  &quot;));
+    const raw = readFileSync(join(dir, &quot;app.ts&quot;), &quot;utf8&quot;);
+    console.log(`  BOM 保留: ${raw.startsWith(&quot;\uFEFF&quot;)}  CRLF 保留: ${raw.includes(&quot;\r\n&quot;) &amp;&amp; !/[^\r]\n/.test(raw)}`);
+  } catch (e) { console.log(`== ${title}\n  错误: ${(e as Error).message}`); }
+}
+
+await tryEdit(&quot;精确替换&quot;, { edits: [{ oldText: &quot;let n = 1;&quot;, newText: &quot;let n = 2;&quot; }] });
+await tryEdit(&quot;多处替换（都相对原文件匹配）&quot;, { edits: [{ oldText: &quot;let n = 1;&quot;, newText: &quot;let n = 10;&quot; }, { oldText: &quot;export { greeting };&quot;, newText: &quot;export { greeting, n };&quot; }] });
+await tryEdit(&quot;模糊匹配：直引号、无尾随空格&quot;, { edits: [{ oldText: &#x27;const greeting = &quot;hello&quot;;&#x27;, newText: &#x27;const greeting = &quot;hi&quot;;&#x27; }] });
+await tryEdit(&quot;不唯一&quot;, { edits: [{ oldText: &quot; = 1;&quot;, newText: &quot; = 0;&quot; }] });
+await tryEdit(&quot;找不到&quot;, { edits: [{ oldText: &quot;let z = 1;&quot;, newText: &quot;&quot; }] });
+await tryEdit(&quot;重叠&quot;, { edits: [{ oldText: &quot;let n = 1;\nlet m&quot;, newText: &quot;x&quot; }, { oldText: &quot;let m = 1;&quot;, newText: &quot;y&quot; }] });
+await tryEdit(&quot;旧格式参数，直接调用 execute&quot;, { oldText: &quot;let m = 1;&quot;, newText: &quot;let m = 3;&quot; });
+// 经过循环的同一条路径（prepareArguments → 校验 → execute）
+reset();
+const out = await runToolCall(
+  { type: &quot;toolCall&quot;, id: &quot;c1&quot;, name: &quot;edit&quot;, arguments: { path: &quot;app.ts&quot;, oldText: &quot;let m = 1;&quot;, newText: &quot;let m = 3;&quot; } },
+  { tools: [edit], assistantMessage: {} as any, context: { systemPrompt: &quot;&quot;, messages: [] } },
+);
+console.log(&quot;== 旧格式参数，经过 runToolCall\n  &quot;, (out.result.content[0] as any).text);
+EOF
+cd pi-mono/scratch &amp;&amp; node l10.ts</pre><pre class="out">== 精确替换
+  Successfully replaced 1 block(s) in app.ts.
+   1 const greeting = “hello”;  
+  -2 let n = 1;
+  +2 let n = 2;
+   3 let m = 1;
+   4 export { greeting };
+  BOM 保留: true  CRLF 保留: true
+== 多处替换（都相对原文件匹配）
+  Successfully replaced 2 block(s) in app.ts.
+   1 const greeting = “hello”;  
+  -2 let n = 1;
+  +2 let n = 10;
+   3 let m = 1;
+  -4 export { greeting };
+  +4 export { greeting, n };
+  BOM 保留: true  CRLF 保留: true
+== 模糊匹配：直引号、无尾随空格
+  Successfully replaced 1 block(s) in app.ts.
+  -1 const greeting = “hello”;  
+  +1 const greeting = &quot;hi&quot;;
+   2 let n = 1;
+   3 let m = 1;
+   4 export { greeting };
+  BOM 保留: true  CRLF 保留: true
+== 不唯一
+  错误: Found 2 occurrences of the text in app.ts. The text must be unique. Please provide more context to make it unique.
+== 找不到
+  错误: Could not find the exact text in app.ts. The old text must match exactly including all whitespace and newlines.
+== 重叠
+  错误: edits[0] and edits[1] overlap in app.ts. Merge them into one edit or target disjoint regions.
+== 旧格式参数，直接调用 execute
+  错误: Edit tool input is invalid. edits must contain at least one replacement.
+== 旧格式参数，经过 runToolCall
+   Successfully replaced 1 block(s) in app.ts.</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为什么不用行号？</h3><p>有人提议让模型用“替换第 12–15 行”的方式编辑。结合本课内容，列出精确文本替换相对于行号的三个优点，以及它的一个代价。</p><details><summary>查看参考答案</summary><div><p>优点：①<b>对过期视图稳健</b>：模型读文件后，文件可能已被它自己的另一个 edit、bash 命令或用户修改，行号会漂移，而文本匹配要么命中正确位置要么明确失败；②<b>自我验证</b>：oldText 必须存在且唯一，等于让模型证明它“看到了”要改的内容，错误能被立即发现并给出可操作的提示；③<b>多处修改无需计算偏移</b>：所有 edit 相对原文件匹配，模型不需要推算前一处修改造成的行号变化。</p><p>代价：输出 token 更多（必须复述旧文本），并且对空白、引号等字符敏感——这正是模糊匹配存在的原因。Codex 的 apply_patch 选择了另一种折中：用上下文行定位的补丁格式。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>参数</b>：<code>path</code> + <code>edits[]</code>（每项 oldText/newText）。所有 edits 都相对<b>原文件</b>匹配，而不是依次应用后的结果；然后按位置倒序替换，偏移保持稳定。</li><li><b>四种拒绝</b>：oldText 为空；找不到（“must match exactly including all whitespace and newlines”）；出现多次（“Please provide more context to make it unique”）；两个 edit 重叠（“Merge them into one edit”）。替换后内容不变也报错。每条错误都告诉模型下一步该怎么做。</li><li><b>模糊匹配</b>：精确匹配失败时，在规范化空间中再试一次：NFKC、去除行尾空白、弯引号→直引号、各种破折号→连字符、特殊空格→普通空格。匹配成功后，只有被修改的行采用规范化文本，<b>未修改的行保留原始字节</b>。</li><li><b>换行与 BOM</b>：读文件后先剥离 BOM、检测原换行风格、统一转为 LF 再匹配；写回时恢复原换行与 BOM。模型永远不需要关心 <code>\r\n</code>。</li><li><b>兼容旧参数</b>：<code>prepareArguments</code> 把旧格式（顶层 oldText/newText）或单个对象转换为 <code>edits[]</code>。它由循环在校验前调用，所以直接调用 <code>execute</code> 时不会生效。</li><li><b>结果</b>：给模型的只是一行“Successfully replaced N block(s)”；完整的 diff、统一补丁、首个修改行号放在 <code>details</code> 中供 TUI 渲染——节省上下文。整个修改在文件修改队列中进行。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 11</div><a class="big" href="l11.html">bash 工具：进程、输出截断与中止 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l10.js"></script>
+</body></html>

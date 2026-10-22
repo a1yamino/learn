@@ -1,0 +1,161 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 17 课 · pi-tui：差分渲染的终端界面</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 17 课</span><span class="sp"></span><a href="l16.html">← 第 16 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 17 课</div><h1>pi-tui：差分渲染的终端界面</h1>
+<p>pi 的交互界面不使用 React/Ink 之类的框架，而是自己的 <code>pi-tui</code> 包（约 2 万行）。它的核心思想非常朴素：每个组件把自己渲染成<b>字符串数组</b>（每个字符串一行），TUI 把所有组件的行拼起来，与上一帧逐行比较，只把变化的那段重新写到终端，并用“同步输出”转义序列包起来，避免闪烁。流式输出时每秒几十次重绘，靠的就是这一点。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一帧是怎么画出来的</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这次更新写入多少？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一帧是怎么画出来的</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这次更新写入多少？</h2><div class="goal">真实测量（见练习）。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>组件接口：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/tui/src/tui.ts#L117-L129" target="_blank" rel="noopener">packages/tui/src/tui.ts  L117–129 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export interface Component {
+  /**
+   * Render the component to lines for the given viewport width
+   * @param width - Current viewport width
+   * @returns Array of strings, each representing a line
+   */
+  render(width: number): string[];
+
+  /** Optional handler for keyboard input when component has focus. */
+  handleInput?(data: string): void;
+
+  /** Optional normalized mouse handler. */
+  handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined;</pre><p>整屏重绘的条件：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/tui/src/tui-main-screen.ts#L331-L345" target="_blank" rel="noopener">packages/tui/src/tui-main-screen.ts  L331–345 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// First render - just output everything without clearing (assumes clean screen)
+if (this.previousLines.length === 0 &amp;&amp; !widthChanged &amp;&amp; !heightChanged) {
+  logRedraw(&quot;first render&quot;);
+  fullRender(false);
+  return;
+}
+
+// Width changes always need a full re-render because wrapping changes.
+if (widthChanged) {
+  logRedraw(`terminal width changed (${this.previousWidth} -&gt; ${width})`);
+  fullRender(true);
+  return;
+}
+
+// Height changes normally need a full re-render to keep the visible viewport aligned,</pre><p>找出变化区间：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/tui/src/tui-main-screen.ts#L363-L383" target="_blank" rel="noopener">packages/tui/src/tui-main-screen.ts  L363–383 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// Find first and last changed lines
+let firstChanged = -1;
+let lastChanged = -1;
+const maxLines = Math.max(newLines.length, this.previousLines.length);
+for (let i = 0; i &lt; maxLines; i++) {
+  const oldLine = i &lt; this.previousLines.length ? this.previousLines[i] : &quot;&quot;;
+  const newLine = i &lt; newLines.length ? newLines[i] : &quot;&quot;;
+
+  if (oldLine !== newLine) {
+    if (firstChanged === -1) {
+      firstChanged = i;
+    }
+    lastChanged = i;
+  }
+}
+const appendedLines = newLines.length &gt; this.previousLines.length;
+if (appendedLines) {
+  if (firstChanged === -1) {
+    firstChanged = this.previousLines.length;
+  }
+  lastChanged = newLines.length - 1;</pre><p>只重写变化的行：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/tui/src/tui-main-screen.ts#L478-L492" target="_blank" rel="noopener">packages/tui/src/tui-main-screen.ts  L478–492 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// Move cursor to first changed line (use hardwareCursorRow for actual position)
+const lineDiff = computeLineDiff(moveTargetRow);
+if (lineDiff &gt; 0) {
+  output.append(`\x1b[${lineDiff}B`); // Move down
+} else if (lineDiff &lt; 0) {
+  output.append(`\x1b[${-lineDiff}A`); // Move up
+}
+
+output.append(appendStart ? &quot;\r\n&quot; : &quot;\r&quot;); // Move to column 0
+
+// Only render changed lines (firstChanged to lastChanged), not all lines to end
+// This reduces flicker when only a single line changes (e.g., spinner animation)
+const renderEnd = Math.min(lastChanged, newLines.length - 1);
+for (let i = firstChanged; i &lt;= renderEnd; i++) {
+  if (i &gt; firstChanged) output.append(&quot;\r\n&quot;);</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 的终端界面用 Rust 的 ratatui 构建（<code>codex-rs/tui</code>），同样有底部输入框、历史单元、审批弹窗与斜杠命令弹出层。见 <a href="../codex/l22.html">Codex 第 22 课 · TUI 与配置</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 pi-tui 测试中的 <code>VirtualTerminal</code>（基于 xterm.js 的无头终端）运行 TUI，记录每次渲染写入终端的字节。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l17.ts &lt;&lt;&#x27;EOF&#x27;
+import { Text, TuiMainScreen } from &quot;@earendil-works/pi-tui&quot;;
+import { VirtualTerminal } from &quot;../packages/tui/test/virtual-terminal.ts&quot;;
+
+const term = new VirtualTerminal(40, 10);
+let written = &quot;&quot;;
+const origWrite = term.write.bind(term);
+term.write = (d: string) =&gt; { written += d; origWrite(d); };
+
+const tui = new TuiMainScreen(term);
+const header = new Text(&quot;pi 课程：TUI 演示&quot;);
+const status = new Text(&quot;状态：思考中&quot;);
+const body = new Text(&quot;第 1 行\n第 2 行\n第 3 行&quot;);
+tui.addChild(header); tui.addChild(body); tui.addChild(status);
+tui.start();
+
+const show = (label: string) =&gt; {
+  const esc = written.replace(/\x1b\[\?2026[hl]/g, (m) =&gt; (m.endsWith(&quot;h&quot;) ? &quot;⟦同步开始⟧&quot; : &quot;⟦同步结束⟧&quot;)).replace(/\x1b/g, &quot;ESC&quot;).replace(/\r\n/g, &quot;↵&quot;);
+  console.log(`== ${label}：写入 ${Buffer.byteLength(written)} 字节\n   ${esc.slice(0, 150)}${esc.length &gt; 150 ? &quot;…&quot; : &quot;&quot;}`);
+  written = &quot;&quot;;
+};
+
+tui.renderNow(); show(&quot;首次渲染（全部输出）&quot;);
+status.setText(&quot;状态：调用工具 read&quot;); tui.renderNow(); show(&quot;只改最后一行&quot;);
+tui.renderNow(); show(&quot;没有变化&quot;);
+header.setText(&quot;pi 课程：TUI 演示（已更新）&quot;); tui.renderNow(); show(&quot;改第一行（只重绘变化的区间）&quot;);
+
+await new Promise((r) =&gt; setTimeout(r, 50));
+console.log(&quot;\n屏幕内容：\n&quot; + (await term.flushAndGetViewport()).map((l: string) =&gt; &quot;  |&quot; + l.trimEnd()).filter((l: string) =&gt; l !== &quot;  |&quot;).join(&quot;\n&quot;));
+tui.stop();
+EOF
+cd pi-mono/scratch &amp;&amp; node l17.ts</pre><pre class="out">== 首次渲染（全部输出）：写入 603 字节
+   ⟦同步开始⟧                                        ESC[0mESC]8;;↵ pi 课程：TUI 演示                      ESC[0mESC]8;;↵                                       …
+== 只改最后一行：写入 82 字节
+   ⟦同步开始⟧ESC[1A
+ESC[2K 状态：调用工具 read                    ESC[0mESC]8;;⟦同步结束⟧
+== 没有变化：写入 0 字节
+   
+== 改第一行（只重绘变化的区间）：写入 85 字节
+   ⟦同步开始⟧ESC[8A
+ESC[2K pi 课程：TUI 演示（已更新）            ESC[0mESC]8;;⟦同步结束⟧
+
+屏幕内容：
+  | pi 课程：TUI 演示（已更新）
+  | 第 1 行
+  | 第 2 行
+  | 第 3 行
+  | 状态：调用工具 read</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>一个自定义组件</h3><p>写一个 <code>ProgressBar</code> 组件：<code>render(width)</code> 返回一行 <code>[#####-----] 50%</code>，进度条长度随 width 变化且永远不超过 width。把它加进上面的 TUI，每 100ms 更新一次进度，观察每次写入的字节数。</p><details><summary>查看参考答案</summary><div><pre>class ProgressBar {
+  constructor(public pct = 0) {}
+  invalidate() {}
+  render(width: number): string[] {
+    const label = ` ${this.pct}%`;
+    const inner = Math.max(0, width - 2 - label.length);
+    const done = Math.round((inner * this.pct) / 100);
+    return [`[${"#".repeat(done)}${"-".repeat(inner - done)}]${label}`];
+  }
+}
+const bar = new ProgressBar(); tui.addChild(bar);
+for (let p = 0; p &lt;= 100; p += 10) { bar.pct = p; tui.renderNow(); show(`${p}%`); }</pre><p>每次更新只有进度条那一行变化，写入几十字节；与全屏重绘（几百到几千字节）相比，在慢速 SSH 连接上差别非常明显。注意宽度计算使用字符数仅在纯 ASCII 时成立，含中文时应使用 <code>visibleWidth</code>。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>Component 接口</b>：<code>render(width): string[]</code>，可选 <code>handleInput</code>、<code>handleMouse</code>、<code>invalidate</code>。组件必须保证每行可见宽度不超过 width（超过会直接报错并写崩溃日志），工具函数 <code>visibleWidth</code>、<code>truncateToWidth</code> 处理 ANSI 与 CJK 宽字符。</li><li><b>两种渲染器</b>：<code>TuiMainScreen</code>（主屏幕，输出进入终端回滚历史，pi 默认）与 <code>TuiAltScreen</code>（备用屏幕，应用自己管理滚动）。</li><li><b>差分</b>：<code>doRender</code> 计算新行，与 <code>previousLines</code> 比较得到 firstChanged/lastChanged，把光标移到第一处变化，清除并重写<b>只在该区间内</b>的行。没有变化就什么也不写。</li><li><b>何时整屏重绘</b>：首次渲染、终端宽度变化（换行方式变了）、高度变化、内容缩短到需要清屏、变化发生在视口之上（已滚出屏幕的部分无法原地修改）。</li><li><b>同步输出</b>：每次写入都包在 <code>ESC[?2026h … ESC[?2026l</code>（CSI 2026）之间，支持的终端会原子地显示整帧。</li><li><b>其余</b>：编辑器组件（多行、历史、kill ring、撤销、自动补全斜杠命令与路径）、Markdown 渲染、覆盖层（选择器、对话框）、Kitty/iTerm2 内联图片、括号粘贴模式。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 18</div><a class="big" href="l18.html">运行模式：交互、print/JSON、RPC 与 SDK →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l17.js"></script>
+</body></html>
