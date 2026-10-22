@@ -40,7 +40,7 @@ learn-control-plane</pre></div></div><div class="st"><span class="n">04</span><d
 kubectl get pods</pre><pre class="out">NAME                   READY   STATUS    RESTARTS   AGE
 web-7c5b8d6f9b-4kq2x   1/1     Running   0          8s
 web-7c5b8d6f9b-h8zmw   1/1     Running   0          8s
-web-7c5b8d6f9b-tq9ps   1/1     Running   0          8s</pre></div></div><div class="st"><span class="n">05</span><div><p>删掉一个 Pod，马上再看。</p><pre class="cmd">kubectl delete pod $(kubectl get pods -o name | head -1)
+web-7c5b8d6f9b-tq9ps   1/1     Running   0          8s</pre></div></div><div class="st"><span class="n">05</span><div><p>删掉一个 Pod，马上再看。</p><pre class="cmd">kubectl delete $(kubectl get pods -l app=web -o name | head -1)
 kubectl get pods</pre><pre class="out">pod &quot;web-7c5b8d6f9b-4kq2x&quot; deleted
 web-7c5b8d6f9b-h8zmw   1/1     Running             0   40s
 web-7c5b8d6f9b-tq9ps   1/1     Running             0   40s
