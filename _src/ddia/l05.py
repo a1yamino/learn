@@ -1,0 +1,21 @@
+TITLE='图模型、查询语言与事件溯源';DESC='第 3 章后半部分。当多对多关系成为主角时，图模型更自然：顶点与边，可以任意遍历。本课讲属性图与 Cypher、在 SQL 中用递归 CTE 做图查询、三元组与 SPARQL、Datalog 的递归规则、GraphQL 的定位；声明式与命令式查询的区别；再把事件溯源与 CQRS 看作一种数据模型；最后简述 DataFrame 与数组模型。';NEXT='存储引擎：日志结构与 LSM 树';MIN=55
+SUM=['<b>属性图</b>：顶点和边都有唯一 ID、标签和属性；每条边有起点和终点。任何顶点之间都可以连边，可以沿边双向遍历，不同类型的事物可以放在同一张图里（人、地点、事件）。社交关系、知识图谱、路网、欺诈检测都适合。',
+'<b>Cypher</b>（Neo4j 等）用 ASCII 箭头描述模式：<code>(p:Person)-[:BORN_IN]->()-[:WITHIN*0..]->(:Location {name:\'中国\'})</code>，<code>*0..</code> 表示沿 WITHIN 边走任意步。它是<b>声明式</b>的：只描述要找什么，由查询优化器决定怎么找。',
+'<b>SQL 中的图查询</b>：把顶点和边存成两张表，可变长度路径用 <code>WITH RECURSIVE</code> 表达。能做到，但比 Cypher 冗长得多——不同的数据模型适合不同的用例。SQL:2023 新增了属性图查询（SQL/PGQ）。<b>三元组</b>（主语、谓语、宾语）是另一种图表示，查询语言为 SPARQL。<b>Datalog</b> 用规则组合出新事实，规则可以递归，适合复杂的推理。',
+'<b>GraphQL</b> 名字里有 Graph，但它不是图数据库查询语言：它让客户端声明需要的 JSON 结构，由服务端解析器取数，故意不支持任意递归，以免客户端发起代价过高的查询。',
+'<b>事件溯源与 CQRS</b>：把所有变化记录为不可变事件（记录系统），再由事件派生出多个为读取优化的视图（物化视图）。写模型与读模型分开（CQRS），读视图可以随时从事件重建，新需求只需新建一个视图。事件要用过去时、描述业务事实；纠错用补偿事件而不是修改历史。<a href="../kafka/l22.html">Kafka 课程第 22 课</a>有完整的动手练习。',
+'<b>DataFrame、矩阵与数组</b>：数据科学与机器学习常用的模型（pandas、Spark DataFrame），按行列操作，适合把关系数据转成特征矩阵；多维数组用于科学计算与地理数据。']
+def secs(prac,E):
+    return [
+('一张属性图','人、地点与它们之间的关系。','<div id="p1"></div>'),
+('动手：沿边遍历','选择一个查询，看图上被访问的顶点。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('事件溯源与 CQRS','一个事件日志，多个读视图。','<div id="p2"></div>'),
+('三种写法','同一个查询的 Cypher、SQL 与 Datalog 写法。','<div id="t4"></div>'),
+('在你的电脑上练习','用 PostgreSQL 的递归 CTE 做图查询：找出“出生在中国、住在东京”的人。使用 <code>pg</code> 容器。',prac([
+ ('顶点表与边表。','CREATE TABLE vertices(id int PRIMARY KEY, kind text, name text);\nCREATE TABLE edges(tail int, head int, label text);\nINSERT INTO vertices VALUES (1,\'国家\',\'中国\'),(2,\'省\',\'浙江\'),(3,\'市\',\'杭州\'),(4,\'区\',\'西湖区\'),(5,\'国家\',\'日本\'),(6,\'都道府县\',\'东京都\'),(7,\'人\',\'小林\'),(8,\'人\',\'小王\'),(9,\'省\',\'广东\'),(10,\'市\',\'深圳\');\nINSERT INTO edges VALUES (2,1,\'within\'),(3,2,\'within\'),(4,3,\'within\'),(6,5,\'within\'),(9,1,\'within\'),(10,9,\'within\'),(7,4,\'born_in\'),(7,6,\'lives_in\'),(8,10,\'born_in\'),(8,6,\'lives_in\');','CREATE TABLE\nCREATE TABLE\nINSERT 0 10\nINSERT 0 10'),
+ ('从“中国”出发，沿 within 边反向走任意步。','WITH RECURSIVE r(id, d) AS (\n  SELECT 1, 0\n  UNION\n  SELECT e.tail, d + 1 FROM edges e JOIN r ON e.head = r.id WHERE e.label = \'within\'\n)\nSELECT v.name, d FROM r JOIN vertices v USING (id) ORDER BY d, v.id;',' name  | d\n-------+---\n 中国   | 0\n 浙江   | 1\n 广东   | 1\n 杭州   | 2\n 深圳   | 2\n 西湖区 | 3'),
+ ('完整查询：出生在中国境内、住在东京都境内的人。','WITH RECURSIVE\n in_china(id) AS (SELECT id FROM vertices WHERE name = \'中国\'\n   UNION SELECT e.tail FROM edges e JOIN in_china ON e.head = in_china.id WHERE e.label = \'within\'),\n in_tokyo(id) AS (SELECT id FROM vertices WHERE name = \'东京都\'\n   UNION SELECT e.tail FROM edges e JOIN in_tokyo ON e.head = in_tokyo.id WHERE e.label = \'within\')\nSELECT p.name FROM vertices p\n JOIN edges b ON b.tail = p.id AND b.label = \'born_in\' JOIN in_china ON b.head = in_china.id\n JOIN edges l ON l.tail = p.id AND l.label = \'lives_in\' JOIN in_tokyo ON l.head = in_tokyo.id\nORDER BY p.name;',' name\n------\n 小林\n 小王'),
+ ('事件溯源的最小例子：事件表 + 派生视图。','CREATE TABLE cart_events(seq serial, cart int, type text, sku text);\nINSERT INTO cart_events(cart,type,sku) VALUES (1,\'added\',\'A\'),(1,\'added\',\'B\'),(1,\'removed\',\'A\');\nSELECT sku FROM cart_events WHERE cart = 1 GROUP BY sku HAVING sum(CASE type WHEN \'added\' THEN 1 ELSE -1 END) > 0;',' sku\n-----\n B')],
+ ('选择数据模型','为下列三个功能各选一种数据模型并说明理由：① 支付风控：“这笔交易的设备、IP、收货地址，与已知欺诈账户之间是否在 3 步以内相连”；② 移动端首页：一次请求取回用户信息、最近 5 个订单和每个订单的商品缩略图；③ 购物车：要求能回答“用户在下单前删除过哪些商品”。',
+ '<ol><li><b>图模型</b>（图数据库或 SQL/PGQ、递归 CTE）：账户、设备、IP、地址是顶点，使用关系是边；问题是有界深度的路径查询 <code>(t)-[*..3]-(:Account {fraud:true})</code>，用连接表达会非常繁琐且慢。</li><li><b>GraphQL</b>（API 层）+ 关系库：客户端声明需要的嵌套 JSON 结构，服务端解析器从订单表、商品表取数并处理 N+1（DataLoader 批量）。GraphQL 不负责存储，只是查询接口。</li><li><b>事件溯源</b>：记录 <code>ItemAdded</code>、<code>ItemRemoved</code>、<code>QuantityChanged</code> 事件；当前购物车是派生视图，而“下单前删除过的商品”可以从事件中直接回答——如果只存当前状态，这个信息就丢失了。</li></ol>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
