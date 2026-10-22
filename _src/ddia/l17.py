@@ -1,0 +1,22 @@
+TITLE='事务与 ACID';DESC='第 8 章开篇。事务把多个读写操作组成一个逻辑单元：要么全部成功（提交），要么全部失效（中止、回滚），让应用不必操心各种部分失败。本课逐一澄清 ACID 四个字母的真实含义（原子性其实是“可中止性”，一致性其实是应用的属性），区分单对象与多对象操作，并讨论中止后重试的陷阱。';NEXT='弱隔离级别：读已提交与快照隔离';MIN=55
+SUM=['<b>事务</b>是一种简化编程模型的手段：在事务中，应用可以假装某些并发问题和故障不存在。不是所有应用都需要事务，有时放弃事务能换来更高的性能和可用性——但要清楚放弃了什么。',
+'<b>原子性（A）</b>不是关于并发的，而是关于故障：一个事务中的多个写入，若中途出错（进程崩溃、网络中断、违反约束、磁盘写满），已执行的写入会被撤销。所以更准确的名字是<b>可中止性</b>：出错时可以放心地重试，不用担心留下一半的结果。',
+'<b>一致性（C）</b>指数据满足应用定义的不变式（例如借贷平衡）。数据库能帮你检查一部分（外键、唯一约束、CHECK），但维持不变式主要是应用的责任——它不是数据库单独能保证的属性。（这里的“一致性”与复制中的最终一致性、CAP 中的一致性（线性一致性）是完全不同的概念。）',
+'<b>隔离性（I）</b>：并发执行的事务彼此隔离，经典定义是<b>可串行化</b>——结果与某种串行执行顺序相同。实际中由于性能原因，数据库常常默认使用更弱的隔离级别（第 18、19 课）。<b>持久性（D）</b>：已提交的数据不会丢失。单机上意味着写入了磁盘（WAL + fsync），复制系统中意味着复制到了若干节点。但完美的持久性不存在：磁盘损坏、固件 bug、所有副本同时故障、fsync 的错误处理缺陷都可能丢数据，需要多种手段组合（复制、备份、校验和）。',
+'<b>单对象与多对象</b>：存储引擎几乎都保证单个对象写入的原子性与隔离（写到一半不会被读到，比如一个 20 KB 的 JSON 文档）；还提供原子的“读—改—写”（自增、比较并设置 CAS）。这些常被称为“轻量级事务”，但不是通常意义的事务。需要多对象事务的场景：外键引用一致、反规范化数据同步更新（未读计数与邮件列表）、二级索引与主数据一致。',
+'<b>中止与重试</b>：中止后重试是事务的核心价值，但：提交成功、确认消息丢失时，重试会重复执行（需要幂等）；过载导致的中止，重试只会加重过载（指数退避、限制重试次数）；永久性错误（违反约束）重试无用；事务中若有外部副作用（发邮件），中止也撤销不了它。很多 ORM 并不会自动重试中止的事务。']
+def secs(prac,E):
+    return [
+('原子性：可中止','转账进行到一半时出错。','<div id="p1"></div>'),
+('动手：在哪里崩溃','选择崩溃位置，比较有无事务的结果。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('多对象事务的必要性','未读计数与邮件列表必须一起更新。','<div id="p2"></div>'),
+('事务控制语句','PostgreSQL 中的提交、回滚与保存点。','<div id="t4"></div>'),
+('在你的电脑上练习','使用 <code>pg</code> 容器：<code>docker exec -it pg psql -U postgres</code>。',prac([
+ ('建两个账户，用 CHECK 约束表达一个不变式。','CREATE TABLE acct(id int PRIMARY KEY, balance int CHECK (balance >= 0));\nINSERT INTO acct VALUES (1, 100), (2, 0);','CREATE TABLE\nINSERT 0 2'),
+ ('在事务中转账 150：第一步成功，第二步违反约束，整个事务中止。','BEGIN;\nUPDATE acct SET balance = balance + 150 WHERE id = 2;\nUPDATE acct SET balance = balance - 150 WHERE id = 1;\nCOMMIT;\nSELECT * FROM acct ORDER BY id;','BEGIN\nUPDATE 1\nERROR:  new row for relation "acct" violates check constraint "acct_balance_check"\nROLLBACK\n id | balance\n----+---------\n  1 |     100\n  2 |       0'),
+ ('没有事务时（自动提交），第一步已经生效：钱凭空多了 150。','UPDATE acct SET balance = balance + 150 WHERE id = 2;\nUPDATE acct SET balance = balance - 150 WHERE id = 1;\nSELECT sum(balance) FROM acct;','UPDATE 1\nERROR:  new row for relation "acct" violates check constraint "acct_balance_check"\n sum\n-----\n 250'),
+ ('修复数据，再看单对象原子操作：不需要显式事务的“读—改—写”。','UPDATE acct SET balance = 0 WHERE id = 2;\nUPDATE acct SET balance = balance - 30 WHERE id = 1 AND balance >= 30 RETURNING balance;','UPDATE 1\n balance\n---------\n      70\nUPDATE 1'),
+ ('保存点：只回滚事务的一部分。','BEGIN;\nUPDATE acct SET balance = balance + 1 WHERE id = 1;\nSAVEPOINT s;\nUPDATE acct SET balance = -1 WHERE id = 2;\nROLLBACK TO SAVEPOINT s;\nCOMMIT;\nSELECT * FROM acct ORDER BY id;','…\nERROR:  new row … violates check constraint …\nROLLBACK\nCOMMIT\n id | balance\n----+---------\n  1 |      71\n  2 |       0')],
+ ('写一个正确的事务重试循环','用你熟悉的语言写一个函数 <code>run_tx(fn)</code>：在事务中执行 fn，遇到可重试的错误时重试。要求：① 区分可重试错误（PostgreSQL 的 40001 序列化失败、40P01 死锁）和不可重试错误（违反约束等）；② 指数退避加随机抖动，最多 5 次；③ 处理“提交时连接断开、不知道是否提交成功”的情况。',
+ '<pre style="overflow-x:auto">import random, time, psycopg\nRETRYABLE = {"40001", "40P01"}\n\ndef run_tx(conn_factory, fn, op_id):\n    for attempt in range(5):\n        conn = conn_factory()\n        try:\n            with conn.transaction():\n                # 幂等：在同一事务中记录 op_id，重复执行会因主键冲突而发现\n                conn.execute("INSERT INTO done_ops(op_id) VALUES (%s)", (op_id,))\n                result = fn(conn)\n            return result\n        except psycopg.errors.UniqueViolation as e:\n            if "done_ops" in str(e): return "already-done"   # 之前已提交成功\n            raise                                             # 其他约束：不重试\n        except psycopg.OperationalError:\n            pass       # 连接断开：可能已提交，也可能没有 → 依靠 op_id 判断，重试是安全的\n        except psycopg.Error as e:\n            if e.sqlstate not in RETRYABLE: raise\n        finally:\n            conn.close()\n        time.sleep(min(2 ** attempt * 0.05, 1) * random.uniform(0.5, 1.5))\n    raise RuntimeError("重试次数用尽")</pre><p>要点：可重试的只有并发冲突与连接问题；用业务操作 ID 让“提交成功但确认丢失”后的重试变成无害的重复；退避加抖动避免所有客户端同时重试；事务内不做发邮件等外部副作用（放到提交之后，或使用 outbox，<a href="../kafka/l21.html">Kafka 第 21 课</a>）。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
