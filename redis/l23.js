@@ -22,3 +22,10 @@ Quiz(document.getElementById('qs'),[
 ['为什么要关闭透明大页？',['fork 后写时复制粒度变成 2 MB，延迟和内存飙升','节省 CPU','TLS 需要'],0,''],
 ['vm.overcommit_memory=1 的作用？',['避免 fork 时因内存检查失败','提高速度','禁用 swap'],0,''],
 ['RSS 远高于 used_memory 说明？',['碎片多','内存泄漏一定存在','淘汰太多'],0,'']]);
+(()=>{const P=(t,c='sig')=>({cls:'pill '+c,html:t});const B=(t,s,c='',w=200)=>({w,h:44,cls:'blk '+c,html:`${t}<br><span style="font-size:11px;opacity:.7">${s}</span>`});
+const e={d:B('数据集','used_memory_dataset'),o:B('开销','键空间字典、过期字典','',200),cl:B('客户端缓冲区','mem_clients_normal','sig'),rp:B('复制积压 + AOF 缓冲','mem_replication_backlog'),um:P('以上合计 ≈ used_memory（分配器分配的字节）','sig'),rss:P('used_memory_rss = used_memory + 碎片 + 分配器保留；比值即碎片率','ok')};
+Player(document.getElementById('p2'),{els:e,scenes:[
+ {t:'数据',p:'真正的键值数据。',set:{d:[0,0]}},
+ {t:'开销',p:'每个键的字典项、过期时间等固定开销；小值很多时占比很高。',d:3200,set:{d:[0,0],o:[220,0]}},
+ {t:'缓冲区',p:'客户端输入输出缓冲、复制积压缓冲、AOF 缓冲也计入 used_memory，可能突然变大。',d:3800,set:{d:[0,0],o:[220,0],cl:[0,54],rp:[220,54],um:[0,110]}},
+ {t:'RSS',p:'操作系统看到的常驻内存还包括碎片。maxmemory 只限制 used_memory，所以要给 RSS 留余量。',d:4000,set:{d:[0,0],o:[220,0],cl:[0,54],rp:[220,54],um:[0,110],rss:[0,150]}}]})})();

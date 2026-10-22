@@ -22,3 +22,10 @@ Quiz(document.getElementById('qs'),[
 ['为什么推荐禁用或设置 default 用户密码？',['它默认无密码且有全部权限','性能','ACL 要求'],0,''],
 ['禁用危险命令推荐的方式？',['rename-command','ACL -@dangerous','修改源码'],1,''],
 ['protected-mode 的作用？',['无密码且监听外部地址时拒绝外部连接','加密','限流'],0,'']]);
+(()=>{const P=(t,c='sig')=>({cls:'pill '+c,html:t});const B=(t,s,c='')=>({w:460,h:44,cls:'blk '+c,html:`${t}<br><span style="font-size:11px;opacity:.7">${s}</span>`});
+const e={c:P('app&gt; SET user:42 x','sig'),u:B('① 认证','AUTH app *** → 用户 app，状态 on'),k:B('② 命令','SET 属于 @write → 允许'),y:B('③ 键','user:42 不匹配 ~shop:*','bad'),r:P('(error) NOPERM No permissions to access a key；记入 ACL LOG','bad')};
+Player(document.getElementById('p2'),{els:e,scenes:[
+ {t:'认证',p:'连接先以某个用户身份认证，没有 AUTH 时就是 default 用户。',set:{c:[0,0],u:[0,40]}},
+ {t:'命令',p:'按规则从左到右计算该用户可执行的命令集合。',d:3400,set:{c:[0,0],u:[0,40],k:[0,94]}},
+ {t:'键',p:'命令中的每个键都要匹配某个键模式（%R~/%W~ 还区分读写）。',d:3400,set:{c:[0,0],u:[0,40],k:[0,94],y:[0,148]}},
+ {t:'拒绝',p:'任何一步不通过就拒绝执行，并记录在 ACL LOG 中。',d:3400,set:{c:[0,0],u:[0,40],k:[0,94],y:[0,148],r:[0,202]}}]})})();

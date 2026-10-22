@@ -8,7 +8,7 @@
 <main class="wrap">
 <section class="lede"><div class="k">Redis · 第 22 课</div><h1>安全：ACL、TLS 与危险命令</h1>
 <p>暴露在网络上、没有密码的 Redis 是常见的入侵入口：攻击者可以读取全部数据，甚至利用 CONFIG SET 写文件获得服务器权限。本课讲网络隔离与保护模式、Redis 6 起的 ACL 用户与权限、TLS 加密、禁用和限制危险命令，以及最小权限的账户设计。约 60 分钟。</p>
-<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次未授权访问</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：ACL 检查</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">相关命令</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">自测</span></a></li></ol></section>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次未授权访问</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：ACL 检查</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">ACL 如何判断一条命令</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
 
 <section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次未授权访问</h2><div class="goal">从扫描到拿到服务器权限。</div></div></div>
 <div id="p1"></div>
@@ -18,11 +18,15 @@
 <div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:60px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
 </section>
 
-<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>相关命令</h2><div class="goal">ACL 管理。</div></div></div>
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>ACL 如何判断一条命令</h2><div class="goal">用户、命令类别、键模式依次检查。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">ACL 管理。</div></div></div>
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>在你的电脑上练习</h2><div class="goal">在 redis-cli 中（默认用户此时无密码）。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 redis-cli 中（默认用户此时无密码）。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>创建应用账户。</p><pre class="cmd">ACL SETUSER app on &gt;s3cret ~shop:* +@read +@write -@dangerous</pre><pre class="out">OK</pre></div></div><div class="st"><span class="n">02</span><div><p>查看规则。</p><pre class="cmd">ACL GETUSER app</pre><pre class="out">1) &quot;flags&quot;
 2) 1) &quot;on&quot;
 …
@@ -53,7 +57,7 @@ user board on #&lt;sha256&gt; +info +ping +dbsize +slowlog|get +latency|latest +
 user ops on #&lt;sha256&gt; ~* &amp;* +@all</pre><ul><li>密码以 SHA-256 写入 aclfile（<code>#</code> 后跟哈希），配置文件中不出现明文；应用从密钥管理服务获取明文密码。</li><li><code>%R~product:*</code> 让推荐服务对商品键只读；<code>~rec:*</code> 读写。看板账户没有任何键模式，即使命令允许也读不到数据。</li><li>禁用 default 用户，强制所有客户端用自己的账户认证，便于 <code>ACL LOG</code> 和 <code>CLIENT LIST</code> 中区分来源。</li><li>ops 只从跳板机使用；网络层仅允许三个服务的网段访问。更好的做法是把三个服务拆到不同实例，避免互相影响。</li></ul></div></details></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
 <div id="qs"></div>
 </section>
 
