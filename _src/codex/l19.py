@@ -1,0 +1,22 @@
+from common import *
+TITLE='/plan 与 update_plan';MIN=45;NEXT='/goal：长时间运行的目标'
+DESC='Codex 里有两个都叫“plan”、却完全不同的东西。<b>/plan</b> 切换到 Plan <b>协作模式</b>：换一段开发者指令（<code>plan.md</code>，128 行），让模型只探索、提问，最后输出一个 <code>&lt;proposed_plan&gt;</code> 块，客户端把它渲染成计划条目。<b>update_plan</b> 是一个 TODO 清单工具：模型调用它，客户端收到 <code>turn/plan/updated</code> 并显示进度。pi 刻意不内置计划模式（第 19 课）。本课用 app-server 在同一线程中分别以两种模式各跑一个回合。'
+SUM=['<b>update_plan 默认关闭</b>：<code>config/mod.rs</code> 的 <code>resolve_update_plan_enabled</code> 读 <code>[tools.update_plan] enabled</code>，缺省为 false。打开后处理器（<code>tools/handlers/plan.rs</code>）解析参数，发出 <code>EventMsg::PlanUpdate</code>，返回 “Plan updated”。app-server 把它转成 <code>turn/plan/updated</code>（状态 inProgress 等为驼峰式）。',
+'<b>Plan 模式拒绝 update_plan</b>：同一处理器在 <code>turn.mode() == ModeKind::Plan</code> 时返回错误 “update_plan is a TODO/checklist tool and is not allowed in Plan mode”，作为工具输出交给模型；<code>plan.md</code> 第 15 行也预先告诉模型这一点。',
+'<b>/plan 的实现</b>：<code>slash_dispatch.rs</code> 的 <code>apply_plan_slash_command</code>：协作模式未启用时提示 “Collaboration modes are disabled.”；否则取 <code>collaboration_modes::plan_mask</code> 并 <code>set_collaboration_mask_from_user_action</code>。之后每个回合的 <code>collaborationMode</code> 都是 plan。',
+'<b>指令从哪来</b>：<code>prompts/src/model_messages/collaboration.rs</code>：模型目录若带有 <code>collaboration_mode_messages</code> 就用它，否则用内置 <code>PLAN</code>/<code>DEFAULT</code> 模板；<code>context/world_state/collaboration_mode.rs</code> 按 <code>ModeKind</code> 选择并放入 developer 消息。',
+'<b>&lt;proposed_plan&gt;</b>：<code>session/turn.rs</code> 用 <code>extract_proposed_plan_text</code> 从助手文本中取出计划，发出 plan 条目（及 <code>item/plan/delta</code>）；<code>strip_proposed_plan_blocks</code> 把它从普通消息文本中去掉。实验中 Plan 回合只得到一个 <code>plan</code> 条目。',
+'<b>“不修改”靠提示</b>：<code>plan.md</code> 要求只做非修改性操作；在核心代码中，Plan 模式的分支只出现在 update_plan 拒绝、<code>request_user_input</code> 变为阻塞、计划块解析等少数几处，并没有为它换一个更严的沙箱。']
+S1=('两个“plan”','')
+A1=[('default 回合','模型调用 update_plan → turn/plan/updated。',[('m','模型','sig',0,90,80),('t','update_plan','ok',110,90,110),('c','清单 UI','ok',250,90,90)]),('/plan','换成 plan.md 开发者指令。',[('d','developer：Plan Mode','sig',0,90,200)]),('plan 回合','update_plan 被拒绝；输出 <proposed_plan> → plan 条目。',[('t','update_plan ✗','bad',0,90,120),('p','<proposed_plan>','ok',150,90,150)])]
+S2=('动手：会得到什么？','')
+CHI=[('default 模式调用 update_plan（已启用）','“Plan updated” + turn/plan/updated','ok',''),('Plan 模式调用 update_plan','错误输出：not allowed in Plan mode','bad',''),('Plan 模式输出 <proposed_plan> 块','plan 条目（不是 agentMessage）','ok',''),('未启用时调用 update_plan','工具不存在：不在请求的工具列表中','bad','')]
+CHH='选择一种情形。'
+S3=('读代码','',X('codex-rs/core/src/tools/handlers/plan.rs',[(86,98)])+X('codex-rs/core/src/config/mod.rs',[(2791,2797)])+X('codex-rs/tui/src/chatwidget/slash_dispatch.rs',[(87,105)])+X('codex-rs/prompts/src/model_messages/collaboration.rs',[(15,22)])+X('codex-rs/collaboration-mode-templates/templates/plan.md',[(13,19),(96,108)])+X('codex-rs/core/src/session/turn.rs',[(2451,2455)])+NOTE('<b>与 pi 对照</b>：'+pi(19,'信任边界：pi 刻意不做什么')+'。'))
+S4=('真实输出','')
+TERM=[['bash l19.sh','[mock] req02 Plan 模式=False  update_plan 的输出：\'Plan updated\'\n[mock] req04 Plan 模式=True  update_plan 的输出：\'update_plan is a TODO/checklist tool and is not allowed in P\'\ncollaborationMode/list： [(\'Plan\', \'plan\'), (\'Default\', \'default\')]\n== 回合：mode=default\n  turn/plan/updated： [(\'读代码\', \'completed\'), (\'写测试\', \'inProgress\')]\n  item agentMessage：\'已更新清单\'\n== 回合：mode=plan\n  item plan：\'1. 为 parse() 补测试\\n2. 修复空输入\\n\'','']]
+S5=('在你的电脑上练习',RUNNOTE)
+PRAC=[('剧本：先 update_plan，再按模式回答。',heredoc('s_plan.py'),''),('app-server 客户端：两种模式各一回合。',heredoc('l19.py'),''),('运行。',heredoc('l19.sh')+'\ncd codex/scratch && bash l19.sh',None)]
+CHAL=('关掉 update_plan','去掉 <code>l19.sh</code> 中的 <code>[tools.update_plan]</code> 配置再运行。模型调用一个不存在的工具会怎样？在 req01 的工具列表里验证。',
+'<p>工具列表中不再有 <code>update_plan</code>；模型仍然调用它时，路由器找不到处理器，工具输出是 <code>unsupported call: update_plan</code>（作者实测，两种模式都一样），回合继续，不会崩溃。客户端不会收到 <code>turn/plan/updated</code>。可以用 <code>python3 -c "import json;print([t.get(\'name\') for t in json.load(open(\'…/req01.json\'))[\'body\'][\'tools\']])"</code> 检查。</p>')
+QUIZ=[['update_plan 默认？',['关闭','开启','只在 Plan 模式开启'],0,''],['Plan 模式下调用 update_plan？',['返回错误给模型','正常工作','进程退出'],0,''],['/plan 改变的是？',['协作模式（开发者指令）','沙箱','模型'],0,''],['客户端如何得到计划？',['<proposed_plan> 解析为 plan 条目','update_plan','文件'],0,''],['Plan 模式“不修改文件”由什么保证？',['主要靠提示','只读沙箱','execpolicy'],0,'']]

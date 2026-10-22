@@ -1,0 +1,3 @@
+{
+"cat > codex/scratch/l19.sh <<'EOF'\n#!/bin/bash\n# update_plan 默认关闭：用 [tools.update_plan] enabled=true 打开\nS=$(pwd); export CODEX_HOME=$(mktemp -d); cd $(mktemp -d)\nEXTRA_CONFIG='[tools.update_plan]\nenabled = true' RUN=\"python3 $S/l19.py\" bash $S/run.sh $S/s_plan.py 2>&1\nEOF\ncd codex/scratch && bash l19.sh": "collaborationMode/list： [('Plan', 'plan'), ('Default', 'default')]\n== 回合：mode=default\n  turn/plan/updated： [('读代码', 'completed'), ('写测试', 'inProgress')]\n[mock] req02 Plan 模式=False  update_plan 的输出：'Plan updated'\n  item agentMessage：'已更新清单'\n== 回合：mode=plan\n[mock] req04 Plan 模式=True  update_plan 的输出：'update_plan is a TODO/checklist tool and is not allowed in P'\n  item plan：'1. 为 parse() 补测试\\n2. 修复空输入\\n'"
+}
