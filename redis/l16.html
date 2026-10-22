@@ -34,11 +34,11 @@ keyspace_hits:1
 keyspace_misses:1
 …</pre></div></div><div class="st"><span class="n">06</span><div><p>配置缓存实例。</p><pre class="cmd">CONFIG SET maxmemory 1gb
 CONFIG SET maxmemory-policy allkeys-lfu</pre><pre class="out">OK
-OK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个商品详情接口加缓存</h3><p>接口 <code>GET /products/:id</code> 每秒 2 万次，组装结果需要查 4 张表（约 25 ms）；商品信息每天改动几次，价格改动后 5 秒内必须生效；库存实时变化，单独有接口。写出：缓存哪些内容、键名与值格式、TTL、读路径和写路径的伪代码，以及 Redis 不可用时的行为。</p><details><summary>查看参考答案</summary><div><ul><li>缓存组装好的商品详情（不含库存）：<code>shop:product:{id}:v1</code>，值为 JSON（压缩可选），TTL 3600 s ± 10% 随机抖动。</li><li>读路径：<pre>v = redis.get(key)            // 设置 50 ms 超时
+OK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个商品详情接口加缓存</h3><p>接口 <code>GET /products/:id</code> 每秒 2 万次，组装结果需要查 4 张表（约 25 ms）；商品信息每天改动几次，价格改动后 5 秒内必须生效；库存实时变化，单独有接口。写出：缓存哪些内容、键名与值格式、TTL、读路径和写路径的伪代码，以及 Redis 不可用时的行为。</p><details><summary>查看参考答案</summary><div><ul><li>缓存组装好的商品详情（不含库存和价格）：<code>shop:product:{id}:v1</code>，值为 JSON（压缩可选），TTL 3600 s ± 10% 随机抖动。</li><li>读路径：<pre>v = redis.get(key)            // 设置 50 ms 超时
 if v: return decode(v)
 v = db.load_product(id)       // 4 张表
 redis.set(key, encode(v), ex=3600 + rand(-360, 360))
-return v</pre></li><li>写路径（价格等变更）：在事务提交<b>之后</b> <code>redis.del(key)</code>；删除失败则放入重试队列，或者依赖订阅 binlog 的异步删除（第 17 课），保证 5 秒内生效。</li><li>库存不进这个缓存，避免高频变更让详情缓存频繁失效。</li><li>Redis 超时或不可用：捕获异常直接读数据库，同时用限流/熔断保护数据库（2 万 QPS × 25 ms 数据库扛不住，需要降级为只返回核心字段或本地缓存的旧值）。</li></ul></div></details></div>
+return v</pre></li><li>写路径（价格等变更）：价格属于有明确时效要求的字段，单独从数据库主库读取；详情缓存的删除与 CDC 是尽快失效机制，不能单独保证并发回填、删除失败或复制延迟时 5 秒内更新。其他详情字段在事务提交<b>之后</b> <code>redis.del(key)</code>，删除失败进入重试队列。</li><li>库存和价格不进这个长 TTL 缓存；如价格主库读取压力过大，需要另行设计并验证带版本水位的短期价格缓存，不能直接沿用 1 小时 TTL。</li><li>Redis 超时或不可用：捕获异常直接读数据库，同时用限流/熔断保护数据库（2 万 QPS × 25 ms 数据库扛不住，需要降级为只返回核心字段或本地缓存的旧值）。</li></ul></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
