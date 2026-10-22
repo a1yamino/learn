@@ -7,7 +7,7 @@
 <div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 3 课</span><span class="sp"></span><a href="l02.html">← 第 2 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
 <main class="wrap">
 <section class="lede"><div class="k">pi · 第 3 课</div><h1>统一的消息模型与流式事件</h1>
-<p>pi 支持几十家模型提供方，但上层代码只认识一种消息格式和一种事件流。这一课精读 <code>packages/ai/src/types.ts</code> 中的核心类型：四种消息角色（system、user、assistant、toolResult）、五种内容块、七种停止原因，以及把“流式回复”统一成一串有序事件的 <code>AssistantMessageEvent</code>。理解了这一层，后面的循环、会话、压缩、TUI 都只是在处理这些数据。约 50 分钟。</p>
+<p>pi 支持几十家模型提供方，但上层代码只认识一种消息格式和一种事件流。这一课精读 <code>packages/ai/src/types.ts</code> 中的核心类型：四种消息角色（system、user、assistant、toolResult）、四种内容块、七种停止原因，以及把“流式回复”统一成一串有序事件的 <code>AssistantMessageEvent</code>。理解了这一层，后面的循环、会话、压缩、TUI 都只是在处理这些数据。约 50 分钟。</p>
 <ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条回复是怎么流进来的</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：循环看到这个 stopReason 会怎样？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码：类型定义</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">事件序列</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
 
 <section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一条回复是怎么流进来的</h2><div class="goal">模型说了：思考 → 文字 → 工具调用。</div></div></div>
@@ -125,8 +125,8 @@ export interface SystemMessage {
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">直接使用 pi-ai 的 <code>streamSimple</code>，不经过 agent，观察原始事件。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本：脚本化的回复包含 thinking、文本和工具调用。</p><pre class="cmd">cat &gt; pi-mono/scratch/l03.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">除首次克隆外，以下命令均在 pi-mono 仓库根目录执行，完成一个代码块后仍留在根目录。直接使用 pi-ai 的 <code>streamSimple</code>，不经过 agent，观察原始事件。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本：脚本化的回复包含 thinking、文本和工具调用。</p><pre class="cmd">cat &gt; scratch/l03.ts &lt;&lt;&#x27;EOF&#x27;
 import { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall, registerFauxProvider, streamSimple } from &quot;@earendil-works/pi-ai/compat&quot;;
 
 const faux = registerFauxProvider();
@@ -148,26 +148,26 @@ for await (const e of s) {
 const msg = await s.result();
 console.log(&quot;stopReason =&quot;, msg.stopReason, &quot;| 内容块 =&quot;, msg.content.map((c) =&gt; c.type).join(&quot;,&quot;));
 EOF
-cd pi-mono/scratch &amp;&amp; node l03.ts</pre><pre class="out">start           - 
-thinking_start  0 
+node scratch/l03.ts</pre><pre class="out">start           -
+thinking_start  0
 thinking_delta  0 &quot;先看文件&quot;
-thinking_end    0 
-text_start      1 
+thinking_end    0
+text_start      1
 text_delta      1 &quot;我来读一下。&quot;
-text_end        1 
-toolcall_start  2 
+text_end        1
+toolcall_start  2
 toolcall_delta  2 &quot;{\&quot;path\&quot;:\&quot;a.txt\&quot;}&quot;
 toolcall_end    2 {&quot;path&quot;:&quot;a.txt&quot;}
-done            - 
-stopReason = toolUse | 内容块 = thinking,text,toolCall</pre></div></div><div class="st"><span class="n">02</span><div><p>看看 faux 提供方如何把文本切成小块（每块 3–5 个 token），这就是 delta 的来源。</p><pre class="cmd">cd pi-mono &amp;&amp; grep -n &quot;DEFAULT_MIN_TOKEN_SIZE\|DEFAULT_MAX_TOKEN_SIZE&quot; packages/ai/src/providers/faux.ts | head -4</pre><pre class="out">29:const DEFAULT_MIN_TOKEN_SIZE = 3;
+done            -
+stopReason = toolUse | 内容块 = thinking,text,toolCall</pre></div></div><div class="st"><span class="n">02</span><div><p>看看 faux 提供方如何把文本切成小块（每块 3–5 个 token），这就是 delta 的来源。</p><pre class="cmd">grep -n &quot;DEFAULT_MIN_TOKEN_SIZE\|DEFAULT_MAX_TOKEN_SIZE&quot; packages/ai/src/providers/faux.ts | head -4</pre><pre class="out">29:const DEFAULT_MIN_TOKEN_SIZE = 3;
 30:const DEFAULT_MAX_TOKEN_SIZE = 5;
 459:		Math.min(options.tokenSize?.min ?? DEFAULT_MIN_TOKEN_SIZE, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE),
-461:	const maxTokenSize = Math.max(minTokenSize, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE);</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>渲染器</h3><p>写一个最小渲染器：只用事件（不读 <code>partial</code>），在终端里实时拼出最终文本，并在 <code>toolcall_end</code> 时打印 <code>⚙ read(a.txt)</code>。然后思考：为什么每个事件还要带上 <code>partial</code>？</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">let out = "";
+461:	const maxTokenSize = Math.max(minTokenSize, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE);</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>渲染器</h3><p>写一个最小渲染器：只用事件（不读 <code>partial</code>），在终端里实时拼出最终文本，并在 <code>toolcall_end</code> 时打印 <code>⚙ read(a.txt)</code>。然后思考：为什么内容块事件还要带上 <code>partial</code>？</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">let out = "";
 for await (const e of s) {
   if (e.type === "text_delta") { process.stdout.write(e.delta); out += e.delta; }
   if (e.type === "toolcall_end") console.log(`\n⚙ ${e.toolCall.name}(${e.toolCall.arguments.path})`);
   if (e.type === "error") console.error("错误:", e.error.errorMessage);
-}</pre><p>带上 <code>partial</code> 的原因：订阅者可能中途加入（例如 TUI 重绘、扩展在 <code>message_update</code> 中检查内容），或者只关心“此刻完整的样子”而不想自己维护拼接状态。增量（delta）适合高效追加，快照（partial）适合无状态渲染；pi 两者都给。</p></div></details></div>
+}</pre><p>带上 <code>partial</code> 的原因：处理增量时，可以直接查看“到目前为止”的完整回复，不必自行重建全部内容。<code>partial</code> 是共享的实时辅助对象，不保证保留事件产生时的历史状态；需要历史快照时应复制。<code>EventStream</code> 是可消费队列，不提供给迟到订阅者自动重放历史的广播语义。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
@@ -175,7 +175,7 @@ for await (const e of s) {
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>Message</b>：<code>system</code>（指令、命名 sections、toolsAdded/toolsRemoved）、<code>user</code>（文本/图片）、<code>assistant</code>（文本、thinking、toolCall + usage、stopReason、provider/model）、<code>toolResult</code>（toolCallId、content、details、isError）。</li><li><b>系统消息可以出现在转录中间</b>：后续的 system 消息按名称替换或删除 section（<code>null</code> 表示删除），并增减工具。把所有系统消息依次重放，就得到当前的提示与工具集。支持中途系统消息的提供方原样发送，不支持的则重建开头的系统消息。</li><li><b>内容块</b>：<code>text</code>、<code>thinking</code>（可带不透明的 thinkingSignature 以便多轮回放，可被 redacted）、<code>image</code>、<code>toolCall</code>（id、name、arguments；若模型给出的参数不是合法 JSON，则 <code>arguments={}</code> 并设置 <code>argumentsError</code>）。</li><li><b>StopReason</b>：<code>stop</code>、<code>length</code>、<code>toolUse</code>、<code>error</code>、<code>aborted</code>、<code>deferred</code>，以及流式进行中的 <code>pending</code>。循环据此决定下一步（例如 length 时，被截断的工具调用会被判为失败）。</li><li><b>事件流</b>：<code>start</code> → 每个内容块的 <code>*_start / *_delta / *_end</code>（带 contentIndex）→ <code>done</code> 或 <code>error</code>。每个事件都带当前的 <code>partial</code> 消息快照，所以 UI 可以随时渲染完整状态。错误也以事件交付，而不是抛出异常。</li><li><b>EventStream</b>：一个可异步迭代的推送队列，外加一个 <code>result()</code> Promise：遇到 done/error 时完成。提供方只管 <code>push</code>，消费者只管 <code>for await</code>。</li></ol></section>
+<ol class="sum"><li><b>Message</b>：<code>system</code>（指令、命名 sections、toolsAdded/toolsRemoved）、<code>user</code>（文本/图片）、<code>assistant</code>（文本、thinking、toolCall + usage、stopReason、provider/model）、<code>toolResult</code>（toolCallId、content、details、isError）。</li><li><b>系统消息可以出现在转录中间</b>：后续的 system 消息按名称替换或删除 section（<code>null</code> 表示删除），并增减工具。把所有系统消息依次重放，就得到当前的提示与工具集。支持中途系统消息的提供方原样发送，不支持的则重建开头的系统消息。</li><li><b>内容块</b>：<code>text</code>、<code>thinking</code>（可带不透明的 thinkingSignature 以便多轮回放，可被 redacted）、<code>image</code>、<code>toolCall</code>（id、name、arguments；若模型给出的参数不是合法 JSON，则 <code>arguments={}</code> 并设置 <code>argumentsError</code>）。</li><li><b>StopReason</b>：<code>stop</code>、<code>length</code>、<code>toolUse</code>、<code>error</code>、<code>aborted</code>、<code>deferred</code>，以及流式进行中的 <code>pending</code>。循环据此决定下一步（例如 length 时，被截断的工具调用会被判为失败）。</li><li><b>事件流</b>：<code>start</code> → 每个内容块的 <code>*_start / *_delta / *_end</code>（带 contentIndex）→ <code>done</code> 或 <code>error</code>。<code>start</code> 和内容块更新事件带 <code>partial</code>（共享的实时对象，非历史快照）；<code>done</code> 带最终 <code>message</code>，<code>error</code> 带 <code>error</code>。请求/解析失败通常以 error 事件结束，也可能在 start 前失败。直接调用 API 的 <code>streamSimple</code> 缺少凭据时可同步抛错，调用入口仍需 try/catch。</li><li><b>EventStream</b>：一个可异步迭代的推送队列，外加一个 <code>result()</code> Promise：遇到 done/error 时完成。提供方只管 <code>push</code>，消费者只管 <code>for await</code>。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 04</div><a class="big" href="l04.html">Provider 抽象、模型目录与凭据 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
