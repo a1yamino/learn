@@ -48,8 +48,14 @@ SELECT pg_size_pretty(pg_relation_size(&#x27;bloat&#x27;));</pre><pre class="out
 BEGIN ISOLATION LEVEL REPEATABLE READ; SELECT count(*) FROM bloat;
 -- 窗口 1
 UPDATE bloat SET v = v || &#x27;z&#x27; WHERE id &lt;= 100000;
-VACUUM (VERBOSE) bloat;</pre><pre class="out">tuples: 0 removed, 1100000 remain, 100000 are dead but not yet removable
-removable cutoff: 1012, which was 3 XIDs old when operation ended</pre></div></div><div class="st"><span class="n">06</span><div><p>数据库和表的事务 ID 年龄。</p><pre class="cmd">SELECT datname, age(datfrozenxid) FROM pg_database;
+VACUUM (VERBOSE) bloat;
+-- 看到 dead but not yet removable 后，在窗口 2 释放快照
+ROLLBACK;
+-- 回到窗口 1，验证旧版本现在可清理，并恢复测试表自动维护
+VACUUM (VERBOSE) bloat;
+ALTER TABLE bloat RESET (autovacuum_enabled);</pre><pre class="out">第一次 VACUUM：100000 are dead but not yet removable
+窗口 2 ROLLBACK 后再次 VACUUM：这些旧版本可回收
+ALTER TABLE</pre></div></div><div class="st"><span class="n">06</span><div><p>数据库和表的事务 ID 年龄。</p><pre class="cmd">SELECT datname, age(datfrozenxid) FROM pg_database;
 SELECT relname, age(relfrozenxid) FROM pg_class WHERE relkind = &#x27;r&#x27; ORDER BY 2 DESC LIMIT 3;</pre><pre class="out"> datname  |  age
 ----------+-------
  shop     |  1040
