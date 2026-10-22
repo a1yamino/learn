@@ -10,7 +10,7 @@ const e2={a:C('段 1：apple=1 cat=1 dog=1'),b:C('段 2：apple=2 bird=2 dog=✝
 Player(document.getElementById('p2'),{els:e2,scenes:[
  {t:'三个段',p:'每个段内部按键排序；编号越大越新。',set:{a:[0,0],b:[0,45],c:[0,90]}},
  {t:'归并',p:'像归并排序一样同时顺序读取三个段，同一个键取最新的值。',d:3400,set:{a:[0,0],b:[0,45],c:[0,90],r:[250,45]}},
- {t:'墓碑',p:'墓碑表示删除：合并后该键消失，旧段可以删除。',d:3200,set:{a:[0,0],b:[0,45],c:[0,90],r:[250,45],n:[250,100]}}]});
+ {t:'墓碑',p:'本例合并了所有旧段，且没有活跃快照：可以同时丢弃墓碑与旧值；只合并部分段时不能直接丢墓碑。',d:3200,set:{a:[0,0],b:[0,45],c:[0,90],r:[250,45],n:[250,100]}}]});
 (()=>{let mem={},segs=[],n=0;const keys=['apple','bird','cat','dog','eel'];
  const q=document.getElementById('hq'),p=document.getElementById('hp'),m=document.getElementById('hm');
  const show=(msg,c)=>{p.textContent='内存表: '+JSON.stringify(mem)+'\n'+(segs.map((s,i)=>`段 ${i+1}: `+Object.keys(s).sort().map(k=>k+'='+(s[k]===null?'✝':s[k])).join(' ')).reverse().join('\n')||'（磁盘上还没有段）');m.className='msg '+(c||'');m.innerHTML=msg};
