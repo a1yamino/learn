@@ -1,5 +1,5 @@
 const P=(t,c='sig')=>({cls:'pill '+c,html:t});const B=(t,c='',w=130,h=40)=>({w,h,cls:'blk '+c,html:t});
-const e={sql:B('SQL 文本','',100),pa:B('解析','',100),rw:B('分析 / 重写','',110),pl:B('规划器','',100),ex:B('执行器','',100),c1:P('Seq Scan · cost 2137','mute'),c2:P('Index Scan · cost 318','ok'),c3:P('Bitmap Scan · cost 420','mute'),st:P('依据：pg_class 页数行数、pg_stats 分布、代价参数','sig'),pull:P('计划树：父节点向子节点逐行拉取','sig')};
+const e={sql:B('SQL 文本','',100),pa:B('解析','',100),rw:B('分析 / 重写','',110),pl:B('规划器','',100),ex:B('执行器','',100),c1:P('Seq Scan · cost 2620','mute'),c2:P('Index Scan · cost 318','ok'),c3:P('Bitmap Scan · cost 420','mute'),st:P('依据：pg_class 页数行数、pg_stats 分布、代价参数','sig'),pull:P('计划树：父节点向子节点逐行拉取','sig')};
 const L={sql:[0,0],pa:[120,0],rw:[240,0],pl:[370,0],ex:[490,0]};
 Player(document.getElementById('p1'),{els:e,scenes:[
  {t:'解析与重写',p:'检查语法，生成解析树；解析表名、列名和类型，把视图展开成子查询。',set:{...L,pa:[120,0,{cls:'blk sig'}],rw:[240,0,{cls:'blk sig'}]}},
@@ -13,17 +13,17 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
  {t:'从最深处开始',p:'先看叶子：users 用主键索引取出 9 行。',d:3400,set:{...T,u:[60,140,{cls:'blk sig'}],g:[0,200]}},
  {t:'loops',p:'Nested Loop 对外层的每一行执行一次内层：orders 的索引扫描执行了 9 次，每次平均 112 行。actual time 也是每次循环的平均值。',d:4400,set:{...T,u:[60,140,{cls:'blk sig'}],o:[300,140,{cls:'blk sig'}],x:[0,200],t:[260,200]}},
  {t:'向上汇总',p:'1012 行交给 HashAggregate 按 name 分组，输出 9 行。',d:3600,set:{...T,n:[200,70,{cls:'blk ok'}],a:[200,0,{cls:'blk ok'}]}}]});
-(()=>{const L=[[' Sort  (cost=2380.11..2405.11 rows=10000 width=29) (actual time=24.3..25.1 rows=9981 loops=1)','cost 启动..总代价：Sort 必须读完所有输入才能输出第一行，所以启动代价接近总代价。'],
+(()=>{const L=[[' Sort  (cost=3287.11..3312.11 rows=10000 width=29) (actual time=24.3..25.1 rows=9981 loops=1)','cost 启动..总代价：Sort 必须读完所有输入才能输出第一行，所以启动代价接近总代价。'],
 ['   Sort Key: amount DESC','排序键。'],
-['   Sort Method: external merge  Disk: 432kB','排序超过了 work_mem（默认 4 MB 对应的工作内存），溢出到磁盘。适当调大 work_mem 可以改为内存中的 quicksort。','bad'],
-['   ->  Seq Scan on orders  (cost=0.00..2137.00 rows=10050 width=29) (actual time=0.015..12.801 rows=9981 loops=1)','估算 10050 行，实际 9981 行：估算准确。启动代价 0，可以立即输出行。','ok'],
-['         Filter: (amount > 900)','过滤条件在扫描时逐行判断，不能用索引。'],
+['   Sort Method: external merge  Disk: 432kB','排序超过了 work_mem（该场景调低后的 work_mem），溢出到磁盘。适当调大 work_mem 可以改为内存中的 quicksort。','bad'],
+['   ->  Seq Scan on orders  (cost=0.00..2620.00 rows=10050 width=29) (actual time=0.015..12.801 rows=9981 loops=1)','估算 10050 行，实际 9981 行：估算准确。启动代价 0，可以立即输出行。','ok'],
+['         Filter: (amount > 450)','过滤条件在扫描时逐行判断，不能用索引。'],
 ['         Rows Removed by Filter: 90019','读了 10 万行，丢掉 9 万行。去掉的比例很高时，考虑建索引。','sig'],
 [' Planning Time: 0.120 ms','规划耗时。复杂查询（很多表连接）这里可能很大。'],
 [' Execution Time: 25.912 ms','总执行时间，不包括把结果发送给客户端的网络时间。']];
  const q=document.getElementById('hq'),p=document.getElementById('hp'),m=document.getElementById('hm');q.style.flexDirection='column';q.style.alignItems='stretch';
- L.forEach(([t],i)=>{const b=document.createElement('button');b.className='btn';b.style.cssText='height:auto;min-height:36px;padding:8px 12px;line-height:1.45;text-align:left;font-family:var(--mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;border-radius:8px';b.textContent=t;b.addEventListener('click',()=>{q.querySelectorAll('.btn').forEach(x=>x.classList.toggle('pri',x===b));p.textContent='EXPLAIN ANALYZE SELECT * FROM orders WHERE amount > 900 ORDER BY amount DESC;\n\n'+t.trim();m.className='msg '+(L[i][2]||'');m.innerHTML=L[i][1]});q.appendChild(b)});
- m.className='msg';m.innerHTML='EXPLAIN ANALYZE SELECT * FROM orders WHERE amount &gt; 900 ORDER BY amount DESC;'})();
+ L.forEach(([t],i)=>{const b=document.createElement('button');b.className='btn';b.style.cssText='height:auto;min-height:36px;padding:8px 12px;line-height:1.45;text-align:left;font-family:var(--mono,monospace);font-size:12px;white-space:pre-wrap;word-break:break-all;border-radius:8px';b.textContent=t;b.addEventListener('click',()=>{q.querySelectorAll('.btn').forEach(x=>x.classList.toggle('pri',x===b));p.textContent='EXPLAIN ANALYZE SELECT * FROM orders WHERE amount > 450 ORDER BY amount DESC;\n\n'+t.trim();m.className='msg '+(L[i][2]||'');m.innerHTML=L[i][1]});q.appendChild(b)});
+ m.className='msg';m.innerHTML='EXPLAIN ANALYZE SELECT * FROM orders WHERE amount &gt; 450 ORDER BY amount DESC;'})();
 Term(document.getElementById('t4'),[
 ['EXPLAIN (ANALYZE, BUFFERS, VERBOSE, SETTINGS) SELECT …;','…','VERBOSE 显示输出列和 schema；SETTINGS 列出与默认值不同、影响规划的参数。'],
 ['EXPLAIN (FORMAT JSON) SELECT …;','[ { "Plan": { "Node Type": "Seq Scan", … } } ]','JSON 格式适合粘贴到 explain.dalibo.com 等可视化工具。'],
@@ -32,7 +32,7 @@ Term(document.getElementById('t4'),[
 ['SHOW work_mem;',' work_mem\n----------\n 4MB','每个排序或哈希节点可用的内存。一个查询可能有多个节点，连接数 × 节点数 × work_mem 才是最坏情况。'],
 ['LOAD \'auto_explain\'; SET auto_explain.log_min_duration = \'500ms\'; SET auto_explain.log_analyze = on;','LOAD','把超过 500 ms 的查询计划自动写入日志。生产常在 session_preload_libraries 中加载。']]);
 Quiz(document.getElementById('qs'),[
-['cost=0.00..2137.00 中 2137 的单位是？',['毫秒','抽象代价单位（≈ 顺序读一页）','字节'],1,''],
+['cost=0.00..2620.00 中 2620 的单位是？',['毫秒','抽象代价单位（≈ 顺序读一页）','字节'],1,''],
 ['EXPLAIN ANALYZE 会执行语句吗？',['会','不会','只执行 SELECT'],0,'写语句要放在事务中回滚。'],
 ['内层节点 actual time=0.04 rows=112 loops=9，它总共输出约？',['112 行','1008 行','9 行'],1,''],
 ['Sort Method: external merge Disk 说明？',['排序溢出到磁盘，work_mem 不够','使用了索引','并行排序'],0,''],
