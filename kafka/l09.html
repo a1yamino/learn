@@ -29,10 +29,10 @@
 <section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">三节点集群（第 2 课），在 k1 中 cd /opt/kafka; B="--bootstrap-server k1:19092"。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>创建主题并写入。</p><pre class="cmd">bin/kafka-topics.sh $B --create --topic rep --partitions 1 --replication-factor 3 --config min.insync.replicas=2
 bin/kafka-producer-perf-test.sh --topic rep --num-records 10000 --record-size 100 --throughput -1 --producer-props bootstrap.servers=k1:19092</pre><pre class="out">Created topic rep.
-10000 records sent …</pre></div></div><div class="st"><span class="n">02</span><div><p>查看 Leader 与 ISR。</p><pre class="cmd">bin/kafka-topics.sh $B --describe --topic rep</pre><pre class="out">	Topic: rep	Partition: 0	Leader: 3	Replicas: 3,1,2	Isr: 3,1,2	Elr: 	LastKnownElr: </pre></div></div><div class="st"><span class="n">03</span><div><p>查看每个副本的 LEO 与落后量。</p><pre class="cmd">bin/kafka-log-dirs.sh $B --describe --topic-list rep | tail -n 1 | python3 -m json.tool | grep -E &quot;broker|offsetLag&quot;</pre><pre class="out">&quot;broker&quot;: 1, … &quot;offsetLag&quot;: 0 …</pre></div></div><div class="st"><span class="n">04</span><div><p>停掉 Leader 所在的 Broker（假设是 k3），再查看。</p><pre class="cmd">docker compose stop k3
+10000 records sent …</pre></div></div><div class="st"><span class="n">02</span><div><p>查看 Leader 与 ISR。</p><pre class="cmd">bin/kafka-topics.sh $B --describe --topic rep</pre><pre class="out">	Topic: rep	Partition: 0	Leader: 3	Replicas: 3,1,2	Isr: 3,1,2	Elr: 	LastKnownElr: </pre></div></div><div class="st"><span class="n">03</span><div><p>查看每个副本的 LEO 与落后量。</p><pre class="cmd">bin/kafka-log-dirs.sh $B --describe --topic-list rep | tail -n 1</pre><pre class="out">&quot;broker&quot;: 1, … &quot;offsetLag&quot;: 0 …</pre></div></div><div class="st"><span class="n">04</span><div><p>停掉 Leader 所在的 Broker（假设是 k3），再查看。</p><pre class="cmd">docker compose stop k3
 bin/kafka-topics.sh $B --describe --topic rep</pre><pre class="out">	Topic: rep	Partition: 0	Leader: 1	Replicas: 3,1,2	Isr: 1,2 …</pre></div></div><div class="st"><span class="n">05</span><div><p>写入更多数据后恢复 k3，查看 epoch 文件。</p><pre class="cmd">bin/kafka-producer-perf-test.sh --topic rep --num-records 1000 --record-size 100 --throughput -1 --producer-props bootstrap.servers=k1:19092
 docker compose start k3
-cat /tmp/kraft-combined-logs/rep-0/leader-epoch-checkpoint</pre><pre class="out">…
+cat /tmp/kafka-logs/rep-0/leader-epoch-checkpoint</pre><pre class="out">…
 0
 2
 0 0
