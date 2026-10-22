@@ -1,0 +1,142 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 13 课 · 系统：关注点分离与依赖注入</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 13 课</span><span class="sp"></span><a href="l12.html">← 第 12 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 13 课</div><h1>系统：关注点分离与依赖注入</h1>
+<p>一座城市能运转，是因为有分工和恰当的抽象层级。软件系统也一样。本课讲把系统的“构造”与“使用”分开：对象不应该自己去创建或查找依赖，而是在一个组装点（main / 组合根）统一创建，再注入进去；延迟初始化的代价；工厂；横切关注点（日志、事务、权限、重试）如何用装饰器、中间件或上下文管理器与业务逻辑分开；以及“先做简单的，再按需演进”的系统架构观。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">组合根</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：依赖从哪里来？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">横切关注点的位置</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">装饰器把横切逻辑集中</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>组合根</h2><div class="goal">所有对象在一个地方创建，再沿着依赖关系注入。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：依赖从哪里来？</h2><div class="goal">选择一段代码。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>横切关注点的位置</h2><div class="goal">在 Python 中常用的几种分离方式。</div></div></div>
+<table class="tbl"><tr><th>关注点</th><th>机制</th><th>例子</th></tr>
+<tr><td>计时、日志、重试</td><td>装饰器</td><td><code>@retry</code>、<code>@timed</code></td></tr>
+<tr><td>事务、锁、临时目录</td><td>上下文管理器</td><td><code>with unit_of_work() as uow:</code></td></tr>
+<tr><td>鉴权、请求日志、异常转换</td><td>Web 框架中间件 / 依赖</td><td>Django 中间件、FastAPI <code>Depends</code></td></tr>
+<tr><td>配置</td><td>在组合根读取一次，注入值对象</td><td><code>Settings.from_env()</code></td></tr></table>
+<pre class="cmd" style="overflow-x:auto;white-space:pre"># composition root：唯一知道所有具体类的地方
+def build_app(settings: Settings) -> App:
+    orders = PgOrderRepository(settings.db_url)
+    notifier = SmtpNotifier(settings.smtp_host)
+    service = OrderService(orders, notifier)
+    return App(order_service=service)
+
+if __name__ == "__main__":
+    build_app(Settings.from_env()).run()</pre>
+<p>对于大多数 Python 项目，这样一个手写的组合根比 DI 容器更透明：读者可以直接看到对象图。项目很大、对象很多时，才考虑容器或框架提供的依赖注入。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>装饰器把横切逻辑集中</h2><div class="goal">一个重试装饰器的运行效果。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">把一个“自己创建依赖”的服务改为构造函数注入，加一个组合根和一个重试装饰器。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>业务与基础设施分开，依赖由外部注入。</p><pre class="cmd">cat &gt; orders.py &lt;&lt;&#x27;EOF&#x27;
+import functools
+
+def retry(times, on):
+    def wrap(fn):
+        @functools.wraps(fn)
+        def inner(*args, **kwargs):
+            for attempt in range(1, times + 1):
+                try:
+                    return fn(*args, **kwargs)
+                except on as e:
+                    if attempt == times:
+                        raise
+                    print(f&quot;[retry] {fn.__name__} 失败 {type(e).__name__}，第 {attempt} 次重试&quot;)
+        return inner
+    return wrap
+
+class OrderService:
+    def __init__(self, orders, notifier):
+        self._orders = orders
+        self._notifier = notifier
+
+    def place(self, order_id, email):
+        self._orders.save(order_id)
+        self._notifier.notify(email, f&quot;订单 {order_id} 已提交&quot;)
+
+class InMemoryOrders:
+    def __init__(self):
+        self.saved = []
+    def save(self, order_id):
+        self.saved.append(order_id)
+
+class FlakyNotifier:
+    &quot;&quot;&quot;模拟一个前两次超时的外部服务。&quot;&quot;&quot;
+    def __init__(self):
+        self.calls = 0
+    @retry(times=3, on=(TimeoutError,))
+    def notify(self, email, text):
+        self.calls += 1
+        if self.calls &lt; 3:
+            raise TimeoutError()
+        print(f&quot;-&gt; {email}: {text}&quot;)
+
+def build_service():
+    return OrderService(InMemoryOrders(), FlakyNotifier())
+EOF
+python3 -c &quot;from orders import build_service; build_service().place(42, &#x27;ann@example.com&#x27;)&quot;</pre><pre class="out">[retry] notify 失败 TimeoutError，第 1 次重试
+[retry] notify 失败 TimeoutError，第 2 次重试
+-&gt; ann@example.com: 订单 42 已提交</pre></div></div><div class="st"><span class="n">02</span><div><p>测试有自己的组装：注入记录型替身，不需要任何真实服务。</p><pre class="cmd">cat &gt; test_orders.py &lt;&lt;&#x27;EOF&#x27;
+import unittest
+from orders import OrderService, InMemoryOrders
+
+class RecordingNotifier:
+    def __init__(self):
+        self.sent = []
+    def notify(self, email, text):
+        self.sent.append((email, text))
+
+class OrderServiceTest(unittest.TestCase):
+    def test_placing_order_saves_and_notifies(self):
+        orders, notifier = InMemoryOrders(), RecordingNotifier()
+        OrderService(orders, notifier).place(7, &quot;bob@example.com&quot;)
+        self.assertEqual(orders.saved, [7])
+        self.assertEqual(notifier.sent, [(&quot;bob@example.com&quot;, &quot;订单 7 已提交&quot;)])
+
+unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;], exit=False)
+EOF
+python3 test_orders.py 2&gt;&amp;1 | grep -E &quot;ok$|Ran&quot;</pre><pre class="out">test_placing_order_saves_and_notifies (__main__.OrderServiceTest.test_placing_order_saves_and_notifies) ... ok
+Ran 1 test in 0.000s</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>找出隐式依赖</h3><p>下面的函数有几个隐式依赖？重写它，使所有依赖都显式：<pre class="cmd">def send_daily_digest():
+    users = User.objects.filter(subscribed=True)
+    today = datetime.date.today()
+    for u in users:
+        items = requests.get(f"{os.environ['API']}/items?since={today}").json()
+        smtplib.SMTP("localhost").sendmail("bot@x.com", u.email, render(items))</pre></p><details><summary>查看参考答案</summary><div><p>隐式依赖：ORM 全局查询、当前日期、环境变量、HTTP 库、SMTP 服务器（还在循环里重复连接）。</p><pre class="cmd">def send_daily_digest(*, subscribers: SubscriberSource, items: ItemFeed,
+                      mailer: Mailer, today: date) -> int:
+    new_items = items.since(today)          # 只取一次，不在循环里
+    body = render(new_items)
+    count = 0
+    for user in subscribers.subscribed():
+        mailer.send(user.email, body)
+        count += 1
+    return count
+
+# 组合根
+send_daily_digest(subscribers=DjangoSubscribers(), items=HttpItemFeed(settings.api_url),
+                  mailer=SmtpMailer(settings.smtp_host), today=date.today())</pre><p>显式依赖之后，重构也暴露了一个 bug：原代码在循环内重复请求相同的 API 数据并为每个用户新建 SMTP 连接。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>把构造与使用分开</b>：业务对象如果在内部 <code>new</code> 出数据库连接、读取环境变量，它就和这些细节绑死了，也无法在测试中替换。让 <code>main</code>（组合根）负责创建并连接所有对象。</li><li><b>依赖注入（DI）</b>：对象通过构造函数参数获得依赖。在 Python 中通常不需要 DI 框架——在一个 <code>build_app(config)</code> 函数里手动组装就足够清楚。</li><li><b>延迟初始化的隐患</b>：<code>if self._service is None: self._service = RealService()</code> 把具体类型硬编码进来，并在每个使用处引入一个隐式的全局状态与时间依赖。</li><li><b>工厂</b>：当对象需要在运行时（而不是启动时）创建，且应用需要控制“何时创建”，注入一个工厂（可以就是一个函数）。</li><li><b>横切关注点</b>：日志、计时、事务、重试、鉴权会散布在每个函数里。用装饰器、中间件、上下文管理器把它们集中起来，业务函数只保留业务逻辑。</li><li><b>演进的架构</b>：不必在第一天设计好一切。只要关注点分得好、依赖方向正确，系统可以从单体逐步演进；过早引入复杂框架反而会锁死选择。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 14</div><a class="big" href="l14.html">简单设计四规则与涌现式设计 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l13.js"></script>
+</body></html>

@@ -1,0 +1,135 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 10 课 · 单元测试与 TDD：整洁的测试</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 10 课</span><span class="sp"></span><a href="l09.html">← 第 9 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 10 课</div><h1>单元测试与 TDD：整洁的测试</h1>
+<p>测试代码和生产代码一样重要：脏的测试会变得难以修改，最终被删除，生产代码也就失去了重构的安全网。本课讲 TDD 的三条定律与“红—绿—重构”循环，整洁测试的标准（可读性第一）、构造—操作—检验（Arrange-Act-Assert）结构、面向领域的测试语言、每个测试一个概念、F.I.R.S.T. 原则，以及测试替身（fake、stub、mock）的取舍和“过度 mock”的问题。练习用 TDD 从零写一个小功能。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">红—绿—重构</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这个测试好吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">测试替身</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">运行测试</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>红—绿—重构</h2><div class="goal">一个循环通常只有几分钟。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这个测试好吗？</h2><div class="goal">选择一个测试。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>测试替身</h2><div class="goal">同一个名词“mock”常被用来指代几种不同的东西。</div></div></div>
+<table class="tbl"><tr><th>种类</th><th>做什么</th><th>例子</th><th>何时用</th></tr>
+<tr><td>Dummy</td><td>只为填参数，不被使用</td><td><code>None</code>、空对象</td><td>签名要求但与测试无关</td></tr>
+<tr><td>Stub</td><td>返回预设的数据</td><td>总是返回 25℃ 的天气源</td><td>为被测代码提供输入</td></tr>
+<tr><td>Fake</td><td>可工作的简化实现</td><td>内存仓库、内存文件存储</td><td>替代慢或外部的依赖；首选</td></tr>
+<tr><td>Spy / Mock</td><td>记录调用，事后断言</td><td><code>RecordingMailer</code>、<code>unittest.mock.Mock</code></td><td>交互本身就是要验证的行为</td></tr></table>
+<p><b>测试金字塔</b>：大量快速的单元测试（毫秒级），较少的集成测试（验证适配器与真实数据库、服务），少量端到端测试。测试越慢、越依赖外部，就越不适合在每次保存时运行。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>运行测试</h2><div class="goal">unittest 的常用选项。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 TDD 从零写一个购物车。每一步：先运行看到红，再写代码看到绿。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>红：第一个测试。<code>cart.py</code> 还不存在。</p><pre class="cmd">cat &gt; test_cart.py &lt;&lt;&#x27;EOF&#x27;
+import unittest
+from cart import Cart
+
+class CartTest(unittest.TestCase):
+    def test_empty_cart_total_is_zero(self):
+        self.assertEqual(Cart().total(), 0)
+EOF
+python3 -m unittest 2&gt;&amp;1 | grep -E &quot;Error|Ran|FAILED&quot;</pre><pre class="out">ImportError: Failed to import test module: test_cart
+ModuleNotFoundError: No module named &#x27;cart&#x27;
+Ran 1 test in 0.000s
+FAILED (errors=1)</pre></div></div><div class="st"><span class="n">02</span><div><p>绿：最少的代码。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
+class Cart:
+    def total(self):
+        return 0
+EOF
+python3 -m unittest 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div></div><div class="st"><span class="n">03</span><div><p>红：下一个行为迫使实现变得通用。</p><pre class="cmd">cat &gt;&gt; test_cart.py &lt;&lt;&#x27;EOF&#x27;
+
+    def test_total_sums_item_prices(self):
+        cart = Cart()
+        cart.add(&quot;pen&quot;, 10)
+        cart.add(&quot;ink&quot;, 5)
+        self.assertEqual(cart.total(), 15)
+EOF
+python3 -m unittest 2&gt;&amp;1 | grep -E &quot;^(ERROR|FAIL|AttributeError|Ran)&quot;</pre><pre class="out">ERROR: test_total_sums_item_prices (test_cart.CartTest.test_total_sums_item_prices)
+AttributeError: &#x27;Cart&#x27; object has no attribute &#x27;add&#x27;
+Ran 2 tests in 0.000s
+FAILED (errors=1)</pre></div></div><div class="st"><span class="n">04</span><div><p>绿。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
+class Cart:
+    def __init__(self):
+        self._prices = []
+
+    def add(self, name, price):
+        self._prices.append(price)
+
+    def total(self):
+        return sum(self._prices)
+EOF
+python3 -m unittest 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div></div><div class="st"><span class="n">05</span><div><p>红：VIP 满 100 免运费，否则运费 8。</p><pre class="cmd">cat &gt;&gt; test_cart.py &lt;&lt;&#x27;EOF&#x27;
+
+    def test_shipping_is_8_by_default(self):
+        self.assertEqual(Cart().shipping_fee(), 8)
+
+    def test_vip_gets_free_shipping(self):
+        cart = Cart(is_vip=True)
+        self.assertEqual(cart.shipping_fee(), 0)
+EOF
+python3 -m unittest 2&gt;&amp;1 | grep -E &quot;^(ERROR|FAIL|Ran)&quot;</pre><pre class="out">ERROR: test_shipping_is_8_by_default (test_cart.CartTest.test_shipping_is_8_by_default)
+ERROR: test_vip_gets_free_shipping (test_cart.CartTest.test_vip_gets_free_shipping)
+Ran 4 tests in 0.001s
+FAILED (errors=2)</pre></div></div><div class="st"><span class="n">06</span><div><p>绿，然后重构：测试保护下把价格和名字一起保存。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
+STANDARD_SHIPPING = 8
+
+class Cart:
+    def __init__(self, is_vip=False):
+        self._items = {}
+        self._is_vip = is_vip
+
+    def add(self, name, price):
+        self._items[name] = price
+
+    def total(self):
+        return sum(self._items.values())
+
+    def shipping_fee(self):
+        return 0 if self._is_vip else STANDARD_SHIPPING
+EOF
+python3 -m unittest -v 2&gt;&amp;1 | grep -E &quot;ok$|Ran|OK&quot;</pre><pre class="out">test_empty_cart_total_is_zero (test_cart.CartTest.test_empty_cart_total_is_zero) ... ok
+test_shipping_is_8_by_default (test_cart.CartTest.test_shipping_is_8_by_default) ... ok
+test_total_sums_item_prices (test_cart.CartTest.test_total_sums_item_prices) ... ok
+test_vip_gets_free_shipping (test_cart.CartTest.test_vip_gets_free_shipping) ... ok
+Ran 4 tests in 0.000s
+OK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>继续 TDD</h3><p>继续上面的购物车，用 TDD 依次加入：① 同一商品添加两次时数量累加（需要改变数据结构）；② 删除商品；③ 非 VIP 满 99 元免运费。对每一项先写出测试名，再写测试。</p><details><summary>查看参考答案</summary><div><pre class="cmd">def test_adding_same_item_twice_doubles_quantity(self):
+    cart = Cart(); cart.add("pen", 10); cart.add("pen", 10)
+    self.assertEqual(cart.total(), 20)
+
+def test_removed_item_is_not_charged(self):
+    cart = Cart(); cart.add("pen", 10); cart.add("ink", 5)
+    cart.remove("pen")
+    self.assertEqual(cart.total(), 5)
+
+def test_free_shipping_from_99(self):
+    cart = Cart(); cart.add("bag", 99)
+    self.assertEqual(cart.shipping_fee(), 0)
+
+def test_shipping_charged_below_99(self):
+    cart = Cart(); cart.add("bag", 98.99)
+    self.assertEqual(cart.shipping_fee(), 8)</pre><p>第一个测试会失败（dict 覆盖了同名商品），这正是测试的价值：它暴露了上一步“重构”中引入的错误假设。实现改为保存 <code>{name: (price, quantity)}</code>。第三项需要两个测试，覆盖边界的两侧（99 与 98.99）。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>TDD 三定律</b>：① 在写出一个失败的测试之前，不写生产代码；② 只写刚好失败的测试（编译失败也算失败）；③ 只写刚好让测试通过的生产代码。循环很短：红 → 绿 → 重构。</li><li><b>测试保护的是可修改性</b>：有了快速、可靠的测试，你才敢重构；没有测试，每次修改都是冒险，代码会逐渐腐烂。</li><li><b>可读性第一</b>：测试是活的文档。用 Arrange-Act-Assert 三段结构；用领域语言的辅助函数（<code>given_cart_with(...)</code>）隐藏无关细节；测试名描述行为（<code>test_vip_gets_free_shipping</code>）。</li><li><b>每个测试一个概念</b>：一个测试失败时，名字就应该说明哪个行为坏了。断言可以有多个，但它们应验证同一个概念。</li><li><b>F.I.R.S.T.</b>：快速（Fast）、独立（Independent）、可重复（Repeatable，不依赖网络、时间、随机数）、自足验证（Self-validating，通过或失败，不需要人看日志）、及时（Timely，与生产代码一起写）。</li><li><b>测试替身</b>：优先用真实对象或内存假实现（fake）；对外部系统用 stub 提供数据；只在“交互本身就是行为”时（如“应发送一封邮件”）使用 mock 验证调用。过度 mock 会把测试绑在实现细节上，重构时大量测试无故失败。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 11</div><a class="big" href="l11.html">类：单一职责与内聚 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l10.js"></script>
+</body></html>

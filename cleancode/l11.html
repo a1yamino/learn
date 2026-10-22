@@ -1,0 +1,134 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 11 课 · 类：单一职责与内聚</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 11 课</span><span class="sp"></span><a href="l10.html">← 第 10 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 11 课</div><h1>类：单一职责与内聚</h1>
+<p>类是比函数更大的组织单位。本课讲类的组织顺序与封装；“类应当短小”中的“短小”指的是职责而不是行数；单一职责原则（SRP）——一个类只应有一个引起它变化的原因，或者说只对一类“使用者”负责；内聚（方法使用了多少字段）如何指引拆分；为修改而组织（把变化隔离在新类中）。练习把一个“上帝类”按变化原因拆开。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">内聚揭示隐藏的类</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：几个变化原因？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">SRP 的常见误解</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">用工具找出低内聚的类</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>内聚揭示隐藏的类</h2><div class="goal">把方法和它们使用的字段连起来看。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：几个变化原因？</h2><div class="goal">选择一个类，看分析。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>SRP 的常见误解</h2><div class="goal">“只做一件事”是函数的规则；SRP 讨论的是变化与人。</div></div></div>
+<table class="tbl"><tr><th>误解</th><th>澄清</th></tr>
+<tr><td>每个类只能有一个方法</td><td>SRP 关心变化原因，不关心方法个数。<code>Order</code> 可以有十个方法。</td></tr>
+<tr><td>拆得越细越好</td><td>过度拆分会让一个变化需要同时修改五个类（“散弹式修改”，第 15 课）。拆分的边界应与变化的边界一致。</td></tr>
+<tr><td>SRP 是关于代码的</td><td>它关于组织：谁会要求修改它？两个不同的团队要求修改同一个类，就会产生冲突与意外。</td></tr></table>
+<p>书中用 SQL 生成器举例：一个 <code>Sql</code> 类包含 <code>create()</code>、<code>insert()</code>、<code>select()</code>……每新增一种语句都要修改它。重构为 <code>Sql</code> 抽象类与 <code>CreateSql</code>、<code>SelectSql</code> 等子类后，新增语句只需新增一个类，已有类不受影响。在 Python 中，同样的思想也可以用一组函数或一个注册表实现——重点是变化被隔离。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>用工具找出低内聚的类</h2><div class="goal">统计每个方法使用了哪些 self 字段。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">先写一个测量内聚的小工具，再用它指导拆分。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>工具：列出每个方法用到的 self 字段。</p><pre class="cmd">cat &gt; cohesion.py &lt;&lt;&#x27;EOF&#x27;
+import ast, sys
+
+tree = ast.parse(open(sys.argv[1]).read())
+for cls in [n for n in tree.body if isinstance(n, ast.ClassDef)]:
+    print(cls.name)
+    for fn in [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name != &quot;__init__&quot;]:
+        fields = sorted({a.attr for a in ast.walk(fn)
+                         if isinstance(a, ast.Attribute) and isinstance(a.value, ast.Name)
+                         and a.value.id == &quot;self&quot; and not a.attr.startswith(&quot;__&quot;)})
+        print(f&quot;  {fn.name:&lt;18} {&#x27; &#x27;.join(fields)}&quot;)
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>一个“上帝类”。</p><pre class="cmd">cat &gt; employee.py &lt;&lt;&#x27;EOF&#x27;
+class Employee:
+    def __init__(self, name, rate, hours, db):
+        self.name, self.rate, self.hours, self.db = name, rate, hours, db
+
+    def calculate_pay(self):
+        return self.rate * min(self.hours, 40) + self.overtime()
+
+    def overtime(self):
+        return self.rate * 1.5 * max(0, self.hours - 40)
+
+    def report_hours(self):
+        return self.format_row()
+
+    def format_row(self):
+        return f&quot;{self.name:&lt;8}{self.hours:&gt;4}h&quot;
+
+    def save(self):
+        self.db[self.name] = (self.rate, self.hours)
+
+    def load(self):
+        self.rate, self.hours = self.db[self.name]
+EOF
+python3 cohesion.py employee.py</pre><pre class="out">Employee
+  calculate_pay      hours overtime rate
+  overtime           hours rate
+  report_hours       format_row
+  format_row         hours name
+  save               db hours name rate
+  load               db hours name rate</pre></div></div><div class="st"><span class="n">03</span><div><p>按变化原因拆开：数据、计算（财务）、报表（运营）、存储（技术）。</p><pre class="cmd">cat &gt; employee.py &lt;&lt;&#x27;EOF&#x27;
+from dataclasses import dataclass
+
+STANDARD_WEEK_HOURS = 40
+OVERTIME_MULTIPLIER = 1.5
+
+@dataclass(frozen=True)
+class Employee:
+    name: str
+    rate: float
+    hours: float
+
+class PayCalculator:
+    def pay(self, e):
+        regular = min(e.hours, STANDARD_WEEK_HOURS)
+        overtime = max(0, e.hours - STANDARD_WEEK_HOURS)
+        return e.rate * (regular + overtime * OVERTIME_MULTIPLIER)
+
+class HourReporter:
+    def row(self, e):
+        return f&quot;{e.name:&lt;8}{e.hours:&gt;4}h&quot;
+
+class EmployeeRepository:
+    def __init__(self, db):
+        self._db = db
+
+    def save(self, e):
+        self._db[e.name] = (e.rate, e.hours)
+
+    def load(self, name):
+        rate, hours = self._db[name]
+        return Employee(name, rate, hours)
+EOF
+python3 cohesion.py employee.py &amp;&amp; python3 -c &quot;
+from employee import *
+repo = EmployeeRepository({})
+repo.save(Employee(&#x27;ann&#x27;, 100, 45))
+ann = repo.load(&#x27;ann&#x27;)
+print(PayCalculator().pay(ann)); print(HourReporter().row(ann))&quot;</pre><pre class="out">Employee
+PayCalculator
+  pay                
+HourReporter
+  row                
+EmployeeRepository
+  save               _db
+  load               _db
+4750.0
+ann       45h</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>找出变化原因</h3><p>一个 <code>ReportService</code> 类有这些方法：<code>fetch_sales(month)</code>（SQL 查询）、<code>apply_fx_rates(rows)</code>（按汇率换算）、<code>to_excel(rows)</code>、<code>to_pdf(rows)</code>、<code>email_to_cfo(file)</code>、<code>schedule_monthly()</code>。列出它的变化原因（以及会要求修改的人），并给出拆分方案。</p><details><summary>查看参考答案</summary><div><table class="tbl"><tr><th>变化原因</th><th>谁会要求</th><th>新类 / 模块</th></tr><tr><td>数据来自哪里、怎么查</td><td>数据团队 / DBA</td><td><code>SalesRepository.fetch(month)</code></td></tr><tr><td>汇率换算规则</td><td>财务</td><td><code>CurrencyConverter</code></td></tr><tr><td>输出格式</td><td>报表使用者</td><td><code>ExcelRenderer</code>、<code>PdfRenderer</code>（同一接口）</td></tr><tr><td>谁收到、怎么发</td><td>管理层</td><td><code>ReportDelivery</code></td></tr><tr><td>何时运行</td><td>运维</td><td>调度配置（cron / 任务框架），不在类里</td></tr></table><p>最后用一个很薄的 <code>MonthlySalesReport.run(month)</code> 编排这些部件。它只因“流程步骤”变化而变化。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>短小的度量是职责</b>：如果无法用 25 个词左右、不用“和”“或”“如果”描述一个类，它很可能承担了多个职责。<code>Manager</code>、<code>Processor</code>、<code>Super</code> 这类名字常常意味着职责模糊。</li><li><b>单一职责原则（SRP）</b>：一个模块应当只有一个引起它变化的原因。Martin 后来的表述更精确：一个模块只对一个“角色”（一类利益相关者）负责——财务改的计算规则和运营改的报表格式不应在同一个类里互相影响。</li><li><b>许多小类，而不是几个大类</b>：系统的复杂度是固定的；问题是你希望把工具放在一个个贴好标签的小抽屉里，还是全扔进一个大抽屉。</li><li><b>内聚</b>：类的方法越多地使用同一组字段，内聚越高。如果一部分方法只用字段 a、b，另一部分只用 c、d，那里就藏着两个类。</li><li><b>拆分长函数常常会揭示新的类</b>：提取方法时如果发现要传很多参数，或某几个局部变量总是一起出现，它们可能属于一个新类。</li><li><b>为修改而组织</b>：新增一种 SQL 语句不应修改已有的语句类；每种变化落在一个新类里，旧代码无需重新测试（这引出下一课的开闭原则）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 12</div><a class="big" href="l12.html">SOLID：开闭、里氏替换、接口隔离与依赖倒置 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l11.js"></script>
+</body></html>

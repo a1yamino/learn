@@ -1,0 +1,136 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 12 课 · SOLID：开闭、里氏替换、接口隔离与依赖倒置</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 12 课</span><span class="sp"></span><a href="l11.html">← 第 11 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 12 课</div><h1>SOLID：开闭、里氏替换、接口隔离与依赖倒置</h1>
+<p>上一课讲了 S（单一职责）。本课讲另外四条：开闭原则（对扩展开放、对修改关闭）、里氏替换原则（子类型必须能替换父类型而不破坏程序的正确性）、接口隔离原则（不要强迫使用者依赖它不用的方法）、依赖倒置原则（高层策略与低层细节都依赖抽象）。每条都配一个在 Python 中常见的反例与重构，并讨论什么时候不值得应用它们（YAGNI）。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">依赖倒置</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：违反了哪一条？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">何时应用，何时不必</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">LSP 的测试</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>依赖倒置</h2><div class="goal">箭头方向反过来之后发生了什么。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：违反了哪一条？</h2><div class="goal">选择一段代码。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>何时应用，何时不必</h2><div class="goal">每条原则都有成本：额外的抽象、间接层和文件。</div></div></div>
+<table class="tbl"><tr><th>原则</th><th>值得应用的信号</th><th>可以暂缓的情况</th></tr>
+<tr><td>OCP</td><td>同一个分支链已经第二次因新类型被修改；有第三方需要扩展你的代码（插件）</td><td>只有一两种情况，且很少变化</td></tr>
+<tr><td>LSP</td><td>始终遵守：违反它的继承一定会产生 bug</td><td>—（不确定时用组合代替继承）</td></tr>
+<tr><td>ISP</td><td>使用者只用了接口中很少的方法；实现类被迫写空方法</td><td>接口本来就小</td></tr>
+<tr><td>DIP</td><td>业务规则需要在没有基础设施的情况下测试；细节可能被替换</td><td>小脚本、一次性工具；与框架深度绑定的薄层（如简单的 CRUD 视图）</td></tr></table>
+<pre class="cmd" style="overflow-x:auto;white-space:pre"># Python 中的 ISP + DIP：使用者声明自己需要的最小接口
+from typing import Protocol
+
+class OrderFinder(Protocol):
+    def orders_in(self, month: str) -> list[Order]: ...
+
+def monthly_revenue(orders: OrderFinder, month: str) -> Decimal:
+    return sum(o.total for o in orders.orders_in(month))</pre>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>LSP 的测试</h2><div class="goal">把同一套契约测试运行在每个子类型上。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用注册表实现 OCP，用契约测试检验 LSP。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>之前：新增格式要修改函数。之后：注册表。</p><pre class="cmd">cat &gt; exporters.py &lt;&lt;&#x27;EOF&#x27;
+import json
+
+EXPORTERS = {}
+
+def exporter(name):
+    def register(fn):
+        EXPORTERS[name] = fn
+        return fn
+    return register
+
+@exporter(&quot;csv&quot;)
+def to_csv(rows):
+    return &quot;\n&quot;.join(&quot;,&quot;.join(map(str, r)) for r in rows)
+
+@exporter(&quot;json&quot;)
+def to_json(rows):
+    return json.dumps(rows)
+
+def export(rows, fmt):
+    try:
+        return EXPORTERS[fmt](rows)
+    except KeyError:
+        raise ValueError(f&quot;不支持的格式 {fmt!r}，可选：{sorted(EXPORTERS)}&quot;) from None
+EOF
+cat &gt; plugin_tsv.py &lt;&lt;&#x27;EOF&#x27;
+from exporters import exporter
+
+@exporter(&quot;tsv&quot;)   # 新格式：新文件，不修改 exporters.py
+def to_tsv(rows):
+    return &quot;\n&quot;.join(&quot;\t&quot;.join(map(str, r)) for r in rows)
+EOF
+python3 -c &quot;
+import plugin_tsv
+from exporters import export
+rows = [[1, &#x27;a&#x27;], [2, &#x27;b&#x27;]]
+for f in [&#x27;csv&#x27;, &#x27;json&#x27;, &#x27;tsv&#x27;]:
+    print(f, repr(export(rows, f)))
+try:
+    export(rows, &#x27;xml&#x27;)
+except ValueError as e:
+    print(e)&quot;</pre><pre class="out">csv &#x27;1,a\n2,b&#x27;
+json &#x27;[[1, &quot;a&quot;], [2, &quot;b&quot;]]&#x27;
+tsv &#x27;1\ta\n2\tb&#x27;
+不支持的格式 &#x27;xml&#x27;，可选：[&#x27;csv&#x27;, &#x27;json&#x27;, &#x27;tsv&#x27;]</pre></div></div><div class="st"><span class="n">02</span><div><p>LSP：一套契约测试，运行在每个子类型上。</p><pre class="cmd">cat &gt; shapes.py &lt;&lt;&#x27;EOF&#x27;
+class Rectangle:
+    def __init__(self, w, h):
+        self.w, self.h = w, h
+    def set_width(self, w):
+        self.w = w
+    def area(self):
+        return self.w * self.h
+
+class Square(Rectangle):
+    def __init__(self, side):
+        super().__init__(side, side)
+    def set_width(self, w):
+        self.w = self.h = w
+EOF
+cat &gt; test_contract.py &lt;&lt;&#x27;EOF&#x27;
+import unittest
+from shapes import Rectangle, Square
+
+class RectangleContract(unittest.TestCase):
+    def make(self):
+        return Rectangle(2, 3)
+
+    def test_area_after_set_width(self):
+        r = self.make()
+        h = r.h
+        r.set_width(10)
+        self.assertEqual(r.area(), 10 * h)
+
+class SquareContract(RectangleContract):
+    def make(self):
+        return Square(3)
+
+unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;], exit=False)
+EOF
+python3 test_contract.py 2&gt;&amp;1 | grep -E &quot;\.\.\.|AssertionError&quot;</pre><pre class="out">test_area_after_set_width (__main__.RectangleContract.test_area_after_set_width) ... ok
+test_area_after_set_width (__main__.SquareContract.test_area_after_set_width) ... FAIL
+AssertionError: 100 != 30</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>修复 LSP</h3><p>给出两种消除上面 <code>Square</code>/<code>Rectangle</code> 问题的设计，并说明各自适合的场景。</p><details><summary>查看参考答案</summary><div><ol><li><b>不可变值对象</b>：去掉会修改自身的 <code>set_width</code>，改为 <code>with_width(w)</code>，并规定它总是返回一个新的 <code>Rectangle</code>（宽为 w、高不变）。<code>Square(3).with_width(10)</code> 得到 <code>Rectangle(10, 3)</code>——不再是正方形，但契约对两者都成立，因为没有对象被“就地改形”。适合几何、金额这类值。</li><li><b>不继承，共享接口</b>：<code>Rectangle</code> 与 <code>Square</code> 都实现 <code>Shape</code> 协议（<code>area()</code>），彼此没有继承关系；需要修改尺寸的代码只接受 <code>Rectangle</code>。适合两者行为确实不同的情况。</li></ol><p>判断依据：继承表达的是“<b>行为上</b>可替换”，而不是现实中的“是一种”。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>开闭原则（OCP）</b>：添加新行为时，通过新增代码（新类、新函数、新注册项）完成，而不是修改已有的、经过测试的代码。实现手段：多态、策略对象、注册表、插件。</li><li><b>里氏替换原则（LSP）</b>：凡是使用父类型的地方，换成子类型都应当正确工作。经典反例：<code>Square</code> 继承 <code>Rectangle</code> 后，设置宽度会意外改变高度。子类不应加强前置条件、削弱后置条件，或抛出父类未声明的异常（如 <code>NotImplementedError</code>）。</li><li><b>接口隔离原则（ISP）</b>：使用者只依赖它需要的方法。一个巨大的 <code>Repository</code> 接口让只读的报表模块也依赖写方法。Python 中用小的 <code>Protocol</code> 表达“我需要什么”。</li><li><b>依赖倒置原则（DIP）</b>：业务规则不应依赖数据库、框架、HTTP 这些细节；两者都依赖抽象，并且抽象由<b>高层</b>（使用者）定义。依赖注入是实现它的常用手段（下一课）。</li><li><b>原则是工具，不是目标</b>：为“可能的扩展”提前建立抽象层会增加复杂度（YAGNI：你不会需要它）。常见的做法是：第一次直接写；第二次出现变化时，引入抽象（“三次法则”的变体）。</li><li><b>Python 的特点</b>：鸭子类型与 <code>Protocol</code> 让接口很轻；函数是一等公民，很多“策略模式”只需要传一个函数。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 13</div><a class="big" href="l13.html">系统：关注点分离与依赖注入 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l12.js"></script>
+</body></html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 9 课 · 边界：包装第三方代码</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 9 课</span><span class="sp"></span><a href="l08.html">← 第 8 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 9 课</div><h1>边界：包装第三方代码</h1>
+<p>我们的系统依赖大量不受自己控制的代码：第三方库、HTTP API、云服务。本课讲如何让这些边界保持整洁：不要让第三方类型渗透到整个代码库（把 Map、requests 的 Response、SDK 对象挡在边界之内）；用适配器包装它们，只暴露我们需要的接口；写“学习测试”来探索并锁定第三方行为；在接口尚不存在时先定义我们想要的接口（端口与适配器）；以及如何用假实现测试边界两侧。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">边界在哪里</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这个类型该出现在哪里？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">端口与适配器</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">检查边界是否泄漏</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>边界在哪里</h2><div class="goal">第三方类型从一处渗透到整个代码库，再被收回到一个适配器里。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这个类型该出现在哪里？</h2><div class="goal">选择一段代码。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>端口与适配器</h2><div class="goal">“我们想要的接口”放在中心，第三方代码在外围。</div></div></div>
+<table class="tbl"><tr><th>层</th><th>内容</th><th>依赖</th></tr>
+<tr><td>领域 / 用例</td><td>订单、发票逻辑；端口（<code>FileStore</code>、<code>PaymentGateway</code> 协议）</td><td>不依赖任何第三方库</td></tr>
+<tr><td>适配器</td><td><code>S3FileStore</code>、<code>StripeGateway</code>、<code>InMemoryFileStore</code></td><td>实现端口，依赖 SDK</td></tr>
+<tr><td>组装（main）</td><td>根据配置选择适配器并注入</td><td>依赖一切（第 13 课）</td></tr></table>
+<p><b>不要过度包装</b>：标准库、语言内置类型和非常稳定的库（如 <code>datetime</code>、<code>pathlib</code>）通常不需要包装。包装的价值与“这个依赖变化或被替换的可能性”以及“它让测试变难的程度”成正比。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>检查边界是否泄漏</h2><div class="goal">一条命令统计第三方库渗透到多少文件。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">为一个“天气服务”写学习测试，再用适配器把它包起来。为了不依赖网络，我们用标准库 <code>json</code> 模拟第三方返回的格式。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>“第三方客户端”：返回嵌套很深的 dict，温度以开尔文表示。</p><pre class="cmd">cat &gt; vendor_weather.py &lt;&lt;&#x27;EOF&#x27;
+# 模拟一个第三方 SDK：我们不能修改它
+class WeatherClient:
+    def fetch(self, q):
+        if q == &quot;nowhere&quot;:
+            raise KeyError(&quot;city&quot;)
+        return {&quot;data&quot;: {&quot;current&quot;: {&quot;temp_k&quot;: 293.15, &quot;cond&quot;: [{&quot;txt&quot;: &quot;Clear&quot;}]}}}
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>学习测试：把我们对它的理解写成测试。</p><pre class="cmd">cat &gt; test_learning.py &lt;&lt;&#x27;EOF&#x27;
+import unittest
+from vendor_weather import WeatherClient
+
+class LearningWeatherClient(unittest.TestCase):
+    def test_temperature_is_in_kelvin(self):
+        r = WeatherClient().fetch(&quot;taipei&quot;)
+        self.assertAlmostEqual(r[&quot;data&quot;][&quot;current&quot;][&quot;temp_k&quot;], 293.15)
+
+    def test_unknown_city_raises_key_error(self):
+        with self.assertRaises(KeyError):
+            WeatherClient().fetch(&quot;nowhere&quot;)
+
+unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;], exit=False)
+EOF
+python3 test_learning.py 2&gt;&amp;1 | grep -E &quot;ok|FAIL|Ran&quot;</pre><pre class="out">test_temperature_is_in_kelvin (__main__.LearningWeatherClient.test_temperature_is_in_kelvin) ... ok
+test_unknown_city_raises_key_error (__main__.LearningWeatherClient.test_unknown_city_raises_key_error) ... ok
+Ran 2 tests in 0.000s</pre></div></div><div class="st"><span class="n">03</span><div><p>适配器 + 端口 + 假实现：业务代码只认识 <code>Weather</code>。</p><pre class="cmd">cat &gt; weather.py &lt;&lt;&#x27;EOF&#x27;
+from dataclasses import dataclass
+from typing import Protocol
+
+@dataclass(frozen=True)
+class Weather:
+    celsius: float
+    summary: str
+
+class CityNotFound(Exception):
+    pass
+
+class WeatherSource(Protocol):
+    def current(self, city: str) -&gt; Weather: ...
+
+class VendorWeatherSource:
+    def __init__(self, client):
+        self._client = client
+
+    def current(self, city):
+        try:
+            raw = self._client.fetch(city)
+        except KeyError as e:
+            raise CityNotFound(city) from e
+        now = raw[&quot;data&quot;][&quot;current&quot;]
+        return Weather(round(now[&quot;temp_k&quot;] - 273.15, 1), now[&quot;cond&quot;][0][&quot;txt&quot;])
+
+class FakeWeatherSource:
+    def __init__(self, table):
+        self._table = table
+
+    def current(self, city):
+        if city not in self._table:
+            raise CityNotFound(city)
+        return self._table[city]
+
+def clothing_advice(source: WeatherSource, city):
+    w = source.current(city)
+    return &quot;带外套&quot; if w.celsius &lt; 15 else &quot;短袖即可&quot;
+EOF
+python3 -c &quot;
+from weather import *
+from vendor_weather import WeatherClient
+print(VendorWeatherSource(WeatherClient()).current(&#x27;taipei&#x27;))
+print(clothing_advice(FakeWeatherSource({&#x27;oslo&#x27;: Weather(3, &#x27;Snow&#x27;)}), &#x27;oslo&#x27;))
+try:
+    VendorWeatherSource(WeatherClient()).current(&#x27;nowhere&#x27;)
+except CityNotFound as e:
+    print(&#x27;CityNotFound:&#x27;, e)&quot;</pre><pre class="out">Weather(celsius=20.0, summary=&#x27;Clear&#x27;)
+带外套
+CityNotFound: nowhere</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计一个边界</h3><p>你的应用要发送短信验证码。目前用供应商 A 的 SDK，明年可能换成供应商 B；测试时不能真的发短信；供应商 A 的 SDK 在限流时抛出 <code>AThrottleError</code>，在号码无效时返回 <code>{"code": 4001}</code>。设计端口、适配器与异常。</p><details><summary>查看参考答案</summary><div><pre class="cmd">class SmsError(Exception): ...
+class InvalidPhoneNumber(SmsError): ...
+class SmsRateLimited(SmsError): ...
+
+class SmsSender(Protocol):
+    def send_code(self, phone: PhoneNumber, code: str) -> None: ...
+
+class VendorASmsSender:
+    def send_code(self, phone, code):
+        try:
+            r = self._sdk.send(to=phone.e164, template="verify", params={"code": code})
+        except AThrottleError as e:
+            raise SmsRateLimited() from e
+        if r.get("code") == 4001:
+            raise InvalidPhoneNumber(phone)
+
+class RecordingSmsSender:      # 测试用
+    def __init__(self): self.sent = []
+    def send_code(self, phone, code): self.sent.append((phone, code))</pre><p>端口用业务语言命名（“发送验证码”，不是“发送模板消息”）；两种不同风格的错误（异常与返回码）在适配器中统一为领域异常；换供应商时只需新增 <code>VendorBSmsSender</code>，并让两个适配器通过同一套契约测试。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>第三方接口为通用而设计</b>，我们的需求是具体的。直接在业务代码里到处使用 <code>boto3</code> 客户端或 <code>requests.Response</code>，会让升级、替换和测试都牵一发而动全身。</li><li><b>适配器</b>：用一个小类包装第三方代码，只暴露应用需要的操作，用应用的语言命名（<code>FileStore.save(name, data)</code> 而不是 <code>s3.put_object(Bucket=..., Key=..., Body=...)</code>），并把第三方异常翻译成领域异常。</li><li><b>学习测试</b>：在使用新库之前，写几个测试验证你对它行为的理解。这些测试免费地成为升级时的回归检查：新版本行为变了，学习测试会先失败。</li><li><b>先定义我们想要的接口</b>：依赖的系统还没做好时，先写下理想中的接口（Protocol），用假实现推进开发；真实系统到位后再写适配器。这就是“端口与适配器”（六边形架构）的思想。</li><li><b>边界上的测试</b>：业务逻辑用内存假实现（fake）测试，快且稳定；适配器本身用少量集成测试（或契约测试）对真实服务验证。</li><li><b>让边界保持很少</b>：一个第三方类型只应出现在少数几个文件里。可以用 <code>grep</code> 检查：<code>import boto3</code> 出现在 30 个文件里就是信号。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 10</div><a class="big" href="l10.html">单元测试与 TDD：整洁的测试 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l09.js"></script>
+</body></html>
