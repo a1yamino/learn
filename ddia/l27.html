@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 27 课 · 流式系统的哲学：数据集成与正确性</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 27 课</span><span class="sp"></span><a href="l26.html">← 第 26 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 27 课</div><h1>流式系统的哲学：数据集成与正确性</h1>
+<p>第 13 章把全书串起来：没有一个系统能满足所有需求，所以应用总是组合多个专门的存储——关键在于如何让它们保持一致。本课讲用派生数据集成多个系统、批处理与流处理的统一、“拆解数据库”的思想与围绕数据流设计应用；然后讨论正确性：端到端原则、如何在异步的数据流中实现唯一性约束、及时性与完整性的区分、“信任但要验证”。最后简述第 14 章：数据系统对人与社会的影响与工程师的责任。约 70 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">拆解数据库</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：及时性还是完整性</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">基于日志的唯一性约束</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">端到端去重</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>拆解数据库</h2><div class="goal">一个记录系统，通过日志派生出多个视图。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：及时性还是完整性</h2><div class="goal">判断每个问题违反的是哪一种，以及后果是否可以恢复。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre-wrap"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>基于日志的唯一性约束</h2><div class="goal">同一个用户名的请求进入同一个分区，顺序处理。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>端到端去重</h2><div class="goal">请求 ID 一路传到数据库。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">Python 3 与 <code>pg</code> 容器。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>保存为 <code>uniq.py</code>：按用户名分区的日志 + 顺序处理实现唯一性，并按请求 ID 去重。</p><pre class="cmd">import hashlib
+from collections import defaultdict
+# 注册请求先追加到按用户名分区的日志；每个分区由一个处理器顺序处理
+requests = [(&quot;r1&quot;, &quot;alice&quot;), (&quot;r2&quot;, &quot;bob&quot;), (&quot;r3&quot;, &quot;alice&quot;), (&quot;r4&quot;, &quot;carol&quot;), (&quot;r2&quot;, &quot;bob&quot;)]   # r2 被客户端重试了一次
+P = 3
+log = defaultdict(list)
+for rid, name in requests:
+    log[int(hashlib.md5(name.encode()).hexdigest(), 16) % P].append((rid, name))
+
+taken, seen, results = {}, set(), {}
+for p in range(P):                       # 每个分区独立、顺序地处理：不需要锁
+    for rid, name in log[p]:
+        if rid in seen: continue          # 端到端去重：同一个请求 ID 只处理一次
+        seen.add(rid)
+        if name in taken: results[rid] = f&quot;拒绝（{name} 已被 {taken[name]} 注册）&quot;
+        else: taken[name] = rid; results[rid] = f&quot;成功（{name}）&quot;
+for rid in sorted(results): print(rid, results[rid])</pre><pre class="out">r1 成功（alice）
+r2 成功（bob）
+r3 拒绝（alice 已被 r1 注册）
+r4 成功（carol）</pre></div></div><div class="st"><span class="n">02</span><div><p>端到端去重：客户端生成请求 ID，数据库用它作为唯一键。</p><pre class="cmd">CREATE TABLE transfers(request_id uuid PRIMARY KEY, from_acct int, to_acct int, amount int);
+INSERT INTO transfers VALUES (&#x27;0b6d3c1e-2f7a-4c1d-9a55-1f2e3d4c5b6a&#x27;, 1, 2, 30) ON CONFLICT (request_id) DO NOTHING;
+INSERT INTO transfers VALUES (&#x27;0b6d3c1e-2f7a-4c1d-9a55-1f2e3d4c5b6a&#x27;, 1, 2, 30) ON CONFLICT (request_id) DO NOTHING;</pre><pre class="out">CREATE TABLE
+INSERT 0 1
+INSERT 0 0</pre></div></div><div class="st"><span class="n">03</span><div><p>信任但要验证：比较记录系统与派生数据（第 1 课的物化视图）的校验和。</p><pre class="cmd">CREATE MATERIALIZED VIEW IF NOT EXISTS monthly AS SELECT date_trunc(&#x27;month&#x27;, created_at) m, count(*) n, sum(amount) total FROM orders GROUP BY 1;
+SELECT (SELECT sum(amount) FROM orders) = (SELECT sum(total) FROM monthly) AS consistent;</pre><pre class="out"> consistent
+------------
+ t</pre></div></div><div class="st"><span class="n">04</span><div><p>制造一次不一致，审计会发现它。</p><pre class="cmd">UPDATE orders SET amount = amount + 1 WHERE id = 2;
+SELECT (SELECT sum(amount) FROM orders) = (SELECT sum(total) FROM monthly) AS consistent;</pre><pre class="out"> consistent
+------------
+ f
+（派生数据落后了：REFRESH 后恢复一致）</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用事件日志实现跨账户转账</h3><p>账户按 account_id 分成 16 个分区，每个分区由一个流处理器顺序处理。要求：不使用分布式事务，转账不能丢、不能重复、余额不能为负。请设计事件流程，并说明在处理器崩溃、客户端重试时为什么仍然正确。</p><details><summary>查看参考答案</summary><div><ol><li>客户端为转账生成 <code>request_id</code>，把 <code>TransferRequested{request_id, from, to, amount}</code> 追加到按 <b>from</b> 账户分区的请求日志。</li><li>from 分区的处理器顺序处理：检查 request_id 是否处理过（状态中保存）；检查余额，不足则输出 <code>TransferRejected</code>；足够则在本地状态中扣款，并输出 <code>Debited{request_id, from, amount}</code> 与 <code>CreditRequested{request_id, to, amount}</code>（后者写入按 to 分区的日志）。状态更新、输出与输入位移原子提交（Kafka 事务 / 检查点）。</li><li>to 分区的处理器按 request_id 去重后入账，输出 <code>Credited</code>。</li><li><b>崩溃</b>：处理器从上次提交的位移和状态恢复，重新处理未提交的输入；因为输出与位移原子提交，不会重复发出扣款。<b>客户端重试</b>：同一个 request_id 再次写入日志，处理器发现已处理，直接返回原结果（端到端去重）。</li><li>中间状态（已扣款、未入账）只存在很短时间，是及时性问题而非完整性问题：钱一定会到达，余额检查发生在 from 分区的顺序处理中，不会透支。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>用派生数据集成</b>：同一份数据往往需要以多种形式存在——数据库、缓存、全文索引、数据仓库、推荐模型。把一个系统定为记录系统，其他系统通过一个<b>全序的事件日志</b>（CDC 或事件溯源）派生，比分布式事务更松耦合、更容错：一个派生系统故障只会让它暂时落后，而不会拖垮写入。限制：全序日志的吞吐受单个分区的限制；跨区域、跨服务时没有全局顺序，需要处理因果关系。</li><li><b>批处理与流处理</b>：两者都是从输入派生输出，区别在于有界还是无界。新的视图可以用批处理从历史数据构建，再用流处理保持更新；也可以统一用流处理（kappa 架构：重置位移、从头重放日志即可重建）。<b>渐进地迁移</b>：同时维护旧视图和新视图，逐步把读流量切到新视图，出错时随时切回——这是派生数据带来的演进能力。</li><li><b>拆解数据库</b>：数据库内部本来就有二级索引、物化视图、复制日志——它们都是派生数据。“拆解”是把这些功能用独立的组件实现，用日志把它们串起来：应用写入记录系统，各种派生视图通过订阅日志自动维护（就像 Unix 管道把小工具组合起来）。<b>围绕数据流设计应用</b>：应用代码是从一个状态到另一个状态的确定性函数；读取变成对物化视图的查询；甚至可以把状态变化<b>推送到客户端</b>（订阅），让终端设备也成为数据流的一环。</li><li><b>端到端原则</b>：只有在通信的两端才能真正实现某些功能。TCP 去重、数据库事务都不能防止用户点击两次“提交”导致的重复——要在客户端为每个操作生成一个<b>唯一的请求 ID</b>，一路传递到最终的写入，用它去重。<b>实现约束</b>：唯一性需要共识，但不一定需要分布式事务——把请求按需要唯一的值分区写入日志，每个分区由一个处理器顺序处理，第一个请求胜出，结果再通过日志返回。<b>多分区的请求</b>（转账涉及两个账户）可以拆成多个阶段：先把请求作为一个事件写入日志，再由各分区处理器各自根据它派生出扣款、入账事件——无需原子提交也不会丢失或重复。</li><li><b>及时性与完整性</b>：一致性这个词混合了两件事：<b>及时性</b>（读到最新的状态）和<b>完整性</b>（没有损坏、没有丢失或矛盾的数据）。违反及时性是暂时的，等一等就好；违反完整性是永久的。对大多数应用，完整性远比及时性重要。基于事件日志的系统可以在异步的情况下保证完整性（精确一次、确定性派生），同时放宽及时性。很多约束其实可以事后补偿（超卖后道歉、退款），只要业务能接受。</li><li><b>信任但要验证</b>：硬件和软件都会出错（静默的数据损坏、数据库 bug）。要定期<b>审计</b>：校验和、对比源数据与派生数据、从备份恢复演练。事件日志加确定性派生使端到端的完整性检查成为可能。<b>第 14 章：做正确的事</b>——预测性分析可能固化偏见与歧视（“用过去的数据训练，就会重复过去的不公”）；自动化决策需要问责与解释；推荐系统会形成反馈循环；数据收集应当最小化，尊重用户的知情同意与删除权；数据是资产也是负债。工程师有责任考虑系统对人的影响。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 28</div><a class="big" href="l28.html">综合项目：设计一个协作文档平台的数据架构 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l27.js"></script>
+</body></html>
