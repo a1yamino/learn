@@ -162,7 +162,7 @@ done            -
 stopReason = toolUse | 内容块 = thinking,text,toolCall</pre></div></div><div class="st"><span class="n">02</span><div><p>看看 faux 提供方如何把文本切成小块（每块 3–5 个 token），这就是 delta 的来源。</p><pre class="cmd">cd pi-mono &amp;&amp; grep -n &quot;DEFAULT_MIN_TOKEN_SIZE\|DEFAULT_MAX_TOKEN_SIZE&quot; packages/ai/src/providers/faux.ts | head -4</pre><pre class="out">29:const DEFAULT_MIN_TOKEN_SIZE = 3;
 30:const DEFAULT_MAX_TOKEN_SIZE = 5;
 459:		Math.min(options.tokenSize?.min ?? DEFAULT_MIN_TOKEN_SIZE, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE),
-461:	const maxTokenSize = Math.max(minTokenSize, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE);</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>渲染器</h3><p>写一个最小渲染器：只用事件（不读 <code>partial</code>），在终端里实时拼出最终文本，并在 <code>toolcall_end</code> 时打印 <code>⚙ read(a.txt)</code>。然后思考：为什么每个事件还要带上 <code>partial</code>？</p><details><summary>查看参考答案</summary><div><pre>let out = "";
+461:	const maxTokenSize = Math.max(minTokenSize, options.tokenSize?.max ?? DEFAULT_MAX_TOKEN_SIZE);</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>渲染器</h3><p>写一个最小渲染器：只用事件（不读 <code>partial</code>），在终端里实时拼出最终文本，并在 <code>toolcall_end</code> 时打印 <code>⚙ read(a.txt)</code>。然后思考：为什么每个事件还要带上 <code>partial</code>？</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">let out = "";
 for await (const e of s) {
   if (e.type === "text_delta") { process.stdout.write(e.delta); out += e.delta; }
   if (e.type === "toolcall_end") console.log(`\n⚙ ${e.toolCall.name}(${e.toolCall.arguments.path})`);

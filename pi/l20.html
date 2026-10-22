@@ -196,7 +196,7 @@ fixbot: 修好了：add 把减号改成加号。测试结果：PASS
 export function add(a, b) {
   return a + b;
 }
---- 会话共 12 条消息，5 次工具调用</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>让 fixbot 接上真模型</h3><p>去掉 faux：用 <code>ModelRuntime.create()</code> 读取你的凭据，挑一个模型传给 <code>createAgentSession</code>，保留 run_tests、守卫与事件界面。再加一条规则：run_tests 连续失败 3 次就 <code>session.abort()</code>。</p><details><summary>查看参考答案</summary><div><pre>import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+--- 会话共 12 条消息，5 次工具调用</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>让 fixbot 接上真模型</h3><p>去掉 faux：用 <code>ModelRuntime.create()</code> 读取你的凭据，挑一个模型传给 <code>createAgentSession</code>，保留 run_tests、守卫与事件界面。再加一条规则：run_tests 连续失败 3 次就 <code>session.abort()</code>。</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 const modelRuntime = await ModelRuntime.create();
 const model = modelRuntime.getModel("anthropic", "claude-sonnet-4-5")!; // 第 4 课：按 provider/id 查找
 const { session } = await createAgentSession({ cwd, model, modelRuntime,

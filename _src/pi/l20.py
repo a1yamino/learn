@@ -10,10 +10,10 @@ SUM=['<b>内核</b>：<code>createAgentSession()</code>（<code>sdk.ts</code>）
 '<b>界面</b>：只是 <code>session.subscribe()</code>。把它换成 pi-tui（第 17 课）就是交互模式，换成 JSON 输出就是 print/json/rpc（第 18 课）。',
 '<b>换真模型</b>：把 faux 换成 <code>modelRuntime</code> 中的真实模型（第 4 课），其余代码不变。']
 S1=('fixbot 的一次运行','')
-A1=[('失败','run_tests → FAIL：add(2,3) = -1',[('t','run_tests','bad',0,90,120)]),
-('理解','read math.js：return a - b',[('t','run_tests','bad',0,90,120),('r','read','',150,90,90)]),
-('修改','edit a-b → a+b；同时 bash git push --force 被守卫拦截',[('r','read','',150,90,90),('e','edit','ok',270,50,90),('b','bash ✗','bad',270,140,90)]),
-('验证','run_tests → PASS，总结',[('e','edit','ok',270,50,90),('p','run_tests ✓','ok',400,90,120)])]
+A1=[('失败','run_tests → FAIL：add(2,3) = -1',[('t','run_tests','bad',0,90,110)]),
+('理解','read math.js：return a - b',[('t','run_tests','bad',0,90,110),('r','read','',130,90,80)]),
+('修改','edit a-b → a+b；同时 bash git push --force 被守卫拦截',[('r','read','',130,90,80),('e','edit','ok',230,50,80),('b','bash ✗','bad',230,140,80)]),
+('验证','run_tests → PASS，总结',[('e','edit','ok',230,50,80),('p','run_tests ✓','ok',330,90,110)])]
 S2=('动手：这部分来自哪一课？','fixbot 的每个零件都对应前面的课程。')
 CHI=[('createAgentSession','第 2、8 课：会话与 Agent 类','ok',''),('run_tests 参数校验','第 7 课：工具校验与并行','ok',''),
 ('edit 的 oldText → newText','第 10 课：edit 工具','ok',''),('拦截 bash','第 15、19 课：钩子与信任边界','ok',''),('事件日志界面','第 3、17、18 课：事件、TUI、运行模式','ok','')]
@@ -25,7 +25,7 @@ S5=('在你的电脑上练习','需要 pi-mono 已构建（<code>npm install &am
 PRAC=[('辅助文件（若前面课程已创建可跳过）。','cat > pi-mono/scratch/faux-session.ts <<\'EOF\'\n'+FS+'EOF',''),
 ('fixbot。','cat > pi-mono/scratch/l20.ts <<\'EOF\'\n'+L20+'EOF\ncd pi-mono/scratch && node l20.ts',None)]
 CHAL=('让 fixbot 接上真模型','去掉 faux：用 <code>ModelRuntime.create()</code> 读取你的凭据，挑一个模型传给 <code>createAgentSession</code>，保留 run_tests、守卫与事件界面。再加一条规则：run_tests 连续失败 3 次就 <code>session.abort()</code>。',
-'<pre>import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";\nconst modelRuntime = await ModelRuntime.create();\nconst model = modelRuntime.getModel("anthropic", "claude-sonnet-4-5")!; // 第 4 课：按 provider/id 查找\nconst { session } = await createAgentSession({ cwd, model, modelRuntime,\n  customTools: [runTests], tools: ["read", "edit", "run_tests"],\n  sessionManager: SessionManager.inMemory(cwd), settingsManager: SettingsManager.inMemory({}) });\nlet fails = 0;\nsession.subscribe((e: any) =&gt; {\n  if (e.type === "tool_execution_end" &amp;&amp; e.toolName === "run_tests")\n    fails = e.result.details?.ok ? 0 : fails + 1;\n  if (fails &gt;= 3) void session.abort();\n});</pre><p><code>getModel(providerId, modelId)</code> 找不到时返回 undefined；凭据优先级见第 4 课。直接把 bash 从允许列表中去掉，比运行时拦截更彻底。</p>')
+'<pre style="white-space:pre-wrap">import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";\nconst modelRuntime = await ModelRuntime.create();\nconst model = modelRuntime.getModel("anthropic", "claude-sonnet-4-5")!; // 第 4 课：按 provider/id 查找\nconst { session } = await createAgentSession({ cwd, model, modelRuntime,\n  customTools: [runTests], tools: ["read", "edit", "run_tests"],\n  sessionManager: SessionManager.inMemory(cwd), settingsManager: SettingsManager.inMemory({}) });\nlet fails = 0;\nsession.subscribe((e: any) =&gt; {\n  if (e.type === "tool_execution_end" &amp;&amp; e.toolName === "run_tests")\n    fails = e.result.details?.ok ? 0 : fails + 1;\n  if (fails &gt;= 3) void session.abort();\n});</pre><p><code>getModel(providerId, modelId)</code> 找不到时返回 undefined；凭据优先级见第 4 课。直接把 bash 从允许列表中去掉，比运行时拦截更彻底。</p>')
 QUIZ=[['SDK 的入口函数？',['createAgentSession','new Pi()','runAgentLoop 只能这样'],0,''],
 ['为什么串联而不是覆盖 beforeToolCall？',['会话的钩子负责分发扩展 tool_call','性能','语法要求'],0,''],
 ['允许列表放在哪个选项？',['tools','customTools','settings'],0,''],

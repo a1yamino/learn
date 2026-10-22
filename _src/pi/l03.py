@@ -11,8 +11,8 @@ SUM=['<b>Message</b>：<code>system</code>（指令、命名 sections、toolsAdd
 S1=('一条回复是怎么流进来的','模型说了：思考 → 文字 → 工具调用。')
 A1=[('start','连接建立。partial 是一条空的 assistant 消息（stopReason=pending）。',[('m','partial: []','sig',0,60,200)]),
 ('thinking','thinking_start / delta / end，contentIndex=0。',[('m','partial: [thinking]','sig',0,60,200),('b0','0 thinking','ok',240,60,120)]),
-('text','text_start / delta… / end，contentIndex=1，UI 逐字渲染。',[('m','partial: [thinking, text]','sig',0,60,200),('b0','0 thinking','',240,60,120),('b1','1 text','ok',380,60,100)]),
-('toolCall','toolcall_delta 携带参数 JSON 片段；toolcall_end 给出解析好的 arguments。',[('m','partial: [thinking, text, toolCall]','sig',0,60,240),('b2','2 toolCall','ok',380,140,120)]),
+('text','text_start / delta… / end，contentIndex=1，UI 逐字渲染。',[('m','partial: [thinking, text]','sig',0,60,200),('b0','0 thinking','',240,60,120),('b1','1 text','ok',340,60,100)]),
+('toolCall','toolcall_delta 携带参数 JSON 片段；toolcall_end 给出解析好的 arguments。',[('m','partial: [thinking, text, toolCall]','sig',0,60,240),('b2','2 toolCall','ok',320,140,120)]),
 ('done','reason=toolUse，message 是最终消息；result() 完成。',[('m','AssistantMessage stopReason=toolUse','ok',0,60,300)])]
 S2=('动手：循环看到这个 stopReason 会怎样？','停止原因决定循环接下来做什么。')
 CHI=[('toolUse','有工具调用 → 执行这些工具，结果作为 toolResult 消息追加 → 下一个 turn。','ok','最常见的继续原因。'),
@@ -28,7 +28,7 @@ S5=('在你的电脑上练习','直接使用 pi-ai 的 <code>streamSimple</code>
 PRAC=[('写脚本：脚本化的回复包含 thinking、文本和工具调用。','cat > pi-mono/scratch/l03.ts <<\'EOF\'\n'+L3+'EOF\ncd pi-mono/scratch && node l03.ts',None),
 ('看看 faux 提供方如何把文本切成小块（每块 3–5 个 token），这就是 delta 的来源。','cd pi-mono && grep -n "DEFAULT_MIN_TOKEN_SIZE\\|DEFAULT_MAX_TOKEN_SIZE" packages/ai/src/providers/faux.ts | head -4',None)]
 CHAL=('渲染器','写一个最小渲染器：只用事件（不读 <code>partial</code>），在终端里实时拼出最终文本，并在 <code>toolcall_end</code> 时打印 <code>⚙ read(a.txt)</code>。然后思考：为什么每个事件还要带上 <code>partial</code>？',
-'<pre>let out = "";\nfor await (const e of s) {\n  if (e.type === "text_delta") { process.stdout.write(e.delta); out += e.delta; }\n  if (e.type === "toolcall_end") console.log(`\\n⚙ ${e.toolCall.name}(${e.toolCall.arguments.path})`);\n  if (e.type === "error") console.error("错误:", e.error.errorMessage);\n}</pre><p>带上 <code>partial</code> 的原因：订阅者可能中途加入（例如 TUI 重绘、扩展在 <code>message_update</code> 中检查内容），或者只关心“此刻完整的样子”而不想自己维护拼接状态。增量（delta）适合高效追加，快照（partial）适合无状态渲染；pi 两者都给。</p>')
+'<pre style="white-space:pre-wrap">let out = "";\nfor await (const e of s) {\n  if (e.type === "text_delta") { process.stdout.write(e.delta); out += e.delta; }\n  if (e.type === "toolcall_end") console.log(`\\n⚙ ${e.toolCall.name}(${e.toolCall.arguments.path})`);\n  if (e.type === "error") console.error("错误:", e.error.errorMessage);\n}</pre><p>带上 <code>partial</code> 的原因：订阅者可能中途加入（例如 TUI 重绘、扩展在 <code>message_update</code> 中检查内容），或者只关心“此刻完整的样子”而不想自己维护拼接状态。增量（delta）适合高效追加，快照（partial）适合无状态渲染；pi 两者都给。</p>')
 QUIZ=[['模型的工具参数不是合法 JSON 时？',['arguments 为 {} 并设置 argumentsError，参数校验失败','抛出异常','直接执行'],0,''],
 ['表示输出被 max tokens 截断的停止原因是？',['length','stop','aborted'],0,''],
 ['转录中途的 system 消息可以？',['替换/删除命名 section、增减工具','只能追加文字','不允许'],0,''],
