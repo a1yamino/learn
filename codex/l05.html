@@ -1,0 +1,244 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 5 课 · 模型客户端：SSE、WebSocket 与重试</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 5 课</span><span class="sp"></span><a href="l04.html">← 第 4 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 5 课</div><h1>模型客户端：SSE、WebSocket 与重试</h1>
+<p>pi 第 5 课用一个假的 SSE 服务器验证了 openai-completions 适配器的流式解析。Codex 的模型客户端多了两样东西：<b>两种传输</b>（HTTPS 上的 SSE，以及可复用连接的 Responses WebSocket，失败时回退到 HTTPS），和<b>两层重试</b>（请求级：429/5xx/网络错误；流级：流中断后重新发起整个请求）。本课让假服务器先返回 500、再在流中途断开，观察 codex 如何恢复。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次请求的三条路</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：会重试吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次请求的三条路</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：会重试吗？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/client.rs#L1-L26" target="_blank" rel="noopener">codex-rs/core/src/client.rs  L1–26 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">//! Session- and turn-scoped helpers for talking to model provider APIs.
+//!
+//! `ModelClient` is intended to live for the lifetime of a Codex session and holds the stable
+//! configuration and state needed to talk to a provider (auth, provider selection, conversation id,
+//! and transport fallback state).
+//!
+//! Per-turn settings (model selection, reasoning controls, telemetry context, and turn metadata)
+//! are passed explicitly to streaming and unary methods so that the turn lifetime is visible at the
+//! call site.
+//!
+//! A [`ModelClientSession`] is created per turn and is used to stream one or more Responses API
+//! requests during that turn. It caches a Responses WebSocket connection (opened lazily) and stores
+//! per-turn state such as the `x-codex-turn-state` token used for sticky routing.
+//! Cached connections, incremental response state, and turn routing are discarded when auth
+//! ownership changes.
+//!
+//! WebSocket prewarm is a v2-only `response.create` with `generate=false`; it waits for completion
+//! so the next request can reuse the same connection and `previous_response_id`.
+//!
+//! Turn execution performs prewarm as a best-effort step before the first stream request so the
+//! subsequent request can reuse the same connection.
+//!
+//! ## Retry-Budget Tradeoff
+//!
+//! WebSocket prewarm is treated as the first websocket connection attempt for a turn. If it
+//! fails, normal stream retry/fallback logic handles recovery on the same turn.</pre><p>哪些错误重试，如何退避：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/codex-client/src/retry.rs#L22-L52" target="_blank" rel="noopener">codex-rs/codex-client/src/retry.rs  L22–52 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">impl RetryOn {
+    pub fn should_retry(&amp;self, err: &amp;TransportError, attempt: u64, max_attempts: u64) -&gt; bool {
+        if attempt &gt;= max_attempts {
+            return false;
+        }
+        match err {
+            TransportError::Http { status, .. } =&gt; {
+                (self.retry_429 &amp;&amp; status.as_u16() == 429)
+                    || (self.retry_5xx &amp;&amp; status.is_server_error())
+            }
+            TransportError::Timeout
+            | TransportError::Connection(_)
+            | TransportError::Network(_) =&gt; self.retry_transport,
+            TransportError::Build(_)
+            | TransportError::RetryLimit
+            | TransportError::Policy(_)
+            | TransportError::ResponseTooLarge { .. } =&gt; false,
+        }
+    }
+}
+
+pub fn backoff(base: Duration, attempt: u64) -&gt; Duration {
+    if attempt == 0 {
+        return base;
+    }
+    let exp = 2u64.saturating_pow(attempt as u32 - 1);
+    let millis = base.as_millis() as u64;
+    let raw = millis.saturating_mul(exp);
+    let jitter: f64 = rand::rng().random_range(0.9..1.1);
+    Duration::from_millis((raw as f64 * jitter) as u64)
+}</pre><p>流级重试与 WebSocket 回退：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/responses_retry.rs#L120-L170" target="_blank" rel="noopener">codex-rs/core/src/responses_retry.rs  L120–170 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">if retry_state.retries &gt;= max_retries
+    &amp;&amp; client_session.try_switch_fallback_transport(
+        &amp;turn_context.session_telemetry,
+        turn_context.model_info(),
+    )
+{
+    // Changing transport must not bypass the server&#x27;s retry deadline.
+    if let Some(retry_after) = retry_after {
+        tokio::time::sleep_until(retry_after.deadline()).await;
+    }
+    sess.send_event(
+        turn_context,
+        EventMsg::Warning(WarningEvent {
+            message: format!(&quot;Falling back from WebSockets to HTTPS transport. {err:#}&quot;),
+        }),
+    )
+    .await;
+    retry_state.retries = 0;
+    return Ok(());
+}
+
+if retry_state.retries &lt; max_retries {
+    retry_state.retries = retry_count;
+    log_retry(request, turn_context, &amp;err, retry_count, max_retries, delay);
+
+    // In release builds, hide the first websocket retry notification to reduce noisy
+    // transient reconnect messages. In debug builds, keep full visibility for diagnosis.
+    let report_error = retry_count &gt; 1
+        || cfg!(debug_assertions)
+        || !sess.services.model_client.responses_websocket_enabled();
+    if report_error {
+        // Surface retry information to any UI/front-end so the user understands what is
+        // happening instead of staring at a seemingly frozen screen.
+        sess.notify_stream_error(
+            turn_context,
+            format!(&quot;Reconnecting... {retry_count}/{max_retries}&quot;),
+            err,
+        )
+        .await;
+    }
+    // Use one clock sample so local backoff telemetry retains the selected delay.
+    let now = Instant::now();
+    let retry_at = retry_after.map(RetryAfter::deadline).unwrap_or(now + delay);
+    let delay = retry_at.saturating_duration_since(now);
+    codex_client::record_retry!(retry_count, delay, operation);
+    tokio::time::sleep_until(retry_at).await;
+    return Ok(());
+}
+
+sess.services
+    .thread_extension_data</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l05.html">pi 第 5 课 · 适配真实 API：消息转换与流式解析</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。 本课的 mock.py 支持两种故障：剧本返回 <code>{"http_status": 500}</code> 模拟 HTTP 错误，输出项 <code>{"type":"__drop__"}</code> 模拟断流；run.sh 支持 <code>REQ_RETRIES</code>、<code>STREAM_RETRIES</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>更新 mock.py 与 run.sh。</p><pre class="cmd">cat &gt; codex/scratch/mock.py &lt;&lt;&#x27;EOF&#x27;
+#!/usr/bin/env python3
+&quot;&quot;&quot;课程练习用的假 Responses API 服务器（离线，无需 API key）。
+用法：python3 mock.py &lt;剧本.py&gt; &lt;端口&gt; &lt;日志目录&gt;
+剧本里定义 reply(n, body) -&gt; list[dict]：第 n 次请求（从 1 开始）要返回的输出项。
+每次请求的完整 JSON 保存为 &lt;日志目录&gt;/reqNN.json，便于查看 Codex 实际发送了什么。&quot;&quot;&quot;
+import json, sys, os, importlib.util, itertools
+sys.dont_write_bytecode = True
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+spec = importlib.util.spec_from_file_location(&quot;script&quot;, sys.argv[1]); script = importlib.util.module_from_spec(spec); spec.loader.exec_module(script)
+PORT, LOG = int(sys.argv[2]), sys.argv[3]; os.makedirs(LOG, exist_ok=True)
+counter = itertools.count(1)
+
+def msg(text):  # 便捷构造：助手文本消息
+    return {&quot;type&quot;: &quot;message&quot;, &quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: [{&quot;type&quot;: &quot;output_text&quot;, &quot;text&quot;: text}]}
+def call(name, args, cid=None):  # 便捷构造：函数调用
+    return {&quot;type&quot;: &quot;function_call&quot;, &quot;name&quot;: name, &quot;arguments&quot;: json.dumps(args, ensure_ascii=False), &quot;call_id&quot;: cid or f&quot;call_{name}&quot;}
+script.msg, script.call = msg, call
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        self.send_response(200); self.send_header(&quot;content-type&quot;, &quot;application/json&quot;); self.end_headers()
+        self.wfile.write(b&#x27;{&quot;object&quot;:&quot;list&quot;,&quot;data&quot;:[],&quot;models&quot;:[]}&#x27;)
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get(&quot;content-length&quot;, 0))) or b&quot;{}&quot;)
+        n = next(counter)
+        json.dump({&quot;path&quot;: self.path, &quot;headers&quot;: dict(self.headers), &quot;body&quot;: body}, open(f&quot;{LOG}/req{n:02d}.json&quot;, &quot;w&quot;), ensure_ascii=False, indent=1)
+        items = script.reply(n, body)
+        if isinstance(items, dict) and &quot;http_status&quot; in items:  # 模拟 HTTP 错误
+            self.send_response(items[&quot;http_status&quot;]); self.send_header(&quot;content-type&quot;, &quot;application/json&quot;); self.end_headers()
+            self.wfile.write(json.dumps({&quot;error&quot;: {&quot;message&quot;: items.get(&quot;message&quot;, &quot;mock error&quot;)}}).encode()); return
+        self.send_response(200); self.send_header(&quot;content-type&quot;, &quot;text/event-stream&quot;); self.end_headers()
+        def ev(d): self.wfile.write(f&quot;event: {d[&#x27;type&#x27;]}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n&quot;.encode())
+        rid = f&quot;resp_{n}&quot;
+        ev({&quot;type&quot;: &quot;response.created&quot;, &quot;response&quot;: {&quot;id&quot;: rid}})
+        for i, it in enumerate(items):
+            if it.get(&quot;type&quot;) == &quot;__drop__&quot;:  # 模拟流中断：不发 response.completed 就断开
+                self.wfile.flush(); self.close_connection = True; return
+            it = {&quot;id&quot;: f&quot;item_{n}_{i}&quot;, **it}
+            if it[&quot;type&quot;] == &quot;message&quot;:
+                ev({&quot;type&quot;: &quot;response.output_item.added&quot;, &quot;output_index&quot;: i, &quot;item&quot;: {**it, &quot;content&quot;: []}})
+                ev({&quot;type&quot;: &quot;response.output_text.delta&quot;, &quot;output_index&quot;: i, &quot;item_id&quot;: it[&quot;id&quot;], &quot;delta&quot;: it[&quot;content&quot;][0][&quot;text&quot;]})
+            ev({&quot;type&quot;: &quot;response.output_item.done&quot;, &quot;output_index&quot;: i, &quot;item&quot;: it})
+        ev({&quot;type&quot;: &quot;response.completed&quot;, &quot;response&quot;: {&quot;id&quot;: rid, &quot;usage&quot;: {&quot;input_tokens&quot;: 1000 * n, &quot;input_tokens_details&quot;: {&quot;cached_tokens&quot;: 0},
+            &quot;output_tokens&quot;: 50, &quot;output_tokens_details&quot;: {&quot;reasoning_tokens&quot;: 0}, &quot;total_tokens&quot;: 1000 * n + 50}}})
+
+ThreadingHTTPServer((&quot;127.0.0.1&quot;, PORT), H).serve_forever()
+EOF
+cat &gt; codex/scratch/run.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# run.sh &lt;剧本.py&gt; [codex 参数...]：启动假模型，用临时 CODEX_HOME 运行 codex exec
+# 环境变量 KEEP=1 时保留工作目录；W 指定工作目录
+MODEL=${MODEL:-gpt-5.5}
+SCRIPT=$(realpath &quot;$1&quot;); shift
+export CODEX_HOME=${CODEX_HOME:-$(mktemp -d)}; mkdir -p $CODEX_HOME; LOG=$CODEX_HOME/requests
+PORT=$((20000 + RANDOM % 20000))
+python3 &quot;$(dirname &quot;$0&quot;)/mock.py&quot; &quot;$SCRIPT&quot; $PORT &quot;$LOG&quot; &amp; MOCK=$!
+trap &quot;kill $MOCK 2&gt;/dev/null&quot; EXIT
+cat &gt; $CODEX_HOME/config.toml &lt;&lt;TOML
+model = &quot;$MODEL&quot;
+model_provider = &quot;mock&quot;
+$EXTRA_CONFIG
+[model_providers.mock]
+$EXTRA_PROVIDER
+name = &quot;Mock&quot;
+base_url = &quot;http://127.0.0.1:$PORT/v1&quot;
+wire_api = &quot;responses&quot;
+request_max_retries = ${REQ_RETRIES:-0}
+stream_max_retries = ${STREAM_RETRIES:-0}
+TOML
+sleep 0.5
+codex exec --skip-git-repo-check &quot;$@&quot; &lt;/dev/null
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>故障剧本。</p><pre class="cmd">cat &gt; codex/scratch/s_flaky.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：第 1 次请求返回 HTTP 500；第 2 次流到一半断开；第 3 次正常
+def reply(n, body):
+    if n == 1: return {&quot;http_status&quot;: 500, &quot;message&quot;: &quot;upstream overloaded&quot;}
+    if n == 2: return [msg(&quot;这段文字会被丢弃&quot;), {&quot;type&quot;: &quot;__drop__&quot;}]
+    return [msg(&quot;第 3 次请求终于成功&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>运行。</p><pre class="cmd">cat &gt; codex/scratch/l05.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 重试：HTTP 500 → 请求重试；流中断 → 流重试
+S=$(pwd); cd $(mktemp -d); export CODEX_HOME=$(mktemp -d)
+REQ_RETRIES=2 STREAM_RETRIES=2 \
+  bash $S/run.sh $S/s_flaky.py &quot;hi&quot; 2&gt;&amp;1 | grep -vE &quot;^(--|workdir|model|provider|approval|sandbox|reasoning|session id|OpenAI Codex|user$|hi$|Reading)&quot;
+echo &quot;== 共收到 $(ls $CODEX_HOME/requests | wc -l) 次请求&quot;
+EOF
+cd codex/scratch &amp;&amp; bash l05.sh</pre><pre class="out">codex
+这段文字会被丢弃
+ERROR: Reconnecting... 1/2
+codex
+第 3 次请求终于成功
+tokens used
+3,050
+第 3 次请求终于成功
+== 共收到 3 次请求</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>重试用尽</h3><p>把 <code>STREAM_RETRIES</code> 设为 0，同样的剧本会怎样？再把 <code>REQ_RETRIES</code> 也设为 0 呢？</p><details><summary>查看参考答案</summary><div><p>STREAM_RETRIES=0：第 1 次 500 被请求级重试，第 2 次断流不再重试，报错 “stream disconnected before completion: stream closed before response.completed”，exec 退出码为 1，共 2 次请求。两者都为 0：第 1 次 500 直接失败，只有 1 次请求；注意错误信息不是服务器返回的 “upstream overloaded”，而是 codex 对 5xx 的统一提示 “We’re currently experiencing high demand, which may cause temporary errors.”。可以用 <code>ls $CODEX_HOME/requests | wc -l</code> 验证请求次数。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>ModelClient / ModelClientSession</b>（<code>core/src/client.rs</code>）：前者随会话存活，持有认证、提供方与传输回退状态；后者每个 turn 一个，缓存 WebSocket 连接与 <code>x-codex-turn-state</code> 粘性路由令牌。</li><li><b>SSE 解析</b>（<code>codex-api/src/sse/responses.rs</code>）：按事件类型分派——<code>response.created</code>、<code>output_item.added/done</code>、<code>output_text.delta</code>、推理摘要增量、<code>response.completed</code>/<code>incomplete</code>/<code>failed</code>；其余事件忽略。</li><li><b>请求级重试</b>（<code>codex-client/src/retry.rs</code>）：<code>RetryOn</code> 决定 429、5xx、超时/连接错误是否重试；<code>backoff</code> 指数退避并带 ±10% 抖动。次数由提供方的 <code>request_max_retries</code> 控制。实验中第一次 500 被静默重试。</li><li><b>流级重试</b>（<code>core/src/responses_retry.rs</code>）：流在 <code>response.completed</code> 前断开，按 <code>stream_max_retries</code> 重新发起请求，并通知前端 “Reconnecting... n/max”；尊重服务器的 Retry-After。</li><li><b>WebSocket 回退</b>：WebSocket 重试用尽时切换到 HTTPS 并发出警告 “Falling back from WebSockets to HTTPS transport”，重试计数清零。</li><li><b>注意</b>：中断前已流出的文本已经显示给了用户（实验中“这段文字会被丢弃”被打印出来），但不会写入历史；重新请求时模型从头生成。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 06</div><a class="big" href="l06.html">run_turn 循环 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l05.js"></script>
+</body></html>

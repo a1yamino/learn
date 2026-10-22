@@ -1,0 +1,201 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 4 课 · 模型提供方与认证</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 4 课</span><span class="sp"></span><a href="l03.html">← 第 3 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 4 课</div><h1>模型提供方与认证</h1>
+<p>pi 内置了 40 多家提供方和一千多个模型。Codex 的立场正好相反：源码注释写明“不想裁定哪些第三方提供方应该内置”，因此只内置 OpenAI、Amazon Bedrock 与两个本地开源提供方（Ollama、LM Studio），其余一律由用户在 <code>config.toml</code> 的 <code>model_providers</code> 中声明。本课看提供方结构 <code>ModelProviderInfo</code>、API key 的来源，以及 <code>codex login</code> 如何保存凭据。约 35 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">key 从哪里来</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：会发生什么？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>key 从哪里来</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：会发生什么？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>只内置少数提供方：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/model-provider-info/src/lib.rs#L662-L694" target="_blank" rel="noopener">codex-rs/model-provider-info/src/lib.rs  L662–694 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub fn built_in_model_providers(
+    openai_base_url: Option&lt;String&gt;,
+) -&gt; HashMap&lt;String, ModelProviderInfo&gt; {
+    use ModelProviderInfo as P;
+    let openai_provider = P::create_openai_provider(openai_base_url);
+    let amazon_bedrock_provider = P::create_amazon_bedrock_provider(/*aws*/ None);
+    let amazon_bedrock_runtime_provider =
+        P::create_amazon_bedrock_runtime_provider(/*aws*/ None);
+
+    // We do not want to be in the business of adjucating which third-party
+    // providers are bundled with Codex CLI, so we only include the OpenAI and
+    // open source (&quot;oss&quot;) providers by default. Users are encouraged to add to
+    // `model_providers` in config.toml to add their own providers.
+    [
+        (OPENAI_PROVIDER_ID, openai_provider),
+        (AMAZON_BEDROCK_PROVIDER_ID, amazon_bedrock_provider),
+        (
+            AMAZON_BEDROCK_RUNTIME_PROVIDER_ID,
+            amazon_bedrock_runtime_provider,
+        ),
+        (
+            OLLAMA_OSS_PROVIDER_ID,
+            create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses),
+        ),
+        (
+            LMSTUDIO_OSS_PROVIDER_ID,
+            create_oss_provider(DEFAULT_LMSTUDIO_PORT, WireApi::Responses),
+        ),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v))
+    .collect()
+}</pre><p>从环境变量读 key：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/model-provider-info/src/lib.rs#L482-L498" target="_blank" rel="noopener">codex-rs/model-provider-info/src/lib.rs  L482–498 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub fn api_key(&amp;self) -&gt; CodexResult&lt;Option&lt;String&gt;&gt; {
+    match &amp;self.env_key {
+        Some(env_key) =&gt; {
+            let api_key = std::env::var(env_key)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .ok_or_else(|| {
+                    CodexErr::EnvVar(EnvVarError {
+                        var: env_key.clone(),
+                        instructions: self.env_key_instructions.clone(),
+                    })
+                })?;
+            Ok(Some(api_key))
+        }
+        None =&gt; Ok(None),
+    }
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l04.html">pi 第 4 课 · Provider 抽象、模型目录与凭据</a>。pi 内置庞大的模型目录、存储的凭据优先于环境变量；Codex 内置极少，把选择交给用户配置。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。 本课给 <code>run.sh</code> 增加了 <code>EXTRA_PROVIDER</code>（追加到提供方配置）并让 mock.py 记录请求头；如果你从第 1 课复制的是旧版，请用下面的版本覆盖。全部使用临时 <code>CODEX_HOME</code>，不会影响你真实的登录状态。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>更新后的 mock.py 与 run.sh。</p><pre class="cmd">cat &gt; codex/scratch/mock.py &lt;&lt;&#x27;EOF&#x27;
+#!/usr/bin/env python3
+&quot;&quot;&quot;课程练习用的假 Responses API 服务器（离线，无需 API key）。
+用法：python3 mock.py &lt;剧本.py&gt; &lt;端口&gt; &lt;日志目录&gt;
+剧本里定义 reply(n, body) -&gt; list[dict]：第 n 次请求（从 1 开始）要返回的输出项。
+每次请求的完整 JSON 保存为 &lt;日志目录&gt;/reqNN.json，便于查看 Codex 实际发送了什么。&quot;&quot;&quot;
+import json, sys, os, importlib.util, itertools
+sys.dont_write_bytecode = True
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+spec = importlib.util.spec_from_file_location(&quot;script&quot;, sys.argv[1]); script = importlib.util.module_from_spec(spec); spec.loader.exec_module(script)
+PORT, LOG = int(sys.argv[2]), sys.argv[3]; os.makedirs(LOG, exist_ok=True)
+counter = itertools.count(1)
+
+def msg(text):  # 便捷构造：助手文本消息
+    return {&quot;type&quot;: &quot;message&quot;, &quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: [{&quot;type&quot;: &quot;output_text&quot;, &quot;text&quot;: text}]}
+def call(name, args, cid=None):  # 便捷构造：函数调用
+    return {&quot;type&quot;: &quot;function_call&quot;, &quot;name&quot;: name, &quot;arguments&quot;: json.dumps(args, ensure_ascii=False), &quot;call_id&quot;: cid or f&quot;call_{name}&quot;}
+script.msg, script.call = msg, call
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        self.send_response(200); self.send_header(&quot;content-type&quot;, &quot;application/json&quot;); self.end_headers()
+        self.wfile.write(b&#x27;{&quot;object&quot;:&quot;list&quot;,&quot;data&quot;:[],&quot;models&quot;:[]}&#x27;)
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get(&quot;content-length&quot;, 0))) or b&quot;{}&quot;)
+        n = next(counter)
+        json.dump({&quot;path&quot;: self.path, &quot;headers&quot;: dict(self.headers), &quot;body&quot;: body}, open(f&quot;{LOG}/req{n:02d}.json&quot;, &quot;w&quot;), ensure_ascii=False, indent=1)
+        items = script.reply(n, body)
+        self.send_response(200); self.send_header(&quot;content-type&quot;, &quot;text/event-stream&quot;); self.end_headers()
+        def ev(d): self.wfile.write(f&quot;event: {d[&#x27;type&#x27;]}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n&quot;.encode())
+        rid = f&quot;resp_{n}&quot;
+        ev({&quot;type&quot;: &quot;response.created&quot;, &quot;response&quot;: {&quot;id&quot;: rid}})
+        for i, it in enumerate(items):
+            it = {&quot;id&quot;: f&quot;item_{n}_{i}&quot;, **it}
+            if it[&quot;type&quot;] == &quot;message&quot;:
+                ev({&quot;type&quot;: &quot;response.output_item.added&quot;, &quot;output_index&quot;: i, &quot;item&quot;: {**it, &quot;content&quot;: []}})
+                ev({&quot;type&quot;: &quot;response.output_text.delta&quot;, &quot;output_index&quot;: i, &quot;item_id&quot;: it[&quot;id&quot;], &quot;delta&quot;: it[&quot;content&quot;][0][&quot;text&quot;]})
+            ev({&quot;type&quot;: &quot;response.output_item.done&quot;, &quot;output_index&quot;: i, &quot;item&quot;: it})
+        ev({&quot;type&quot;: &quot;response.completed&quot;, &quot;response&quot;: {&quot;id&quot;: rid, &quot;usage&quot;: {&quot;input_tokens&quot;: 1000 * n, &quot;input_tokens_details&quot;: {&quot;cached_tokens&quot;: 0},
+            &quot;output_tokens&quot;: 50, &quot;output_tokens_details&quot;: {&quot;reasoning_tokens&quot;: 0}, &quot;total_tokens&quot;: 1000 * n + 50}}})
+
+ThreadingHTTPServer((&quot;127.0.0.1&quot;, PORT), H).serve_forever()
+EOF
+cat &gt; codex/scratch/run.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# run.sh &lt;剧本.py&gt; [codex 参数...]：启动假模型，用临时 CODEX_HOME 运行 codex exec
+# 环境变量 KEEP=1 时保留工作目录；W 指定工作目录
+MODEL=${MODEL:-gpt-5.5}
+SCRIPT=$(realpath &quot;$1&quot;); shift
+export CODEX_HOME=${CODEX_HOME:-$(mktemp -d)}; mkdir -p $CODEX_HOME; LOG=$CODEX_HOME/requests
+PORT=$((20000 + RANDOM % 20000))
+python3 &quot;$(dirname &quot;$0&quot;)/mock.py&quot; &quot;$SCRIPT&quot; $PORT &quot;$LOG&quot; &amp; MOCK=$!
+trap &quot;kill $MOCK 2&gt;/dev/null&quot; EXIT
+cat &gt; $CODEX_HOME/config.toml &lt;&lt;TOML
+model = &quot;$MODEL&quot;
+model_provider = &quot;mock&quot;
+$EXTRA_CONFIG
+[model_providers.mock]
+$EXTRA_PROVIDER
+name = &quot;Mock&quot;
+base_url = &quot;http://127.0.0.1:$PORT/v1&quot;
+wire_api = &quot;responses&quot;
+request_max_retries = 0
+stream_max_retries = 0
+TOML
+sleep 0.5
+codex exec --skip-git-repo-check &quot;$@&quot; &lt;/dev/null
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>实验。</p><pre class="cmd">cat &gt; codex/scratch/l04.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 提供方与凭据：env_key、请求头、codex login
+S=$(pwd); W=$(mktemp -d); cd $W
+export CODEX_HOME=$(mktemp -d)
+echo &quot;== 1. provider 声明 env_key = \&quot;MOCK_KEY\&quot;，但环境变量未设置&quot;
+EXTRA_PROVIDER=&#x27;env_key = &quot;MOCK_KEY&quot;&#x27; bash $S/run.sh $S/s_hello.py &quot;hi&quot; 2&gt;&amp;1 | grep -iE &quot;error|MOCK_KEY&quot; | head -3
+echo &quot;== 2. 设置 MOCK_KEY 后，假服务器看到的请求&quot;
+MOCK_KEY=sk-test-123 EXTRA_PROVIDER=&#x27;env_key = &quot;MOCK_KEY&quot;&#x27; bash $S/run.sh $S/s_hello.py &quot;hi&quot; &gt;/dev/null 2&gt;&amp;1
+python3 - $CODEX_HOME/requests/req01.json &lt;&lt;&#x27;PY&#x27;
+import json, sys
+r = json.load(open(sys.argv[1]))
+print(&quot;POST&quot;, r[&quot;path&quot;])
+for k, v in sorted(r[&quot;headers&quot;].items()):
+    if k.lower() in (&quot;authorization&quot;, &quot;originator&quot;, &quot;user-agent&quot;, &quot;session_id&quot;, &quot;session-id&quot;, &quot;accept&quot;, &quot;version&quot;):
+        print(f&quot;  {k}: {v[:60]}&quot;)
+PY
+echo &quot;== 3. codex login：把 API key 存进 CODEX_HOME&quot;
+export CODEX_HOME=$(mktemp -d)
+codex login status 2&gt;&amp;1 | head -1
+echo sk-demo-456 | codex login --with-api-key 2&gt;&amp;1 | tail -1
+codex login status 2&gt;&amp;1 | head -1
+ls $CODEX_HOME | grep auth; python3 -c &quot;import json,sys;print(sorted(json.load(open(sys.argv[1])).keys()))&quot; $CODEX_HOME/auth.json
+EOF
+cd codex/scratch &amp;&amp; bash l04.sh</pre><pre class="out">== 1. provider 声明 env_key = &quot;MOCK_KEY&quot;，但环境变量未设置
+ERROR: Missing environment variable: `MOCK_KEY`.
+ERROR: Missing environment variable: `MOCK_KEY`.
+== 2. 设置 MOCK_KEY 后，假服务器看到的请求
+POST /v1/responses
+  accept: text/event-stream
+  authorization: Bearer sk-test-123
+  originator: codex_exec
+  session-id: 01a16334-eb3d-7c62-ab4b-894704ba1cde
+  user-agent: codex_exec/0.0.0 (Debian 13.0.0; x86_64) dumb (codex_exec; 0
+== 3. codex login：把 API key 存进 CODEX_HOME
+Not logged in
+API key saved. Authentication is checked when you send a request.
+API key configured - ***
+auth.json
+[&#x27;OPENAI_API_KEY&#x27;, &#x27;auth_mode&#x27;]</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>自定义请求头</h3><p>给 mock 提供方加上固定请求头 <code>X-Team: course</code> 和从环境变量 <code>TRACE_ID</code> 读取的 <code>X-Trace</code>，验证未设置 TRACE_ID 时该头不出现。</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">EXTRA_PROVIDER='http_headers = { "X-Team" = "course" }
+env_http_headers = { "X-Trace" = "TRACE_ID" }' bash run.sh s_hello.py hi
+# 再用 TRACE_ID=abc 运行一次，比较 req01.json 的 headers</pre><p>按 <code>ModelProviderInfo</code> 的文档：env_http_headers 中的环境变量未设置或为空时，该请求头不会发送。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>ModelProviderInfo</b>：<code>base_url</code>、<code>env_key</code>（从哪个环境变量读 key）、<code>wire_api</code>（协议，默认 responses）、<code>http_headers</code>/<code>env_http_headers</code>、<code>query_params</code>、重试与超时（<code>request_max_retries</code>、<code>stream_max_retries</code>、<code>stream_idle_timeout_ms</code>）、<code>requires_openai_auth</code>、<code>supports_websockets</code> 等。</li><li><b>内置提供方</b>：<code>built_in_model_providers()</code> 只有 openai、amazon-bedrock（两种）、ollama、lmstudio；用户配置的提供方与之合并，内置的一般不可覆盖（Bedrock 例外）。</li><li><b>env_key</b>：<code>api_key()</code> 读取环境变量，为空就报 <code>Missing environment variable</code>，并附上 <code>env_key_instructions</code>。</li><li><b>OpenAI 认证</b>：<code>codex login</code> 支持 ChatGPT 账号登录（OAuth）或 API key；凭据写在 <code>$CODEX_HOME/auth.json</code>（或系统钥匙串，取决于 <code>cli_auth_credentials_store</code>）。</li><li><b>请求头</b>：<code>authorization: Bearer …</code>、<code>originator</code>（codex_exec / codex_cli_rs …）、<code>session-id</code>、带操作系统与终端信息的 <code>user-agent</code>。</li><li><b>模型元数据</b>：模型能力（工具、shell 类型、apply_patch 类型、上下文窗口）来自 <code>models-manager/models.json</code> 或远程目录；未知模型使用回退元数据（第 1 课的警告）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 05</div><a class="big" href="l05.html">模型客户端：SSE、WebSocket 与重试 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l04.js"></script>
+</body></html>

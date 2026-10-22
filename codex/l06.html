@@ -1,0 +1,207 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 6 课 · run_turn 循环</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 6 课</span><span class="sp"></span><a href="l05.html">← 第 5 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 6 课</div><h1>run_turn 循环</h1>
+<p>pi 的 <code>runLoop</code> 只有 159 行。Codex 的 <code>run_turn</code>（<code>core/src/session/turn.rs</code>）是它的“生产版本”：同样是“请求模型 → 执行工具 → 再请求”的循环，但每一圈都要处理排队的用户输入、钩子、上下文窗口检查、自动压缩、Stop 钩子要求继续等。本课抓住它的骨架：<b>needs_follow_up</b> 如何决定是否再来一圈，并用三个场景验证。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一圈循环</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：会再请求一次吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一圈循环</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：会再请求一次吗？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/session/turn.rs#L460-L483" target="_blank" rel="noopener">codex-rs/core/src/session/turn.rs  L460–483, L578–609 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">loop {
+    // Note that pending_input would be something like a message the user
+    // submitted through the UI while the model was running. Though the UI
+    // may support this, the model might not.
+    let pending_input = if can_drain_pending_input {
+        sess.input_queue
+            .get_pending_input(&amp;sess.active_turn)
+            .await
+            .0
+    } else {
+        Vec::new()
+    };
+
+    if run_hooks_and_record_inputs(
+        &amp;sess,
+        &amp;turn_context,
+        &amp;turn_context.capture_current_model_info(),
+        &amp;pending_input,
+        PersistContext::SteeredUserInput,
+    )
+    .await
+    {
+        break;
+    }
+  // …
+.await;
+match sampling_request_result {
+    Ok((sampling_request_output, sampling_request_input)) =&gt; {
+        guardian_budget_compacted = false;
+        let SamplingRequestResult {
+            needs_follow_up: model_needs_follow_up,
+            last_agent_message: sampling_request_last_agent_message,
+        } = sampling_request_output;
+        if model_needs_follow_up {
+            sess.input_queue
+                .accept_mailbox_delivery_for_current_turn(
+                    &amp;sess.active_turn,
+                    &amp;turn_context.sub_id,
+                )
+                .await;
+        }
+        can_drain_pending_input = true;
+        // Process async hooks only after sampling and its tools have finished.
+        drain_async_hook_results(&amp;sess, &amp;turn_context, /*before_user_prompt*/ false).await;
+        let (has_pending_input, token_status) = async {
+            let has_pending_input =
+                sess.input_queue.has_pending_input(&amp;sess.active_turn).await;
+            let token_status = super::context_window::context_window_token_status(
+                sess.as_ref(),
+                turn_context.as_ref(),
+            )
+            .await;
+            (has_pending_input, token_status)
+        }
+        .instrument(trace_span!(&quot;run_turn.collect_post_sampling_state&quot;))
+        .await;
+        let needs_follow_up = model_needs_follow_up || has_pending_input;</pre><p>结束分支与 Stop 钩子：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/session/turn.rs#L723-L757" target="_blank" rel="noopener">codex-rs/core/src/session/turn.rs  L723–757 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">if !needs_follow_up {
+    last_agent_message = sampling_request_last_agent_message;
+    let stop_outcome = run_turn_stop_hooks(
+        &amp;sess,
+        &amp;step_context,
+        stop_hook_active,
+        last_agent_message.clone(),
+    )
+    .await;
+    if matches!(
+        turn_context.session_source,
+        SessionSource::Internal(InternalSessionSource::MemoryConsolidation)
+    ) &amp;&amp; (stop_outcome.should_block || stop_outcome.should_stop)
+    {
+        // Do not feed managed rejections back into an unattended memory loop.
+        return Err(CodexErr::InvalidRequest(
+            &quot;Memory consolidation was rejected by a Stop hook.&quot;.to_string(),
+        ));
+    }
+    if stop_outcome.should_block {
+        if let Some(hook_prompt_message) =
+            build_hook_prompt_message(&amp;stop_outcome.continuation_fragments)
+        {
+            sess.record_response_item_and_emit_turn_item(
+                &amp;turn_context,
+                &amp;step_context.settings.model_info,
+                hook_prompt_message,
+            )
+            .await;
+            sess.input_queue
+                .accept_mailbox_delivery_for_current_turn(
+                    &amp;sess.active_turn,
+                    &amp;turn_context.sub_id,
+                )
+                .await;</pre><p>工具调用立即派发并置位 needs_follow_up：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/stream_events_utils.rs#L349-L369" target="_blank" rel="noopener">codex-rs/core/src/stream_events_utils.rs  L349–369 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">
+let cancellation_token = ctx.cancellation_token.child_token();
+let runtime = ctx.tool_runtime.clone();
+// handle_tool_call dispatches immediately, not when its future is polled.
+// Defer for post-model hooks or to cancel buffered calls during mailbox drains.
+let tool_future: InFlightFuture&lt;&#x27;static&gt; = if ctx.defer_tool_dispatch {
+    Box::pin(async move {
+        if cancellation_token.is_cancelled() {
+            // The call is already in history; resume needs its output even if we never dispatch.
+            let output =
+                ToolCallRuntime::aborted_response(&amp;call, /*elapsed_secs*/ None);
+            return Ok(output.into_response());
+        }
+        runtime.handle_tool_call(call, cancellation_token).await
+    })
+} else {
+    Box::pin(runtime.handle_tool_call(call, cancellation_token))
+};
+
+output.needs_follow_up = true;
+output.tool_future = Some(tool_future);</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l06.html">pi 第 6 课 · Agent 循环：runLoop 逐行精读</a>。pi 在 assistant 消息完整结束后才执行工具；Codex 在流式过程中就开始执行。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>三个场景的剧本。</p><pre class="cmd">cat &gt; codex/scratch/s_loop.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：用环境变量 SCEN 选择场景
+import os
+S = os.environ.get(&quot;SCEN&quot;, &quot;a&quot;)
+def reply(n, body):
+    if S == &quot;a&quot;:  # 只回答文字：1 次请求就结束
+        return [msg(&quot;直接回答，不用工具&quot;)]
+    if S == &quot;b&quot;:  # 文字 + 工具调用在同一个响应里：仍需继续
+        if n == 1: return [msg(&quot;我先看看目录&quot;), call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;ls&quot;}, &quot;c1&quot;)]
+        return [msg(&quot;看完了&quot;)]
+    if S == &quot;c&quot;:  # 一个响应里两个工具调用
+        if n == 1: return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;echo A&quot;}, &quot;c1&quot;), call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;echo B&quot;}, &quot;c2&quot;)]
+        return [msg(&quot;两个都执行了&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>运行并比较。</p><pre class="cmd">cat &gt; codex/scratch/l06.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# run_turn 何时继续、何时结束：看请求次数与最后一次请求的末尾条目
+S=$(pwd)
+for scen in a b c; do
+  export CODEX_HOME=$(mktemp -d); cd $(mktemp -d)
+  echo &quot;== 场景 $scen&quot;
+  SCEN=$scen bash $S/run.sh $S/s_loop.py &quot;开始&quot; --json 2&gt;/dev/null | python3 -c &quot;
+import sys, json
+for l in sys.stdin:
+    e = json.loads(l); it = e.get(&#x27;item&#x27;, {})
+    if e[&#x27;type&#x27;] == &#x27;item.completed&#x27;: print(&#x27;  item.completed&#x27;, it[&#x27;type&#x27;], it.get(&#x27;text&#x27;) or it.get(&#x27;command&#x27;))
+&quot;
+  echo &quot;  请求次数：$(ls $CODEX_HOME/requests | wc -l)&quot;
+  python3 $S/show.py $CODEX_HOME/requests 50 | tail -n +2 | tail -4 | sed &#x27;s/^/  /&#x27;
+done
+EOF
+cd codex/scratch &amp;&amp; bash l06.sh</pre><pre class="out">== 场景 a
+  item.completed agent_message 直接回答，不用工具
+  请求次数：1
+    message                developer You are Codex, a coding agent based on GPT-5. You 
+    message                developer &lt;skills_instructions&gt; ⏎ ## Skills ⏎ A skill is a s
+    message                user      &lt;environment_context&gt; ⏎   &lt;cwd&gt;/tmp/tmp.uHFkjQcfvs
+    message                user      开始
+== 场景 b
+  item.completed agent_message 我先看看目录
+  item.completed command_execution /bin/bash -lc ls
+  item.completed agent_message 看完了
+  请求次数：2
+    message                user      开始
+    message                assistant 我先看看目录
+    function_call                    exec_command({&quot;cmd&quot;: &quot;ls&quot;})
+    function_call_output             Chunk ID: c1eefc ⏎ Wall time: 0.0000 seconds ⏎ Pro
+== 场景 c
+  item.completed command_execution /bin/bash -lc &#x27;echo A&#x27;
+  item.completed command_execution /bin/bash -lc &#x27;echo B&#x27;
+  item.completed agent_message 两个都执行了
+  请求次数：2
+    function_call                    exec_command({&quot;cmd&quot;: &quot;echo A&quot;})
+    function_call                    exec_command({&quot;cmd&quot;: &quot;echo B&quot;})
+    function_call_output             Chunk ID: befc2a ⏎ Wall time: 0.0000 seconds ⏎ Pro
+    function_call_output             Chunk ID: 24ba55 ⏎ Wall time: 0.0000 seconds ⏎ Pro</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>证明“边流边执行”</h3><p>设计实验证明工具在响应流结束前就开始执行：让 mock 在发出 function_call 的 output_item.done 之后 sleep 2 秒再发 response.completed，工具执行 <code>date +%s.%N</code>，比较命令时间与 mock 发送 completed 的时间。</p><details><summary>查看参考答案</summary><div><p>在 mock.py 的循环里，对带 <code>"sleep_after": 2</code> 的项在发送后 <code>time.sleep(2)</code>，并在发 <code>response.completed</code> 前打印 <code>time.time()</code>。命令输出的时间戳会比 completed 早约 2 秒，说明工具在 output_item.done 到达时就派发了。这正对应源码注释 “handle_tool_call dispatches immediately, not when its future is polled”（有 post-model 钩子时会延后）。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>骨架</b>：<code>loop { 取出排队输入 → 记录 → 捕获本步上下文 → run_sampling_request → 计算 needs_follow_up → 可能压缩 → 若不需继续则跑 Stop 钩子并 break }</code>。</li><li><b>needs_follow_up = 模型需要继续 || 有排队输入</b>。模型需要继续 ⇔ 本次响应中出现了工具调用（<code>stream_events_utils.rs</code> 中处理每个输出项时置位）。只回文字就结束 turn；文字与工具调用并存时仍然继续（场景 b）。</li><li><b>边流边执行</b>：每个工具调用在 <code>output_item.done</code> 到达时就立即派发（注释：“handle_tool_call dispatches immediately”），不等整个响应结束；未完成的调用进入 <code>in_flight</code> 队列，响应结束后统一等待。</li><li><b>并行与顺序</b>：场景 c 中 echo B 先于 echo A 完成（事件按完成顺序），但写回历史的 function_call_output 保持调用顺序。</li><li><b>自动压缩</b>：每圈之后检查 token 状态，超过阈值就在 turn 中途或结束后压缩（第 16 课）。</li><li><b>Stop 钩子</b>：turn 将要结束时运行；钩子可以阻止结束并注入一条继续提示（<code>should_block</code> → <code>continue</code>），这是 /goal 之外另一种“让 agent 继续干活”的机制（第 21 课）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 07</div><a class="big" href="l07.html">工具规格、路由与并行 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l06.js"></script>
+</body></html>

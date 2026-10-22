@@ -1,0 +1,112 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 7 课 · 工具规格、路由与并行</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 7 课</span><span class="sp"></span><a href="l06.html">← 第 6 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 7 课</div><h1>工具规格、路由与并行</h1>
+<p>pi 的工具是一个带 TypeBox 参数模式的对象，循环负责校验与并行执行。Codex 把这件事拆成三层：<b>规格</b>（<code>ToolSpec</code>，发给模型的 JSON 描述，包括 function、custom 自由格式、tool_search 等类型）、<b>注册表与路由</b>（把 <code>ResponseItem</code> 转成 <code>ToolCall</code> 并派发给处理器）、<b>并行闸门</b>（用一把读写锁决定哪些工具能同时运行）。本课故意让模型调用不存在的工具和传错参数，看错误如何回到模型。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次调用的路线</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：模型会收到什么？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次调用的路线</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：模型会收到什么？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/tools/router.rs#L257-L273" target="_blank" rel="noopener">codex-rs/core/src/tools/router.rs  L257–273 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub fn build_tool_call(item: ResponseItem) -&gt; Result&lt;Option&lt;ToolCall&gt;, FunctionCallError&gt; {
+    match item {
+        ResponseItem::FunctionCall {
+            name,
+            namespace,
+            arguments,
+            encrypted_function_args,
+            call_id,
+            ..
+        } =&gt; {
+            let tool_name = ToolName::new(namespace, name).with_default_namespace();
+            Ok(Some(ToolCall {
+                tool_name,
+                call_id,
+                payload: ToolPayload::Function { arguments },
+                encrypted_function_args,
+            }))</pre><p>读写锁闸门：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/tools/parallel.rs#L213-L217" target="_blank" rel="noopener">codex-rs/core/src/tools/parallel.rs  L213–217 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">if supports_parallel {
+    Either::Left(lock.read().await)
+} else {
+    Either::Right(lock.write().await)
+}</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/tools/registry.rs#L606-L609" target="_blank" rel="noopener">codex-rs/core/src/tools/registry.rs  L606–609 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub(crate) fn supports_parallel_tool_calls(&amp;self, name: &amp;ToolName) -&gt; Option&lt;bool&gt; {
+    let tool = self.tools.get(&amp;name.clone().with_default_namespace())?;
+    Some(tool.exposure != ToolExposure::Hidden &amp;&amp; tool.runtime.supports_parallel_tool_calls())
+}</pre><p>默认不支持并行：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/tools/src/tool_executor.rs#L122-L124" target="_blank" rel="noopener">codex-rs/tools/src/tool_executor.rs  L122–124 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">fn supports_parallel_tool_calls(&amp;self) -&gt; bool {
+    false
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l07.html">pi 第 7 课 · 工具调用：参数校验、并行执行与钩子</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>错误调用剧本。</p><pre class="cmd">cat &gt; codex/scratch/s_tools.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：一次调用不存在的工具，一次参数错误，一次正常
+def reply(n, body):
+    if n == 1:
+        return [call(&quot;no_such_tool&quot;, {}, &quot;c1&quot;),
+                call(&quot;exec_command&quot;, {&quot;command&quot;: &quot;ls&quot;}, &quot;c2&quot;),   # 参数名应为 cmd
+                call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;echo ok&quot;}, &quot;c3&quot;)]
+    return [msg(&quot;完成&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>查看工具规格与回应。</p><pre class="cmd">cat &gt; codex/scratch/l07.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 工具规格与路由：模型看到的工具，以及错误调用得到的回应
+S=$(pwd); export CODEX_HOME=$(mktemp -d); cd $(mktemp -d)
+bash $S/run.sh $S/s_tools.py &quot;试试工具&quot; &gt;/dev/null 2&gt;&amp;1
+python3 - $CODEX_HOME/requests &lt;&lt;&#x27;PY&#x27;
+import json, sys
+b = json.load(open(sys.argv[1] + &quot;/req01.json&quot;))[&quot;body&quot;]
+print(&quot;parallel_tool_calls =&quot;, b[&quot;parallel_tool_calls&quot;], &quot; tool_choice =&quot;, b[&quot;tool_choice&quot;])
+print(&quot;== 模型看到的工具&quot;)
+for t in b[&quot;tools&quot;]:
+    name = t.get(&quot;name&quot;, t[&quot;type&quot;]); kind = t[&quot;type&quot;]
+    params = list((t.get(&quot;parameters&quot;) or {}).get(&quot;properties&quot;, {}).keys())
+    fmt = t.get(&quot;format&quot;, {}).get(&quot;syntax&quot;, &quot;&quot;) if kind == &quot;custom&quot; else &quot;&quot;
+    print(f&quot;  {kind:9} {name:18} {fmt or params}&quot;)
+print(&quot;== 三个调用得到的输出&quot;)
+for it in json.load(open(sys.argv[1] + &quot;/req02.json&quot;))[&quot;body&quot;][&quot;input&quot;]:
+    if it[&quot;type&quot;] == &quot;function_call_output&quot;:
+        print(&quot; &quot;, it[&quot;call_id&quot;], &quot;→&quot;, it[&quot;output&quot;].replace(&quot;\n&quot;, &quot; ⏎ &quot;)[:110])
+PY
+EOF
+cd codex/scratch &amp;&amp; bash l07.sh</pre><pre class="out">parallel_tool_calls = True  tool_choice = auto
+== 模型看到的工具
+  function  exec_command       [&#x27;cmd&#x27;, &#x27;justification&#x27;, &#x27;login&#x27;, &#x27;max_output_tokens&#x27;, &#x27;prefix_rule&#x27;, &#x27;sandbox_permissions&#x27;, &#x27;shell&#x27;, &#x27;tty&#x27;, &#x27;workdir&#x27;, &#x27;yield_time_ms&#x27;]
+  function  write_stdin        [&#x27;chars&#x27;, &#x27;max_output_tokens&#x27;, &#x27;session_id&#x27;, &#x27;yield_time_ms&#x27;]
+  function  request_user_input [&#x27;questions&#x27;]
+  custom    apply_patch        lark
+  function  view_image         [&#x27;detail&#x27;, &#x27;path&#x27;]
+  function  get_goal           []
+  function  create_goal        [&#x27;objective&#x27;, &#x27;token_budget&#x27;]
+  function  update_goal        [&#x27;status&#x27;]
+  tool_search tool_search        [&#x27;limit&#x27;, &#x27;query&#x27;]
+  web_search web_search         []
+== 三个调用得到的输出
+  c1 → unsupported call: no_such_tool
+  c2 → failed to parse function arguments: missing field `cmd` at line 1 column 17
+  c3 → Chunk ID: b78236 ⏎ Wall time: 0.0000 seconds ⏎ Process exited with code 0 ⏎ Original token count: 1 ⏎ Output: </pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>看完整的 exec_command 规格</h3><p>打印 req01 中 exec_command 的完整 description 与 parameters，找出 <code>sandbox_permissions</code> 与 <code>prefix_rule</code> 的说明。它们分别用于什么？</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">python3 -c "import json,sys;b=json.load(open(sys.argv[1]))['body'];t=[t for t in b['tools'] if t.get('name')=='exec_command'][0];print(json.dumps(t,ensure_ascii=False,indent=1))" $CODEX_HOME/requests/req01.json</pre><p>sandbox_permissions 让模型请求以提升的权限（例如不受沙箱限制）运行命令，需要配合 justification 说明理由并经过审批；prefix_rule 让模型建议一条命令前缀规则，用户批准后同类命令以后不再询问。第 13 课讲审批与执行策略时会用到。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>工具规格</b>：gpt-5.5 下模型看到 10 个工具；<code>exec_command</code> 有 cmd、workdir、tty、yield_time_ms、sandbox_permissions、justification、prefix_rule 等参数；<code>apply_patch</code> 是 <code>custom</code> 类型，格式由 Lark 语法定义。请求带 <code>parallel_tool_calls: true</code>。</li><li><b>build_tool_call</b>（<code>tools/router.rs</code>）：FunctionCall → <code>ToolPayload::Function{arguments}</code>（字符串原样传递），ToolSearchCall、CustomToolCall 等各有载荷类型。</li><li><b>错误回给模型而不是终止</b>：未知工具 → <code>unsupported call: no_such_tool</code>；参数反序列化失败 → <code>failed to parse function arguments: missing field `cmd`</code>。这些都是 <code>FunctionCallError::RespondToModel</code>，作为工具输出写回历史。</li><li><b>并行闸门</b>（<code>tools/parallel.rs</code>）：<code>supports_parallel_tool_calls()</code> 为真的工具获取读锁，可以同时运行；其余获取写锁，独占执行。默认实现返回 false。</li><li><b>谁支持并行</b>：exec_command、write_stdin、view_image、tool_search、MCP 中声明只读的工具等；apply_patch 未覆盖默认值，因此独占执行——修改文件时不会与其他工具交错。</li><li><b>对比 pi</b>：pi 默认全部并行，可整体切换为顺序；Codex 按工具粒度决定。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 08</div><a class="big" href="l08.html">会话线程、中断与转向 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l07.js"></script>
+</body></html>
