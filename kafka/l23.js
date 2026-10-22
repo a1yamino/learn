@@ -16,7 +16,7 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
  S.forEach(([t,r,c])=>{const b=document.createElement('button');b.className='btn';b.textContent=t;b.addEventListener('click',()=>{q.querySelectorAll('.btn').forEach(y=>y.classList.toggle('pri',y===b));p.textContent=r.join('\n');m.className='msg '+c;m.innerHTML=c==='bad'?'重试没有意义。':'可以重试。'});q.appendChild(b)});
  m.className='msg';m.innerHTML='选择失败类型。'})();
 Term(document.getElementById('t4'),[
-['errors.tolerance=all\nerrors.deadletterqueue.topic.name=payments-dlt\nerrors.deadletterqueue.context.headers.enable=true\nerrors.retry.timeout.ms=60000','（Connect 连接器配置）','只对转换器和 SMT 阶段的错误生效，Sink 写入外部系统的错误由连接器自己处理。'],
+['errors.tolerance=all\nerrors.deadletterqueue.topic.name=payments-dlt\nerrors.deadletterqueue.context.headers.enable=true\nerrors.retry.timeout=60000','（Connect 连接器配置）','只对转换器和 SMT 阶段的错误生效，Sink 写入外部系统的错误由连接器自己处理。'],
 ['default.deserialization.exception.handler=org.apache.kafka.streams.errors.LogAndContinueExceptionHandler','（Streams 配置）','跳过无法反序列化的记录并记日志。'],
 ['bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic payments-dlt','payments-dlt:0:1','显示各分区末尾偏移量，不等于当前记录数（保留删除、事务标记或压缩会产生差异）；DLQ 告警还需监控新增速率和处理进度。']]);
 Quiz(document.getElementById('qs'),[
