@@ -1,0 +1,87 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 8 课 · 分析型存储：列存、向量化与物化视图</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 8 课</span><span class="sp"></span><a href="l07.html">← 第 7 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 8 课</div><h1>分析型存储：列存、向量化与物化视图</h1>
+<p>第 4 章后半部分转向分析负载。一张事实表有上百列、几十亿行，而一个查询只用到其中三四列——按行存储就要读入大量无用数据。本课讲列式存储与压缩（位图、游程编码）、排序键、列存如何处理写入、查询执行的编译与向量化、物化视图与数据立方体，最后介绍多维索引、全文检索的倒排索引和向量嵌入的近似最近邻搜索。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">行存与列存</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：查询要读多少</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">位图与游程编码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">立方体与全文检索</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>行存与列存</h2><div class="goal">同一张表的两种磁盘布局，以及一个聚合查询读了多少数据。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：查询要读多少</h2><div class="goal">选择查询，比较行存与列存需要读取的数据量。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>位图与游程编码</h2><div class="goal">一个低基数列如何被压缩。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>立方体与全文检索</h2><div class="goal">在 PostgreSQL 中体验。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">Python 3 与第 1 课的 <code>pg</code> 容器。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>保存为 <code>col.py</code>：一百万行，比较行存与列存的读取量和压缩效果（约需 2 秒）。</p><pre class="cmd">import random, zlib, struct
+random.seed(3)
+N = 1_000_000
+rows = [(i, random.choice([&quot;北京&quot;, &quot;上海&quot;, &quot;广州&quot;, &quot;深圳&quot;]), random.randint(1, 500),
+         random.randint(0, 99), &quot;x&quot; * 40) for i in range(N)]   # id, 城市, 金额, 品类, 备注
+# 行存：查询 sum(金额) 也要读整行
+row_bytes = sum(8 + 6 + 4 + 4 + 40 for _ in rows)
+# 列存：只读“金额”这一列
+amount = struct.pack(f&quot;{N}i&quot;, *[r[2] for r in rows])
+print(f&quot;行存需读取 {row_bytes/1e6:.0f} MB；列存只读金额列 {len(amount)/1e6:.0f} MB&quot;)
+# 排序后城市列的游程编码
+city = sorted(r[1] for r in rows)
+runs, prev = [], None
+for c in city:
+    if c == prev: runs[-1][1] += 1
+    else: runs.append([c, 1]); prev = c
+print(&quot;城市列游程编码：&quot;, runs)
+cat = bytes(r[3] for r in rows)
+print(f&quot;品类列 {len(cat)/1e6:.1f} MB，zlib 压缩后 {len(zlib.compress(cat))/1e6:.2f} MB&quot;)</pre><pre class="out">行存需读取 62 MB；列存只读金额列 4 MB
+城市列游程编码： [[&#x27;上海&#x27;, 249970], [&#x27;北京&#x27;, 249156], [&#x27;广州&#x27;, 250438], [&#x27;深圳&#x27;, 250436]]
+品类列 1.0 MB，zlib 压缩后 0.84 MB</pre></div></div><div class="st"><span class="n">02</span><div><p>数据立方体：一次算出多种维度组合的汇总。</p><pre class="cmd">SELECT date_trunc(&#x27;month&#x27;, created_at)::date m, user_id % 3 AS seg, sum(amount)
+FROM orders WHERE created_at &lt; &#x27;2026-03-01&#x27;
+GROUP BY CUBE (1, 2) ORDER BY 1, 2;</pre><pre class="out">     m      | seg |   sum
+------------+-----+---------
+ 2026-01-01 |   0 | …
+ 2026-01-01 |   1 | …
+ 2026-01-01 |   2 | …
+ 2026-01-01 |     | …（该月合计）
+ …
+            |     | …（总计）</pre></div></div><div class="st"><span class="n">03</span><div><p>倒排索引：PostgreSQL 全文检索。</p><pre class="cmd">CREATE TABLE articles(id serial, body text);
+INSERT INTO articles(body) VALUES (&#x27;log structured merge tree&#x27;),(&#x27;b tree page split&#x27;),(&#x27;merge sort and log files&#x27;);
+CREATE INDEX ON articles USING gin (to_tsvector(&#x27;english&#x27;, body));
+SELECT id, body FROM articles WHERE to_tsvector(&#x27;english&#x27;, body) @@ to_tsquery(&#x27;english&#x27;, &#x27;merge &amp; log&#x27;);</pre><pre class="out"> id |           body
+----+---------------------------
+  1 | log structured merge tree
+  3 | merge sort and log files</pre></div></div><div class="st"><span class="n">04</span><div><p>保存为 <code>vec.py</code>：用余弦相似度做语义搜索（向量为示意值）。</p><pre class="cmd">import math
+docs = {&quot;如何更换自行车链条&quot;: [0.9, 0.1, 0.0], &quot;山地车刹车调整&quot;: [0.8, 0.3, 0.1],
+        &quot;红烧肉的做法&quot;: [0.0, 0.1, 0.95], &quot;单车保养入门&quot;: [0.85, 0.2, 0.05]}
+def cos(a, b): return sum(x*y for x, y in zip(a, b)) / math.sqrt(sum(x*x for x in a) * sum(y*y for y in b))
+q = [0.88, 0.15, 0.02]                     # “自行车维修”的向量（示意）
+for t, v in sorted(docs.items(), key=lambda d: -cos(q, d[1])):
+    print(f&quot;{cos(q, v):.3f}  {t}&quot;)</pre><pre class="out">0.998  如何更换自行车链条
+0.997  单车保养入门
+0.978  山地车刹车调整
+0.040  红烧肉的做法</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为广告点击分析选择存储</h3><p>每天 50 亿条点击事件，每条约 60 个字段（时间、广告 ID、广告主、地域、设备、价格……）。常见查询：某广告主过去 7 天按天、按地域的点击数与花费；运营临时探索任意维度组合。请：① 说明为什么用列存；② 选择排序键与分区；③ 是否需要预聚合，如何与原始数据配合；④ 写入如何进行。</p><details><summary>查看参考答案</summary><div><ol><li>查询只涉及 60 列中的少数几列，并扫描大量行：列存只读需要的列，且低基数列（地域、设备）压缩率极高，向量化执行聚合很快。</li><li>按天分区（便于过期删除和跳过无关日期）；排序键 <code>(advertiser_id, event_time)</code>：最常见的过滤条件是广告主，排序后同一广告主的数据连续，可以跳过大部分数据块，广告主列游程编码几乎不占空间。</li><li>为固定报表建物化视图/汇总表：<code>(day, advertiser_id, region) → clicks, cost</code>，行数减少几个数量级，仪表盘直接查它；临时探索仍然查原始明细表。汇总表是派生数据，随原始数据增量更新，有问题可以按天重算。</li><li>事件先进入 Kafka，由写入任务按批（例如每几秒或每几十万行）写成列式数据段；存储引擎在后台合并小段（类似 LSM）。不要逐行插入列存。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>列式存储</b>：把同一列的所有值存在一起，每列一个文件（或一个列块）。查询只读需要的列，I/O 大幅减少。所有列文件中的值按相同的行顺序排列，第 k 个值属于第 k 行。Parquet、ORC 是常见的列式文件格式；Snowflake、BigQuery、ClickHouse、DuckDB 等都是列存。</li><li><b>压缩</b>：一列中的值类型相同、重复度高，非常适合压缩。取值不多的列可以用<b>位图编码</b>（每个不同值一个位图），再对位图做<b>游程编码</b>；多个条件的过滤变成位图的 AND/OR。<b>排序键</b>：按常用的过滤列（如日期）排序，可以跳过无关的数据块，并让第一排序列的游程编码效果极好。</li><li><b>写入</b>：列存不适合原地更新——插入一行要改每一个列文件。做法与 LSM 类似：写入先进入内存中的行式缓冲区，积累后批量转换成列式段，查询时合并两者。</li><li><b>查询执行</b>：扫描上亿行时，CPU 成为瓶颈。两种优化：<b>查询编译</b>（把查询生成为机器码，消除解释开销）和<b>向量化</b>（一次处理一批列值，紧凑的循环便于 CPU 流水线与 SIMD 指令）。</li><li><b>物化视图</b>是把查询结果实际存下来的派生数据，底层数据变化时要更新（第 1 课练习过）。<b>数据立方体</b>是按多个维度预先聚合的特殊物化视图，查询极快但失去了灵活性，通常作为原始数据之上的加速层。</li><li><b>其他索引</b>：<b>多维索引</b>（R 树、GiST）用于“经纬度同时在某个范围内”这类查询。<b>全文检索</b>用<b>倒排索引</b>：每个词项对应包含它的文档列表（posting list），可以用位图压缩，与列存的思想相近。<b>向量嵌入</b>把文本或图片映射为高维向量，语义相近则距离近；向量索引（IVF、HNSW）做近似最近邻搜索，是语义搜索与 RAG 的基础。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 09</div><a class="big" href="l09.html">编码格式：JSON、Protocol Buffers 与 Avro →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l08.js"></script>
+</body></html>

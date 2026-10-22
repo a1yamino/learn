@@ -1,0 +1,94 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 9 课 · 编码格式：JSON、Protocol Buffers 与 Avro</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 9 课</span><span class="sp"></span><a href="l08.html">← 第 8 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 9 课</div><h1>编码格式：JSON、Protocol Buffers 与 Avro</h1>
+<p>第 5 章前半部分。数据在内存里是对象和指针，写入文件或发到网络时要编码成字节序列。应用会不断升级，新旧版本的代码会同时读写同一份数据，所以编码格式必须支持向前与向后兼容。本课比较语言自带的序列化、JSON/XML 及其二进制变体、Protocol Buffers 的字段号与 Avro 的写者/读者模式，并动手按字节手工编码一条 Protobuf 消息。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">同一条记录的三种编码</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这个改动兼容吗</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">Avro 的模式解析</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">逐字节解读 Protobuf</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>同一条记录的三种编码</h2><div class="goal">JSON、Protobuf、Avro 各占多少字节。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这个改动兼容吗</h2><div class="goal">选择一个模式改动，判断新旧代码能否互相读取。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>Avro 的模式解析</h2><div class="goal">写者模式与读者模式按字段名对齐。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>逐字节解读 Protobuf</h2><div class="goal">15 个字节分别是什么。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">需要 Python 3。Avro 部分需要 <code>python3 -m venv v && v/bin/pip install fastavro</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>保存为 <code>enc.py</code>：手工编码 Protobuf，并模拟旧代码跳过未知字段。</p><pre class="cmd">import json, struct
+rec = {&quot;name&quot;: &quot;lin&quot;, &quot;age&quot;: 30, &quot;tags&quot;: [&quot;db&quot;, &quot;go&quot;]}
+j = json.dumps(rec, separators=(&quot;,&quot;, &quot;:&quot;)).encode()
+print(&quot;JSON    &quot;, len(j), &quot;字节&quot;, j)
+
+def varint(n):
+    out = b&quot;&quot;
+    while True:
+        b = n &amp; 0x7F; n &gt;&gt;= 7
+        out += bytes([b | (0x80 if n else 0)])
+        if not n: return out
+def field(tag, wtype): return varint(tag &lt;&lt; 3 | wtype)
+def s(tag, v): v = v.encode(); return field(tag, 2) + varint(len(v)) + v
+# message Person { string name = 1; int32 age = 2; repeated string tags = 3; }
+pb = s(1, rec[&quot;name&quot;]) + field(2, 0) + varint(rec[&quot;age&quot;]) + b&quot;&quot;.join(s(3, t) for t in rec[&quot;tags&quot;])
+print(&quot;Protobuf&quot;, len(pb), &quot;字节&quot;, pb.hex(&quot; &quot;))
+
+# 旧代码读取新数据：遇到不认识的字段号 4，按线类型跳过
+new = pb + s(4, &quot;lin@example.com&quot;)
+i, known = 0, {}
+while i &lt; len(new):
+    key = new[i]; tag, wt = key &gt;&gt; 3, key &amp; 7; i += 1
+    if wt == 0: val = new[i]; i += 1
+    else: ln = new[i]; val = new[i+1:i+1+ln]; i += 1 + ln
+    if tag in (1, 2, 3): known.setdefault(tag, []).append(val)
+    else: print(f&quot;跳过未知字段 {tag}（线类型 {wt}）&quot;)
+print(&quot;旧代码读到的字段：&quot;, sorted(known))</pre><pre class="out">JSON     42 字节 b&#x27;{&quot;name&quot;:&quot;lin&quot;,&quot;age&quot;:30,&quot;tags&quot;:[&quot;db&quot;,&quot;go&quot;]}&#x27;
+Protobuf 15 字节 0a 03 6c 69 6e 10 1e 1a 02 64 62 1a 02 67 6f
+跳过未知字段 4（线类型 2）
+旧代码读到的字段： [1, 2, 3]</pre></div></div><div class="st"><span class="n">02</span><div><p>保存为 <code>av.py</code>：用旧的写者模式写入，用新的读者模式读取。</p><pre class="cmd">import io, fastavro
+w = {&quot;type&quot;: &quot;record&quot;, &quot;name&quot;: &quot;Person&quot;, &quot;fields&quot;: [
+      {&quot;name&quot;: &quot;name&quot;, &quot;type&quot;: &quot;string&quot;},
+      {&quot;name&quot;: &quot;age&quot;, &quot;type&quot;: &quot;int&quot;}]}
+r = {&quot;type&quot;: &quot;record&quot;, &quot;name&quot;: &quot;Person&quot;, &quot;fields&quot;: [          # 读者模式：新增字段带默认值
+      {&quot;name&quot;: &quot;name&quot;, &quot;type&quot;: &quot;string&quot;},
+      {&quot;name&quot;: &quot;email&quot;, &quot;type&quot;: [&quot;null&quot;, &quot;string&quot;], &quot;default&quot;: None}]}
+buf = io.BytesIO()
+fastavro.schemaless_writer(buf, fastavro.parse_schema(w), {&quot;name&quot;: &quot;lin&quot;, &quot;age&quot;: 30})
+data = buf.getvalue()
+print(len(data), &quot;字节&quot;, data.hex(&quot; &quot;))
+print(fastavro.schemaless_reader(io.BytesIO(data), fastavro.parse_schema(w), fastavro.parse_schema(r)))</pre><pre class="out">5 字节 06 6c 69 6e 3c
+{&#x27;name&#x27;: &#x27;lin&#x27;, &#x27;email&#x27;: None}</pre></div></div><div class="st"><span class="n">03</span><div><p>解读 Avro 的 5 个字节：<code>06</code> 是字符串长度 3（zigzag 编码，3 → 6），<code>6c 69 6e</code> 是 lin，<code>3c</code> 是 30 的 zigzag 编码 60。读者模式没有 age，所以它被丢弃；email 取默认值 null。</p></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计一次安全的模式演进</h3><p>订单消息当前的 Protobuf 定义：<code>message Order { int64 id = 1; string user = 2; double amount = 3; string status = 4; }</code>。需求：① 金额改为“分”为单位的整数，避免浮点误差；② 增加 <code>coupon_code</code>；③ <code>status</code> 改为枚举；④ <code>user</code> 改成 <code>user_id</code>（int64）。生产者和 6 个消费者服务无法同时升级。请给出新的定义和上线步骤。</p><details><summary>查看参考答案</summary><div><pre style="overflow-x:auto">message Order {
+  int64 id = 1;
+  string user = 2 [deprecated = true];   // 过渡期继续写
+  double amount = 3 [deprecated = true]; // 过渡期继续写
+  string status = 4 [deprecated = true]; // 过渡期继续写
+  int64 amount_cents = 5;
+  string coupon_code = 6;
+  OrderStatus status_enum = 7;
+  int64 user_id = 8;
+}
+enum OrderStatus { ORDER_STATUS_UNSPECIFIED = 0; CREATED = 1; PAID = 2; SHIPPED = 3; }</pre><ol><li>不能直接改字段 3、2、4 的类型：类型变化会让旧代码错误解析。一律用<b>新字段号</b>新增字段，旧字段先保留。</li><li>步骤 1：生产者同时写新旧字段（双写）。旧消费者只认识旧字段，不受影响；跳过未知字段。</li><li>步骤 2：逐个升级消费者，改为读新字段；读到旧数据（新字段缺失，值为 0/空）时回退读旧字段。</li><li>步骤 3：所有消费者升级完成、且旧消息已过保留期后，生产者停止写旧字段；把 2、3、4 标记为 <code>reserved 2, 3, 4; reserved "user", "amount", "status";</code>，防止被复用。</li><li>枚举第一个值必须是 0（未知/未指定），这样新增枚举值时，旧代码读到不认识的值会保留为未知值，而不是出错。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>两种兼容性</b>：<b>向后兼容</b>——新代码能读旧代码写的数据（通常容易，因为写新代码时知道旧格式）；<b>向前兼容</b>——旧代码能读新代码写的数据（更难，要求旧代码忽略不认识的部分）。滚动升级时新旧版本同时运行，两者都需要。</li><li><b>语言自带的序列化</b>（Java Serializable、Python pickle）：绑定一种语言，反序列化任意类可能导致远程代码执行，版本兼容性和效率都差。除了临时用途，不要用它们存储或传输数据。</li><li><b>JSON、XML、CSV</b>：人可读、跨语言，但有缺陷：数字精度含糊（大于 2<sup>53</sup> 的整数在 JavaScript 中会丢失精度，所以很多 API 用字符串传 ID）；不支持二进制（要 Base64，膨胀 33%）；模式可选（JSON Schema 能力强但复杂）；CSV 没有模式，转义规则含糊。二进制变体（MessagePack、BSON）只节省一点空间，因为字段名仍在每条记录里。</li><li><b>Protocol Buffers</b>：用模式定义每个字段的<b>字段号</b>和类型，编码中只出现字段号，不出现字段名。演进规则：可以随时增加新字段（新字段号），旧代码遇到不认识的字段号按线类型跳过（向前兼容）；新代码读旧数据时缺失的字段取默认值（向后兼容）；字段名可以改，<b>字段号不能改也不能复用</b>；删除字段时把字段号标记为 reserved。</li><li><b>Avro</b>：编码中既没有字段名也没有字段号，只是按模式顺序把值拼接起来，所以最紧凑。读取时需要<b>写者模式</b>（写数据时用的）和<b>读者模式</b>（应用期望的），Avro 按字段名对两者做解析：写者有读者没有的字段被忽略，读者有写者没有的字段取默认值。因此只能增删<b>有默认值</b>的字段。写者模式从哪来：大文件在文件头存一次；数据库记录带模式版本号；Kafka 消息带 Schema Registry 中的模式 ID（<a href="../kafka/l13.html">Kafka 第 13 课</a>）。Avro 不需要字段号，所以适合从数据库表结构<b>自动生成</b>模式。</li><li><b>模式的好处</b>：比 JSON 紧凑得多；模式本身就是始终最新的文档；可以在部署前用模式注册表检查兼容性；静态类型语言可以生成代码。它兼具“无模式”的灵活与“有模式”的可靠。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 10</div><a class="big" href="l10.html">数据流的模式：数据库、服务、工作流与事件 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l09.js"></script>
+</body></html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 10 课 · 数据流的模式：数据库、服务、工作流与事件</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 10 课</span><span class="sp"></span><a href="l09.html">← 第 9 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 10 课</div><h1>数据流的模式：数据库、服务、工作流与事件</h1>
+<p>第 5 章后半部分：编码后的数据从一个进程流向另一个进程，有几种基本方式。经过数据库（写入者与将来的读取者，“数据比代码活得久”）；经过服务调用（REST 与 RPC，以及 RPC 与本地调用的本质区别）；经过持久化执行与工作流引擎；经过消息与事件（消息代理、Actor）。每种方式下兼容性问题出现在不同的地方。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">旧代码写回丢失新字段</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：选择数据流方式</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">持久化执行</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">RPC 的不确定结果</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>旧代码写回丢失新字段</h2><div class="goal">经过数据库的数据流中最常见的兼容性陷阱。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：选择数据流方式</h2><div class="goal">对每个场景，选择最合适的数据流方式。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre-wrap"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>持久化执行</h2><div class="goal">崩溃后从中断处继续。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>RPC 的不确定结果</h2><div class="goal">超时后，请求到底执行了没有？</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">只需要 Python 3。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>保存为 <code>lose.py</code>：旧代码读出再写回，丢掉了新字段。</p><pre class="cmd">import json
+db = {&quot;u1&quot;: json.dumps({&quot;name&quot;: &quot;lin&quot;, &quot;email&quot;: &quot;lin@example.com&quot;})}   # 新版本写入，带 email
+
+class OldUser:                       # 旧版本的模型类：不知道 email
+    def __init__(self, d): self.name = d[&quot;name&quot;]
+    def to_dict(self): return {&quot;name&quot;: self.name}
+
+u = OldUser(json.loads(db[&quot;u1&quot;]))    # 旧代码读出、改名、写回
+u.name = &quot;Lin&quot;
+db[&quot;u1&quot;] = json.dumps(u.to_dict())
+print(&quot;旧代码写回后：&quot;, db[&quot;u1&quot;])
+
+def safe_update(raw, changes):        # 正确做法：保留不认识的字段
+    d = json.loads(raw); d.update(changes); return json.dumps(d)
+db[&quot;u2&quot;] = json.dumps({&quot;name&quot;: &quot;wang&quot;, &quot;email&quot;: &quot;w@example.com&quot;})
+db[&quot;u2&quot;] = safe_update(db[&quot;u2&quot;], {&quot;name&quot;: &quot;Wang&quot;})
+print(&quot;保留未知字段：&quot;, db[&quot;u2&quot;])</pre><pre class="out">旧代码写回后： {&quot;name&quot;: &quot;Lin&quot;}
+保留未知字段： {&quot;name&quot;: &quot;Wang&quot;, &quot;email&quot;: &quot;w@example.com&quot;}</pre></div></div><div class="st"><span class="n">02</span><div><p>在 PostgreSQL 中，只更新需要修改的列（而不是整行写回）可以避免这个问题。</p><pre class="cmd">docker exec pg psql -U postgres -c &quot;CREATE TABLE u(id int PRIMARY KEY, name text, email text); INSERT INTO u VALUES (1,&#x27;lin&#x27;,&#x27;lin@example.com&#x27;); UPDATE u SET name = &#x27;Lin&#x27; WHERE id = 1; SELECT * FROM u;&quot;</pre><pre class="out">CREATE TABLE
+INSERT 0 1
+UPDATE 1
+ id | name |      email
+----+------+-----------------
+  1 | Lin  | lin@example.com</pre></div></div><div class="st"><span class="n">03</span><div><p>保存为 <code>wf.py</code>：一个极简的持久化执行引擎。</p><pre class="cmd">import json, os
+JOURNAL = &quot;journal.json&quot;
+journal = json.load(open(JOURNAL)) if os.path.exists(JOURNAL) else {}
+
+def step(name, fn):
+    &quot;&quot;&quot;持久化执行：已完成的步骤直接返回记录的结果，不再执行&quot;&quot;&quot;
+    if name in journal:
+        print(f&quot;  {name}: 重放（{journal[name]}）&quot;); return journal[name]
+    result = fn()
+    journal[name] = result; json.dump(journal, open(JOURNAL, &quot;w&quot;))
+    print(f&quot;  {name}: 执行 → {result}&quot;); return result
+
+def charge():
+    return &quot;charge-ok&quot;
+def ship():
+    if not os.path.exists(&quot;crashed&quot;):           # 第一次运行时在这里崩溃
+        open(&quot;crashed&quot;, &quot;w&quot;).close(); raise SystemExit(&quot;  ship: 进程崩溃！&quot;)
+    return &quot;shipped&quot;
+
+print(&quot;运行工作流：&quot;)
+step(&quot;reserve&quot;, lambda: &quot;reserved&quot;)
+step(&quot;charge&quot;, charge)
+step(&quot;ship&quot;, ship)
+print(&quot;完成&quot;)</pre></div></div><div class="st"><span class="n">04</span><div><p>第一次运行：在 ship 步骤崩溃。</p><pre class="cmd">rm -f journal.json crashed; python3 wf.py</pre><pre class="out">运行工作流：
+  reserve: 执行 → reserved
+  charge: 执行 → charge-ok
+  ship: 进程崩溃！</pre></div></div><div class="st"><span class="n">05</span><div><p>再次运行：已完成的步骤被重放而不是重复执行，没有重复扣款。</p><pre class="cmd">python3 wf.py; cat journal.json</pre><pre class="out">运行工作流：
+  reserve: 重放（reserved）
+  charge: 重放（charge-ok）
+  ship: 执行 → shipped
+完成
+{&quot;reserve&quot;: &quot;reserved&quot;, &quot;charge&quot;: &quot;charge-ok&quot;, &quot;ship&quot;: &quot;shipped&quot;}</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>让一次支付调用可以安全重试</h3><p>订单服务通过 HTTP 调用支付服务 <code>POST /charges {order_id, amount}</code>，超时 2 秒后重试最多 3 次。线上发现极少数订单被扣款两次。请：① 解释重复扣款是如何发生的；② 设计幂等方案（接口与存储）；③ 说明为什么持久化执行框架也需要这个幂等键。</p><details><summary>查看参考答案</summary><div><ol><li>第一次请求在支付服务端已执行（扣款成功），但响应在网络中丢失或超过 2 秒才返回；订单服务认为失败并重试，支付服务把它当作新请求再扣一次。超时只说明“不知道结果”，不说明“失败了”。</li><li>客户端为每个逻辑操作生成一个<b>幂等键</b>（例如 <code>Idempotency-Key: order-1001-charge</code>，或直接用订单号），重试时使用同一个键。支付服务：<pre style="overflow-x:auto">CREATE TABLE charges(idem_key text PRIMARY KEY, order_id bigint, amount_cents bigint, status text, response jsonb);
+-- 在同一个事务中：
+INSERT INTO charges(idem_key, …) VALUES ($1, …) ON CONFLICT (idem_key) DO NOTHING RETURNING …;
+-- 插入成功 → 执行扣款并保存响应；冲突 → 返回已保存的响应</pre>还要校验同一个键的请求参数一致，键保留足够长的时间。</li><li>持久化执行只保证“步骤完成后不再执行”；如果在调用支付服务<b>之后</b>、记录结果<b>之前</b>崩溃，这一步会被再次执行。所以对外部系统的调用仍需幂等键（通常由框架提供稳定的步骤 ID 作为键）。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>经过数据库</b>：写入数据库就像给未来的自己发消息。滚动升级时，新代码写的数据可能被旧代码读取并<b>写回</b>——如果旧代码把记录解码成只认识部分字段的对象再整体写回，新字段就会丢失。要保留不认识的字段。<b>数据比代码活得久</b>：五年前写入的行仍按当年的格式存放，除非做迁移；添加带默认值的新列通常不需要重写旧数据。归档与导出（转成 Parquet 等）是一次性重新编码的好时机。</li><li><b>经过服务</b>：客户端与服务端独立部署，通常先升级服务端，所以请求需要向后兼容、响应需要向前兼容。REST 用 HTTP 的语义（URL、方法、状态码、缓存），常配 OpenAPI 描述；gRPC 用 Protobuf 定义接口。API 版本可以放在 URL、请求头中，或按 API 密钥记录版本。</li><li><b>RPC 不是本地调用</b>：网络请求可能丢失、超时（不知道对方是否执行了）、重试可能导致重复执行（需要幂等键）、延迟不可预测、参数要编码、两端可能是不同语言。把远程调用伪装成本地函数会掩盖这些问题——要显式处理它们。服务发现、负载均衡、超时与重试通常由服务网格或客户端库处理。</li><li><b>持久化执行与工作流</b>（Temporal、Restate 等）：把一个跨多个服务的业务流程写成普通代码，框架把每一步的结果记录到持久日志；进程崩溃后在另一台机器上重新执行代码，已完成的步骤直接返回记录的结果，从中断处继续。要求工作流代码是<b>确定性</b>的（不直接读时钟、随机数，这些也要经由框架记录），并且修改代码时要兼容正在运行的旧工作流。</li><li><b>事件驱动</b>：发送方把消息交给<b>消息代理</b>（Kafka、RabbitMQ），不需要知道接收方是谁、是否在线。好处：缓冲接收方的不可用与过载、自动重投、一条消息可以发给多个订阅者、发送方与接收方解耦。消息是单向的，需要回复时用另一个通道。<b>Actor 模型</b>把逻辑封装为各自处理消息的 Actor，分布式 Actor 框架（Akka、Orleans）在节点间透明地传递消息，滚动升级时同样要考虑消息格式的兼容。</li><li>四种模式都在后面的课程中展开：复制（第 11 课起）本质是经过日志的数据流，第 26 课讲基于日志的消息代理，第 27 课讲用数据流组织整个应用。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 11</div><a class="big" href="l11.html">单主复制 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l10.js"></script>
+</body></html>
