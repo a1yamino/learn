@@ -1,0 +1,63 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka 第 20 课 · 运维：分区重分配、扩容与升级</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kafka</a><span class="crumb">第 20 课</span><span class="sp"></span><a href="l19.html">← 第 19 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kafka · 第 20 课</div><h1>运维：分区重分配、扩容与升级</h1>
+<p>Kafka 集群不会自动把数据挪到新机器上。本课讲日常运维中最常做、也最容易出事故的几件事：用 kafka-reassign-partitions 移动副本并限制复制带宽、扩容和下线 Broker、增加副本因子、首选 Leader 均衡、滚动重启，以及从 3.x 升级到 4.x 的步骤与 metadata.version。约 65 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次副本移动</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：限流值的选择</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">滚动升级</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次副本移动</h2><div class="goal">把 orders-0 的副本从 Broker 3 移到新的 Broker 4。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：限流值的选择</h2><div class="goal">分区共 600 GB，写入 40 MB/s，网络在业务流量之外还有约 150 MB/s 空闲。选择限流值。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>滚动升级</h2><div class="goal">一次一台，每一步确认健康。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">重分配与运维工具。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">三节点集群（第 2 课），在 k1 中 cd /opt/kafka; B="--bootstrap-server k1:19092"。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建一个只在 k1、k2 上的主题（副本因子 2）。</p><pre class="cmd">bin/kafka-topics.sh $B --create --topic move --replica-assignment 1:2,2:1
+bin/kafka-producer-perf-test.sh --topic move --num-records 200000 --record-size 500 --throughput -1 --producer-props bootstrap.servers=k1:19092</pre><pre class="out">Created topic move.
+…</pre></div></div><div class="st"><span class="n">02</span><div><p>写一个重分配方案：把分区 0 从 1,2 改为 3,2；分区 1 增加第三个副本。</p><pre class="cmd">cat &gt; /tmp/plan.json &lt;&lt;&#x27;X&#x27;
+{&quot;version&quot;:1,&quot;partitions&quot;:[
+ {&quot;topic&quot;:&quot;move&quot;,&quot;partition&quot;:0,&quot;replicas&quot;:[3,2]},
+ {&quot;topic&quot;:&quot;move&quot;,&quot;partition&quot;:1,&quot;replicas&quot;:[2,1,3]}]}
+X</pre><pre class="out">（保存文件）</pre></div></div><div class="st"><span class="n">03</span><div><p>带限流执行。</p><pre class="cmd">bin/kafka-reassign-partitions.sh $B --reassignment-json-file /tmp/plan.json --execute --throttle 10000000</pre><pre class="out">Current partition replica assignment
+{&quot;version&quot;:1,&quot;partitions&quot;:[…]}
+Save this to use as the --reassignment-json-file option during rollback
+Warning: You must run --verify periodically, until the reassignment completes, to ensure the throttle is removed.
+Successfully started partition reassignments for move-0,move-1</pre></div></div><div class="st"><span class="n">04</span><div><p>查看进度。</p><pre class="cmd">bin/kafka-reassign-partitions.sh $B --reassignment-json-file /tmp/plan.json --verify</pre><pre class="out">Status of partition reassignment:
+Reassignment of partition move-0 is completed.
+Reassignment of partition move-1 is completed.
+
+Clearing broker-level throttles on brokers 1,2,3
+Clearing topic-level throttles on topic move</pre></div></div><div class="st"><span class="n">05</span><div><p>确认结果。</p><pre class="cmd">bin/kafka-topics.sh $B --describe --topic move</pre><pre class="out">	Topic: move	Partition: 0	Leader: 3	Replicas: 3,2	Isr: 2,3
+	Topic: move	Partition: 1	Leader: 2	Replicas: 2,1,3	Isr: 2,1,3</pre></div></div><div class="st"><span class="n">06</span><div><p>为所有主题生成一个包含全部三台 Broker 的均衡建议（只看，不执行）。</p><pre class="cmd">echo &#x27;{&quot;version&quot;:1,&quot;topics&quot;:[{&quot;topic&quot;:&quot;move&quot;},{&quot;topic&quot;:&quot;orders&quot;}]}&#x27; &gt; /tmp/t.json
+bin/kafka-reassign-partitions.sh $B --topics-to-move-json-file /tmp/t.json --broker-list 1,2,3 --generate</pre><pre class="out">Current partition replica assignment
+…
+Proposed partition reassignment configuration
+{&quot;version&quot;:1,&quot;partitions&quot;:[…]}</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>规划一次扩容</h3><p>集群有 6 台 Broker，每台磁盘使用 85%，500 个主题共 6000 个分区，峰值写入 300 MB/s。计划加 3 台新 Broker。写出完整步骤：准备新节点、生成和分批执行方案、限流值、监控指标、回滚方式，以及完成后如何确认负载已均衡。</p><details><summary>查看参考答案</summary><div><ol><li><b>准备</b>：新节点使用相同版本和配置（<code>broker.rack</code> 正确设置），启动并确认注册成功（<code>kafka-broker-api-versions.sh</code> 或元数据中可见），此时它们没有任何副本。</li><li><b>方案</b>：用 Cruise Control 按磁盘和网络负载生成方案，或用 <code>--generate</code> 生成后手动挑选：优先移动大分区、来自磁盘最满的 Broker 的副本；保持机架感知（每个分区的副本仍在不同机架）。目标是移动约 1/3 的副本。</li><li><b>分批执行</b>：每批 50–100 个分区，<code>--throttle</code> 例如 80 MB/s（总复制速率 = 限流值 × 参与的 Broker，需远大于这些分区的写入速率，又留出业务带宽），在低峰时段执行；每批 <code>--verify</code> 直至完成并清除限流，再开始下一批。</li><li><b>监控</b>：<code>UnderReplicatedPartitions</code>（重分配中的副本会短暂计入）、Produce/Fetch 的 P99 延迟、网络与磁盘利用率、<code>ReassigningPartitions</code> 计数、消费者 LAG。延迟明显上升时降低限流（重新执行 <code>--execute</code> 并带新的 <code>--throttle</code> 可以调整）。</li><li><b>回滚</b>：执行时输出的“当前分配”保存下来，必要时 <code>--cancel</code> 取消进行中的重分配，或用保存的 JSON 反向执行。</li><li><b>确认</b>：各 Broker 的磁盘使用率、分区数、Leader 数接近；运行首选 Leader 选举；观察一天的峰值流量下各 Broker 的网络与请求处理线程空闲率是否均衡。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>新加入的 Broker <b>不会</b>自动获得已有分区，只会在新建主题时被分配副本。要让它分担负载，必须<b>重分配</b>：把某些分区的副本从旧 Broker 移到新 Broker。</li><li><code>kafka-reassign-partitions.sh</code>：<code>--generate</code> 根据主题列表和目标 Broker 生成一个建议方案（只是均匀，不考虑实际负载）；<code>--execute</code> 执行 JSON 中的方案；<code>--verify</code> 检查完成情况并移除限流。执行时新副本作为 Follower 从头复制，追上后加入 ISR，再移除旧副本。</li><li>复制会和正常流量争抢网络与磁盘。执行时用 <code>--throttle 50000000</code>（字节/秒）限制复制速率，完成后 <code>--verify</code> 清除限流；限流太低可能永远追不上写入速度。一次只移动一批分区，并在业务低峰进行。可以用 <code>--cancel</code> 取消进行中的重分配。</li><li><b>下线 Broker</b>：先把它上面的所有副本重分配到其他 Broker，确认没有副本后再停止；在 KRaft 中最后用 <code>kafka-cluster.sh unregister</code> 注销。<b>增加副本因子</b>同样通过重分配：在方案中为分区列出更多副本。大规模集群通常使用 Cruise Control 按实际负载自动生成方案。</li><li><b>滚动重启</b>：一次一台；Broker 受控关闭时会先把 Leader 迁走（<code>controlled.shutdown.enable</code>，默认开启）；重启后等它的副本全部回到 ISR（<code>UnderReplicatedPartitions</code> 回到 0）再处理下一台；最后运行首选 Leader 选举或依赖 <code>auto.leader.rebalance.enable</code> 恢复均衡。</li><li><b>升级到 4.x</b>：ZooKeeper 集群必须先在 3.x（推荐 3.9）完成迁移到 KRaft；客户端和 Streams 也要检查兼容性（4.0 移除了旧版本消息格式和一些过时的 API/配置，要求客户端至少 2.1）。步骤：逐台升级控制器，再逐台升级 Broker（滚动、每台确认健康）；全部完成并观察一段时间后，再用 <code>kafka-features.sh upgrade --metadata 4.4</code> 提升 <code>metadata.version</code>——提升后无法简单降级。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 21</div><a class="big" href="l21.html">Outbox 模式与 CDC →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l20.js"></script>
+</body></html>
