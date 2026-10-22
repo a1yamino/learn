@@ -17,7 +17,7 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
  {t:'两次往返',p:'客户端先 GET 再 DECRBY：两个请求的 GET 可能都在任一 DECRBY 之前执行。',set:{s:[0,0],a:[150,0],b:[150,60],r1:[0,120]}},
  {t:'一个脚本',p:'把读、判断、写放进一个脚本，Redis 单线程执行它，期间不会有别的命令插入。',d:4200,set:{s:[0,0,B('stock','2','ok',110)],a:[150,0],b:[150,60],r2:[0,120]}}]});
 Term(document.getElementById('t4'),[
-['SCRIPT EXISTS a5260dd66ce02462c5b5231c727b3f7772c0bcc5','1) (integer) 1','脚本是否在缓存中。'],
+['SCRIPT EXISTS 620cd258c2c9c88c9d10db67812ccf663d96bdc6','1) (integer) 1','脚本是否在缓存中。'],
 ['FUNCTION LIST','1) 1) "library_name"\n   2) "shop"\n   …','列出已加载的函数库。'],
 ['FUNCTION DUMP','"\\xf5\\xc3@…"','导出函数库，可用 FUNCTION RESTORE 迁移。'],
 ['SCRIPT KILL','OK','终止一个还没有写入的长时间脚本。'],

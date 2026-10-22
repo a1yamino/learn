@@ -55,17 +55,29 @@ OK
 OK
 QUEUED
 (nil)</pre></div></div><div class="st"><span class="n">04</span><div><p>Lua：库存足够才扣减。</p><pre class="cmd">EVAL &quot;local s=tonumber(redis.call(&#x27;GET&#x27;,KEYS[1])) if s and s&gt;=tonumber(ARGV[1]) then return redis.call(&#x27;DECRBY&#x27;,KEYS[1],ARGV[1]) end return -1&quot; 1 stock 3</pre><pre class="out">(integer) 96</pre></div></div><div class="st"><span class="n">05</span><div><p>缓存脚本并用 SHA 调用。</p><pre class="cmd">SCRIPT LOAD &quot;return redis.call(&#x27;GET&#x27;,KEYS[1])&quot;
-EVALSHA a5260dd66ce02462c5b5231c727b3f7772c0bcc5 1 stock</pre><pre class="out">&quot;a5260dd66ce02462c5b5231c727b3f7772c0bcc5&quot;
+EVALSHA 620cd258c2c9c88c9d10db67812ccf663d96bdc6 1 stock</pre><pre class="out">&quot;620cd258c2c9c88c9d10db67812ccf663d96bdc6&quot;
 &quot;96&quot;</pre></div></div><div class="st"><span class="n">06</span><div><p>Functions：加载一个库并调用。</p><pre class="cmd">FUNCTION LOAD &quot;#!lua name=shop
 redis.register_function(&#x27;take&#x27;, function(k,a) local s=tonumber(redis.call(&#x27;GET&#x27;,k[1]) or 0) if s&lt;tonumber(a[1]) then return -1 end return redis.call(&#x27;DECRBY&#x27;,k[1],a[1]) end)&quot;
 FCALL take 1 stock 5</pre><pre class="out">&quot;shop&quot;
-(integer) 91</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一个原子的“转账”脚本</h3><p>两个账户余额存在 <code>acct:{u1}</code> 和 <code>acct:{u2}</code>（字符串）。写一个 Lua 脚本：从 KEYS[1] 转 ARGV[1] 到 KEYS[2]，余额不足返回错误，不能出现负数；说明为什么键名里用了花括号，以及为什么用 MULTI/EXEC 做不到同样的事。</p><details><summary>查看参考答案</summary><div><pre>local amt = tonumber(ARGV[1])
-if not amt or amt &lt;= 0 then return redis.error_reply("bad amount") end
-local bal = tonumber(redis.call("GET", KEYS[1]) or "0")
+(integer) 91</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一个原子的“转账”脚本</h3><p>两个账户余额存在 <code>acct:{ledger}:u1</code> 和 <code>acct:{ledger}:u2</code>（字符串）。写一个 Lua 脚本：从 KEYS[1] 转 ARGV[1] 到 KEYS[2]，余额不足返回错误，不能出现负数；说明为什么键名里用了花括号，以及为什么用 MULTI/EXEC 做不到同样的事。</p><details><summary>查看参考答案</summary><div><pre>local max = 9007199254740991  -- 示例只接受 53 位内的非负整数
+local function integer(s)
+  if not s or not string.match(s, "^%d+$") then return nil end
+  if s ~= "0" and string.sub(s, 1, 1) == "0" then return nil end
+  local n = tonumber(s)
+  if n &gt; max then return nil end
+  return n
+end
+local amt = integer(ARGV[1])
+local bal = integer(redis.call("GET", KEYS[1]) or "0")
+local dest = integer(redis.call("GET", KEYS[2]) or "0")
+if KEYS[1] == KEYS[2] or not amt or amt == 0 or not bal or not dest then
+  return redis.error_reply("bad account or amount")
+end
 if bal &lt; amt then return redis.error_reply("insufficient") end
-redis.call("DECRBY", KEYS[1], amt)
-redis.call("INCRBY", KEYS[2], amt)
-return bal - amt</pre><p>调用：<code>EVAL "…" 2 acct:{u1} acct:{u2} 30</code>。所有检查都在第一次写之前完成，脚本中途不会因余额问题留下半个转账。花括号是哈希标签：Cluster 只用 <code>{}</code> 里的部分计算槽，保证两个键在同一节点，否则脚本报 CROSSSLOT（第 15 课）。（实际中两个用户 ID 不同，需要把账户按同一个标签分组，或在应用层用其他方式保证。）MULTI/EXEC 里的命令在 EXEC 时才执行，无法根据余额决定是否扣减；用 WATCH 可以实现，但冲突时要重试，而脚本一次往返就完成。</p></div></details></div>
+if dest &gt; max - amt then return redis.error_reply("balance overflow") end
+redis.call("DECRBY", KEYS[1], ARGV[1])
+redis.call("INCRBY", KEYS[2], ARGV[1])
+return bal - amt</pre><p>调用：<code>EVAL "…" 2 acct:{ledger}:u1 acct:{ledger}:u2 30</code>。示例先读取两边余额并校验金额、整数格式和目标上限，避免目标账户类型错误、非整数或溢出造成先扣后报错。Lua 原子执行不等于出错会回滚；生产账户还需持久化账本和幂等约束。花括号是哈希标签：Cluster 只用 <code>{}</code> 里的部分计算槽，保证两个键在同一节点，否则脚本报 CROSSSLOT（第 15 课）。本例两键共享标签 <code>{ledger}</code>；不能把不同用户 ID 分别放进标签后误以为同槽。集中所有账户也会造成热点，应按业务选择账本分组或数据库事务。MULTI/EXEC 里的命令在 EXEC 时才执行，无法根据余额决定是否扣减；用 WATCH 可以实现，但冲突时要重试，而脚本一次往返就完成。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
