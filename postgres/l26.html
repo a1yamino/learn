@@ -75,19 +75,24 @@ BEGIN
   RETURN v_order;
 END $$;
 ALTER FUNCTION shop.place_order OWNER TO shop_owner;</pre><pre class="out">CREATE FUNCTION
-ALTER FUNCTION</pre></div></div><div class="st"><span class="n">05</span><div><p>造数据并并发压测：库存不会变成负数。</p><pre class="cmd">INSERT INTO shop.users (email) SELECT &#x27;u&#x27; || i || &#x27;@x.com&#x27; FROM generate_series(1, 10000) i;
+ALTER FUNCTION</pre></div></div><div class="st"><span class="n">05</span><div><p>造数据后执行恰好 100 次并发下单（20 个客户端各 5 次，每单 1 件），再单独验证第 101 次因库存不足失败。示例只验证行为，不预设 TPS。</p><pre class="cmd">INSERT INTO shop.users (email) SELECT &#x27;u&#x27; || i || &#x27;@x.com&#x27; FROM generate_series(1, 10000) i;
 INSERT INTO shop.products (name, price_cents, stock) VALUES (&#x27;hot item&#x27;, 9900, 100);
 \! echo &quot;SELECT shop.place_order((random()*9999+1)::bigint, 1, 1);&quot; &gt; /tmp/order.sql
-\! pgbench -n -c 20 -T 10 -f /tmp/order.sql shop2 2&gt;&amp;1 | grep -E &quot;tps|failed&quot;
+\! pgbench -U postgres -n -c 20 -t 5 -f /tmp/order.sql shop2
 SELECT stock FROM shop.products WHERE id = 1;
-SELECT count(*) FROM shop.orders;</pre><pre class="out">number of failed transactions: 0 (0.000%)
-tps = 2210.4
+SELECT count(*) FROM shop.orders;
+-- 库存耗尽后的第 101 次下单应失败，整条函数调用回滚
+SELECT shop.place_order(1, 1, 1);
+SELECT stock FROM shop.products WHERE id = 1;
+SELECT count(*) FROM shop.orders;</pre><pre class="out">number of transactions actually processed: 100/100
  stock
 -------
      0
  count
 -------
-   100</pre></div></div><div class="st"><span class="n">06</span><div><p>上线前自查：外键列是否都有索引、是否有从未使用的索引。</p><pre class="cmd">SELECT c.conrelid::regclass, a.attname FROM pg_constraint c
+   100
+ERROR:  out of stock
+-- 失败后库存仍为 0，订单数仍为 100。</pre></div></div><div class="st"><span class="n">06</span><div><p>上线前自查：外键列是否都有索引、是否有从未使用的索引。</p><pre class="cmd">SELECT c.conrelid::regclass, a.attname FROM pg_constraint c
 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
 WHERE c.contype = &#x27;f&#x27; AND NOT EXISTS (
   SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indkey[0] = c.conkey[1]);</pre><pre class="out"> conrelid | attname
