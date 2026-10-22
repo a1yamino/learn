@@ -1,0 +1,156 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 21 课 · hooks、技能与插件</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 21 课</span><span class="sp"></span><a href="l20.html">← 第 20 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 21 课</div><h1>hooks、技能与插件</h1>
+<p>pi 只有一种扩展：TypeScript 扩展，在进程内注册工具、命令与事件钩子（第 15 课）。Codex 把扩展拆成三种<b>进程外</b>、以文件声明的机制：<b>hooks</b>——在 14 个生命周期事件上运行外部命令，可以拦截工具调用；<b>技能</b>——一个目录加一个 <code>SKILL.md</code>，只把名称与描述放进开发者消息，正文由模型按需读取；<b>插件</b>——把技能、hooks、MCP 服务器打成一个可从市场安装的包。本课用一个 Python 钩子拦截 <code>rm</code>，再放一个仓库级技能，看它出现在请求中。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次被拦截的调用</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：钩子会运行吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次被拦截的调用</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：钩子会运行吗？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/protocol/src/protocol.rs#L1699-L1714" target="_blank" rel="noopener">codex-rs/protocol/src/protocol.rs  L1699–1714 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub enum HookEventName {
+    PreToolUse,
+    PermissionRequest,
+    PostToolUse,
+    PreCompact,
+    PostCompact,
+    SessionStart,
+    SessionEnd,
+    UserPromptSubmit,
+    SubagentStart,
+    SubagentStop,
+    Stop,
+    Interrupt,
+    PreModelRequest,
+    PostModelRequest,
+}</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/hooks/src/engine/discovery.rs#L378-L384" target="_blank" rel="noopener">codex-rs/hooks/src/engine/discovery.rs  L378–384 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">fn load_hooks_json(
+    config_folder: Option&lt;&amp;Path&gt;,
+    warnings: &amp;mut Vec&lt;String&gt;,
+) -&gt; Option&lt;(AbsolutePathBuf, HookEventsToml)&gt; {
+    let source_path = config_folder?.join(&quot;hooks.json&quot;);
+    if !source_path.as_path().is_file() {
+        return None;</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/hooks/src/events/pre_tool_use.rs#L213-L215" target="_blank" rel="noopener">codex-rs/hooks/src/events/pre_tool_use.rs  L213–215, L262–277 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">None =&gt; match run_result.exit_code {
+    Some(0) =&gt; {
+        let trimmed_stdout = run_result.stdout.trim();
+  // …
+Some(2) if handler.can_apply_control_effects() =&gt; {
+    if let Some(reason) = common::trimmed_non_empty(&amp;run_result.stderr) {
+        status = HookRunStatus::Blocked;
+        should_block = true;
+        block_reason = Some(reason.clone());
+        entries.push(HookOutputEntry {
+            kind: HookOutputEntryKind::Feedback,
+            text: reason,
+        });
+    } else {
+        status = HookRunStatus::Failed;
+        entries.push(HookOutputEntry {
+            kind: HookOutputEntryKind::Error,
+            text: &quot;PreToolUse hook exited with code 2 but did not write a blocking reason to stderr&quot;.to_string(),
+        });
+    }</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/ext/skills/src/host_roots.rs#L95-L113" target="_blank" rel="noopener">codex-rs/ext/skills/src/host_roots.rs  L95–113 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">ConfigLayerSource::User { .. } =&gt; {
+    // Deprecated user skills location (`$CODEX_HOME/skills`), kept for backward
+    // compatibility.
+    roots.push(local_root(
+        config_folder.join(SKILLS_DIR_NAME),
+        SkillScope::User,
+    ));
+
+    if let Some(home_dir) = home_dir {
+        roots.push(local_root(
+            home_dir.join(AGENTS_DIR_NAME).join(SKILLS_DIR_NAME),
+            SkillScope::User,
+        ));
+    }
+
+    roots.push(local_root(
+        system_cache_root_dir(&amp;config_folder),
+        SkillScope::System,
+    ));</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l15.html">pi 第 15 课 · 扩展系统：工具、命令与事件钩子</a>。pi 的扩展在进程内、权限等同 pi 本身；Codex 的钩子是外部进程，并且要先被信任。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>钩子脚本。</p><pre class="cmd">cat &gt; codex/scratch/guard.py &lt;&lt;&#x27;EOF&#x27;
+# PreToolUse 钩子：stdin 收到事件 JSON；命令中含 rm 就以退出码 2 阻止（原因写到 stderr）
+import json, sys
+e = json.load(sys.stdin)
+cmd = json.dumps(e.get(&quot;tool_input&quot;), ensure_ascii=False)
+print(f&quot;[hook] {e[&#x27;hook_event_name&#x27;]} tool_name={e[&#x27;tool_name&#x27;]} input={cmd}&quot;, file=open(&quot;/tmp/hook.log&quot;, &quot;a&quot;))
+if &quot;rm &quot; in cmd:
+    print(&quot;禁止删除文件：请改用 git rm 并说明理由&quot;, file=sys.stderr); sys.exit(2)
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>剧本：先 echo 再 rm。</p><pre class="cmd">cat &gt; codex/scratch/s_hook.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：先 echo，再 rm；把每次的工具输出报告出来
+def reply(n, body):
+    outs = [i[&quot;output&quot;] for i in body[&quot;input&quot;] if i.get(&quot;type&quot;) == &quot;function_call_output&quot;]
+    if n &gt; 1: print(f&quot;[mock] 工具输出：{str(outs[-1])[:80]!r}&quot;, flush=True)
+    if n == 1: return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;echo hi&quot;}, &quot;c1&quot;)]
+    if n == 2: return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;rm -rf data&quot;}, &quot;c2&quot;)]
+    return [msg(&quot;好的&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>三个实验。</p><pre class="cmd">cat &gt; codex/scratch/l21.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 两种扩展点：PreToolUse 钩子（拦截工具调用）与技能（SKILL.md 进入开发者消息）
+S=$(pwd); export CODEX_HOME=$(mktemp -d); R=$(mktemp -d); cd $R; git init -q; mkdir data; rm -f /tmp/hook.log
+cat &gt; $CODEX_HOME/hooks.json &lt;&lt;JSON
+{&quot;hooks&quot;: {&quot;PreToolUse&quot;: [{&quot;matcher&quot;: &quot;.*&quot;, &quot;hooks&quot;: [{&quot;type&quot;: &quot;command&quot;, &quot;command&quot;: &quot;python3 $S/guard.py&quot;}]}]}}
+JSON
+mkdir -p .agents/skills/commit-msg
+cat &gt; .agents/skills/commit-msg/SKILL.md &lt;&lt;&#x27;MD&#x27;
+---
+name: commit-msg
+description: 按团队规范写提交信息（类型: 摘要），在用户要求提交时使用
+---
+1. 运行 git diff --staged 查看改动
+2. 第一行格式：feat|fix|docs: 不超过 50 字的摘要
+MD
+echo &quot;== 1. 未信任的钩子：不运行&quot;
+bash $S/run.sh $S/s_hook.py &quot;清理&quot; 2&gt;/dev/null &gt;/dev/null; echo &quot;   hook.log：$(cat /tmp/hook.log 2&gt;/dev/null || echo 无)&quot;
+echo &quot;== 2. --dangerously-bypass-hook-trust：钩子运行&quot;
+bash $S/run.sh $S/s_hook.py --dangerously-bypass-hook-trust &quot;清理&quot; 2&gt;/dev/null | grep &#x27;^\[mock\]&#x27;
+cat /tmp/hook.log; echo &quot;   data 目录还在吗：$(ls -d data 2&gt;/dev/null || echo 不在)&quot;
+echo &quot;== 3. 技能出现在第 2 条 developer 消息中（根目录表 + 条目）&quot;
+python3 - $CODEX_HOME/requests/req01.json &lt;&lt;&#x27;PY&#x27;
+import json, sys; t = json.load(open(sys.argv[1]))[&quot;body&quot;][&quot;input&quot;][1][&quot;content&quot;][0][&quot;text&quot;]
+print(&quot;\n&quot;.join(&quot;   &quot; + l for l in t.splitlines() if &quot;commit-msg&quot; in l or l.startswith(&quot;- `r&quot;)))
+PY
+EOF
+cd codex/scratch &amp;&amp; bash l21.sh</pre><pre class="out">== 1. 未信任的钩子：不运行
+   hook.log：无
+== 2. --dangerously-bypass-hook-trust：钩子运行
+[mock] 工具输出：&#x27;Chunk ID: 0618f2\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal t&#x27;
+[mock] 工具输出：&#x27;Command blocked by PreToolUse hook: 禁止删除文件：请改用 git rm 并说明理由. Command: rm -rf dat&#x27;
+[hook] PreToolUse tool_name=Bash input={&quot;command&quot;: &quot;echo hi&quot;}
+[hook] PreToolUse tool_name=Bash input={&quot;command&quot;: &quot;rm -rf data&quot;}
+   data 目录还在吗：data
+== 3. 技能出现在第 2 条 developer 消息中（根目录表 + 条目）
+   - `r0` = `/home/box/.agents/skills`
+   - `r1` = `/tmp/tmp.MAFErmb9x9/skills/.system`
+   - `r2` = `/tmp/tmp.Kstkp9bHSj/.agents/skills`
+   - commit-msg: 按团队规范写提交信息（类型: 摘要），在用户要求提交时使用 (file: r2/commit-msg/SKILL.md)</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用 JSON 而不是退出码</h3><p>把 <code>guard.py</code> 改为退出码 0，并在 stdout 输出 Claude Code 风格的 JSON 决定：<code>{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"…"}}</code>。效果相同吗？去 <code>hooks/src/engine/output_parser.rs</code> 找到解析它的函数。</p><details><summary>查看参考答案</summary><div><p>效果相同：退出码 0 时，<code>pre_tool_use.rs</code> 调用 <code>output_parser::parse_pre_tool_use(&amp;run_result.stdout)</code>，解析出的 <code>block_reason</code> 与退出码 2 + stderr 走同一条阻止路径；格式不合法时得到 <code>invalid_reason</code>，作为一条错误条目显示而不阻止。JSON 方式的好处是可以同时返回 <code>systemMessage</code>（显示给用户）与 <code>additionalContext</code>（追加给模型）等字段。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>事件</b>（<code>protocol.rs</code> 的 <code>HookEventName</code>）：PreToolUse、PermissionRequest、PostToolUse、Pre/PostCompact、SessionStart/End、UserPromptSubmit、SubagentStart/Stop、Stop、Interrupt、Pre/PostModelRequest。处理器类型：command、mcp_tool、prompt、agent。</li><li><b>声明位置</b>（<code>hooks/src/engine/discovery.rs</code>）：每个配置层目录下的 <code>hooks.json</code>，或 config.toml 中的同构配置；插件包中的 <code>hooks/hooks.json</code>。两者规范化后计算同一个哈希作为信任身份。</li><li><b>信任</b>：钩子会在你的机器上执行任意命令，所以未经信任（未记录其哈希）的钩子<b>不运行</b>——实验 1 中 hook.log 为空。交互界面中可审阅并信任；实验用 <code>--dangerously-bypass-hook-trust</code> 跳过。</li><li><b>协议</b>（与 Claude Code 风格兼容）：stdin 收到事件 JSON（<code>hook_event_name</code>、<code>tool_name</code>、<code>tool_input</code>…；shell 工具的名字是 <code>Bash</code>）；退出码 0 时可在 stdout 返回 JSON 控制结果；PreToolUse 以<b>退出码 2</b> 阻止调用，stderr 作为原因，模型收到 “Command blocked by PreToolUse hook: 原因”。</li><li><b>技能</b>：根目录按层收集（<code>ext/skills/src/host_roots.rs</code>）：仓库内从项目根到 cwd 的 <code>.agents/skills</code>、<code>~/.agents/skills</code>、旧位置 <code>$CODEX_HOME/skills</code>、系统缓存 <code>skills/.system</code>、管理员目录。开发者消息中给出根目录表 <code>r0/r1/r2…</code> 和每个技能的“名称: 描述 (file: rN/…/SKILL.md)”——<b>渐进披露</b>，正文不预先加载。</li><li><b>插件</b>：<code>codex plugin add/list/remove/marketplace</code>；插件钩子的信任还绑定插件内容哈希（<code>plugin_fingerprint.rs</code>），内容变了需要重新信任。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 22</div><a class="big" href="l22.html">TUI 与配置 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l21.js"></script>
+</body></html>
