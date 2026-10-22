@@ -1,0 +1,64 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 23 课 · 可观测性与调优：延迟、内存与慢日志</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 23 课</span><span class="sp"></span><a href="l22.html">← 第 22 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 23 课</div><h1>可观测性与调优：延迟、内存与慢日志</h1>
+<p>Redis 出问题时通常表现为“变慢了”或“内存满了”。本课建立一套排查方法：需要监控哪些指标、如何用 SLOWLOG、LATENCY 和 --latency 定位延迟来源，如何从 INFO memory 和 MEMORY DOCTOR 分析内存，以及常见的操作系统层面配置（透明大页、overcommit、swap）。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">延迟从哪里来</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：根据现象判断原因</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">相关命令</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>延迟从哪里来</h2><div class="goal">一条请求经过的各个环节。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：根据现象判断原因</h2><div class="goal">选择一个现象，看应该查什么、可能的原因。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>相关命令</h2><div class="goal">诊断工具一览。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>在你的电脑上练习</h2><div class="goal">在 redis-cli 中。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>把慢日志阈值调到 1 毫秒并制造一条慢命令。</p><pre class="cmd">CONFIG SET slowlog-log-slower-than 1000
+DEBUG SLEEP 0.05
+SLOWLOG GET 1</pre><pre class="out">OK
+OK
+1) 1) (integer) 0
+   2) (integer) 1761118800
+   3) (integer) 50123
+   4) 1) &quot;DEBUG&quot;
+      2) &quot;SLEEP&quot;
+      3) &quot;0.05&quot;
+   5) &quot;172.17.0.1:53122&quot;
+   6) &quot;&quot;</pre></div></div><div class="st"><span class="n">02</span><div><p>开启延迟监控并查看事件。</p><pre class="cmd">CONFIG SET latency-monitor-threshold 10
+DEBUG SLEEP 0.05
+LATENCY LATEST</pre><pre class="out">OK
+OK
+1) 1) &quot;command&quot;
+   2) (integer) 1761118810
+   3) (integer) 50
+   4) (integer) 50</pre></div></div><div class="st"><span class="n">03</span><div><p>让 Redis 分析延迟。</p><pre class="cmd">LATENCY DOCTOR</pre><pre class="out">Dave, I have observed latency spikes in this Redis instance…
+1. command: 1 latency spikes (average 50ms, mean deviation 0ms…)
+…</pre></div></div><div class="st"><span class="n">04</span><div><p>测量往返延迟（在宿主机终端）。</p><pre class="cmd">docker exec redis redis-cli --latency -i 1</pre><pre class="out">min: 0, max: 1, avg: 0.11 (98 samples)</pre></div></div><div class="st"><span class="n">05</span><div><p>内存概况与建议。</p><pre class="cmd">INFO memory
+MEMORY DOCTOR</pre><pre class="out">used_memory_human:1.05M
+used_memory_rss_human:9.80M
+mem_fragmentation_ratio:9.32
+…
+Hi Sam, this instance is empty or is using very little memory, my issues detector can&#x27;t be used in these conditions…</pre></div></div><div class="st"><span class="n">06</span><div><p>查看客户端的缓冲区占用。</p><pre class="cmd">CLIENT LIST</pre><pre class="out">id=5 addr=172.17.0.1:53122 … qbuf=26 … omem=0 tot-mem=22426 … cmd=client|list</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>排查一次延迟抖动</h3><p>线上 Redis（24 GB 数据，开启 AOF everysec 和每小时 RDB，运行在云虚拟机上）每隔约一小时出现 P99 从 1 ms 升到 300 ms、持续几秒的抖动，其余时间正常。SLOWLOG 里没有超过 10 ms 的命令。写出你的排查步骤、最可能的原因和修复方法。</p><details><summary>查看参考答案</summary><div><ol><li>SLOWLOG 没有慢命令，说明不是某条命令执行慢，而是主线程被别的事情阻塞或请求在排队。周期约一小时，与 RDB 的 <code>save 3600 …</code> 吻合。</li><li>验证：<code>INFO stats</code> 中 <code>latest_fork_usec</code>（24 GB 在虚拟机上 fork 可能数百毫秒）；<code>LATENCY LATEST</code> 中的 <code>fork</code>、<code>aof-fsync-always</code>/<code>aof-write-pending-fsync</code> 事件；同时检查透明大页是否开启、<code>rdb_last_cow_size</code> 是否很大、是否发生 swap（<code>/proc/&lt;pid&gt;/smaps</code> 中的 Swap）。RDB 写盘时磁盘繁忙也会让 AOF 的 fsync 变慢，主线程在 write 时被阻塞（<code>aof_delayed_fsync</code> 增长）。</li><li>修复：关闭透明大页；在主库上关闭 RDB（AOF 已足够，或只在副本上生成 RDB 备份）；设置 <code>no-appendfsync-on-rewrite yes</code> 减少重写期间的 fsync 阻塞（接受此期间稍大的丢失窗口）；使用更好的磁盘；将实例拆小（多个分片，每个几 GB），降低单次 fork 的代价。</li><li>修复后对比 <code>latest_fork_usec</code> 和 P99 监控确认。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>核心指标：<code>instantaneous_ops_per_sec</code>、命中率（keyspace_hits/misses）、<code>connected_clients</code> 与 <code>rejected_connections</code>、<code>used_memory</code> 与 maxmemory 的比例、<code>evicted_keys</code>、<code>mem_fragmentation_ratio</code>、复制延迟、<code>latest_fork_usec</code>、主线程 CPU。用 redis_exporter + Prometheus 采集并设告警。</li><li><b>延迟排查顺序</b>：先确认是网络还是服务端（<code>redis-cli --latency</code> 在本机和应用服务器上分别测；<code>--intrinsic-latency</code> 测宿主机本身的调度延迟）；再看服务端：<code>SLOWLOG GET</code> 找执行慢的命令，<code>LATENCY LATEST</code>/<code>LATENCY DOCTOR</code> 看 fork、AOF fsync、过期、淘汰等事件。</li><li>SLOWLOG 只记录命令<b>执行</b>时间（不含排队和网络），超过 <code>slowlog-log-slower-than</code>（默认 10000 微秒，建议 1000）记录。单线程意味着一条慢命令会让所有排队的请求都变慢，所以客户端看到的延迟常常比 SLOWLOG 高得多。</li><li>常见原因：O(N) 命令（KEYS、HGETALL 大 key、SMEMBERS、SORT、大范围 ZRANGE）；大 key 的 DEL；大量键同时过期；fork（内存越大越慢，虚拟机上更慢）；AOF fsync 被磁盘阻塞；swap；CPU 被其他进程抢占；客户端连接数暴涨或输出缓冲区过大。</li><li><b>内存分析</b>：<code>INFO memory</code> 看 used_memory、dataset/overhead、碎片率；<code>MEMORY DOCTOR</code> 给出建议；<code>--bigkeys</code>/<code>--memkeys</code> 找大户；<code>CLIENT LIST</code> 中 <code>omem</code> 看输出缓冲区占用。碎片率高时开启 <code>activedefrag yes</code>。</li><li>操作系统：关闭透明大页（<code>echo never &gt; /sys/kernel/mm/transparent_hugepage/enabled</code>，否则 fork 后写时复制以 2 MB 为单位，延迟和内存都会飙升）；<code>vm.overcommit_memory = 1</code>（避免 fork 失败）；避免 swap（<code>vm.swappiness</code> 调低并留足内存）；<code>net.core.somaxconn</code> 不小于 <code>tcp-backlog</code>。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 24</div><a class="big" href="l24.html">综合项目：一个高并发商品服务的缓存层 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l23.js"></script>
+</body></html>

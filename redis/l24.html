@@ -1,0 +1,54 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 24 课 · 综合项目：一个高并发商品服务的缓存层</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 24 课</span><span class="sp"></span><a href="l23.html">← 第 23 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 24 课</div><h1>综合项目：一个高并发商品服务的缓存层</h1>
+<p>最后一课把整门课的内容用在一个完整的设计上：一个电商商品服务，平时 2 万 QPS，大促 20 万 QPS，含商品详情、库存预扣、浏览排行和限流。我们依次做容量估算、选择部署形态、设计键和数据结构、读写与一致性流程、故障时的降级，并给出上线检查清单。约 90 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">整体架构</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">库存预扣</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：大促演练</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">关键脚本</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>整体架构</h2><div class="goal">请求从网关到数据库经过的每一层。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>库存预扣</h2><div class="goal">防超卖、防重复、可对账。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：大促演练</h2><div class="goal">注入一个故障，看系统的表现与对应的设计。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>关键脚本</h2><div class="goal">库存预扣与回补。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在一个 Redis 8 容器中把关键流程跑一遍。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>准备：布隆过滤器、详情缓存、库存。</p><pre class="cmd">BF.MADD bf:p 1001 1002
+SET p:{1001}:v2 &#x27;{&quot;id&quot;:1001,&quot;name&quot;:&quot;键盘&quot;,&quot;price&quot;:399}&#x27; EX 3600
+SET stk:{1001} 3</pre><pre class="out">1) (integer) 1
+2) (integer) 1
+OK
+OK</pre></div></div><div class="st"><span class="n">02</span><div><p>读：不存在的 ID 被布隆过滤器挡住。</p><pre class="cmd">BF.EXISTS bf:p 424242</pre><pre class="out">(integer) 0</pre></div></div><div class="st"><span class="n">03</span><div><p>库存预扣脚本（订单号幂等）。</p><pre class="cmd">EVAL &quot;if redis.call(&#x27;SISMEMBER&#x27;,KEYS[2],ARGV[1])==1 then return 2 end local s=tonumber(redis.call(&#x27;GET&#x27;,KEYS[1]) or 0) if s&lt;tonumber(ARGV[2]) then return 0 end redis.call(&#x27;DECRBY&#x27;,KEYS[1],ARGV[2]) redis.call(&#x27;SADD&#x27;,KEYS[2],ARGV[1]) return 1&quot; 2 stk:{1001} stk:{1001}:orders o-1 1</pre><pre class="out">(integer) 1</pre></div></div><div class="st"><span class="n">04</span><div><p>同一订单重试：返回 2（已处理），库存不变。</p><pre class="cmd">EVAL &quot;（同上）&quot; 2 stk:{1001} stk:{1001}:orders o-1 1
+GET stk:{1001}</pre><pre class="out">(integer) 2
+&quot;2&quot;</pre></div></div><div class="st"><span class="n">05</span><div><p>卖完后返回 0。</p><pre class="cmd">EVAL &quot;（同上）&quot; 2 stk:{1001} stk:{1001}:orders o-2 2
+EVAL &quot;（同上）&quot; 2 stk:{1001} stk:{1001}:orders o-3 1</pre><pre class="out">(integer) 1
+(integer) 0</pre></div></div><div class="st"><span class="n">06</span><div><p>浏览排行（分片 3）与限流计数。</p><pre class="cmd">ZINCRBY rank:view:20261022:3 1 1001
+EVAL &quot;local c=redis.call(&#x27;INCR&#x27;,KEYS[1]) if c==1 then redis.call(&#x27;EXPIRE&#x27;,KEYS[1],1) end return c&quot; 1 rl:{u42}:s</pre><pre class="out">&quot;1&quot;
+(integer) 1</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写出你的设计文档</h3><p>按本课的结构，为你自己工作中的一个服务（或者“热门文章与评论服务”：100 万篇文章，读 5 万 QPS，评论写 2000 QPS，首页按 24 小时热度排行）写一份一页的缓存设计：容量估算、部署形态、键设计、读写流程、一致性方案、穿透/击穿/雪崩防护、热 key/大 key 处理、安全与监控、故障降级。</p><details><summary>查看参考答案</summary><div><p>“热门文章与评论服务”的参考要点：</p><ul><li><b>容量</b>：文章详情 100 万 × 5 KB ≈ 5 GB，只缓存近 30 天活跃的约 20 万篇 ≈ 1 GB；评论按文章分页缓存前 3 页。Cluster 3 主 3 从，<code>allkeys-lfu</code>。</li><li><b>键</b>：<code>a:{id}</code>（详情，TTL 1 h ± 抖动）；<code>a:{id}:c:p1..p3</code>（评论分页 JSON，TTL 60 s）；<code>a:{id}:cnt</code>（哈希：阅读、点赞、评论数）；<code>hot:24h:{0..7}</code>（ZSET 分片）。</li><li><b>读写</b>：Cache-Aside；新评论写数据库后删除该文章第 1 页评论缓存并 <code>HINCRBY cnt comments 1</code>；阅读数在应用内聚合 1 秒后 HINCRBY，每 5 分钟落库。</li><li><b>热度榜</b>：每小时一个 ZSET 桶 <code>hot:h:&lt;yyyymmddhh&gt;</code>，每 5 分钟 <code>ZUNIONSTORE</code> 最近 24 个桶（可加时间衰减权重 WEIGHTS）生成榜单，桶 TTL 25 小时。</li><li><b>防护</b>：布隆过滤器 + 空值；热门文章互斥重建 + 本地缓存 2 秒；TTL 抖动；回源并发限制。</li><li><b>一致性</b>：编辑文章后删除缓存 + binlog 订阅延迟双删；评论数允许几秒误差。</li><li><b>安全与监控</b>：ACL 应用账户 <code>~a:* ~hot:*</code>；监控命中率、P99、内存、淘汰、慢日志；季度故障演练。</li></ul></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>容量</b>：200 万商品 × 平均 3 KB 详情（压缩后 1 KB）≈ 2 GB 数据，加上开销与余量按 2 倍算 4–5 GB；库存、排行、限流键都很小。单分片约能处理 10 万 QPS 简单命令，大促 20 万 QPS 读需要本地缓存 + 多个分片或副本。</li><li><b>部署</b>：Redis Cluster 3 主 3 从（跨 3 个可用区），每个主节点 maxmemory 3 GB；缓存数据 <code>allkeys-lfu</code>。库存数据单独一个实例（或一组分片）：<code>noeviction</code>、AOF everysec，与缓存隔离，避免被淘汰。</li><li><b>键</b>：<code>p:{id}:v2</code>（详情 JSON，TTL 1 小时 ± 10%）；<code>p:null:{id}</code>（空值，60 秒）；<code>bf:p</code>（布隆过滤器）；<code>stk:{id}</code>（库存）、<code>stk:{id}:orders</code>（已预扣订单集合，用于幂等）；<code>rank:view:{日期}:{0..15}</code>（浏览排行分片）；<code>rl:{uid}</code>（令牌桶）。</li><li><b>读</b>：本地缓存（热点 2 秒）→ Redis → 布隆过滤器判断 → 互斥重建回源数据库。<b>写</b>：更新数据库后删除缓存，binlog 订阅再删一次并延迟双删。<b>库存</b>：Lua 原子检查并扣减，以订单号幂等；异步写入数据库并定时对账。</li><li><b>故障</b>：Redis 分片切换期间读本地缓存旧值、回源受全局并发上限保护；库存实例不可用时暂停下单而不是回退到数据库直扣（避免超卖与压垮数据库）；所有 Redis 调用设置超时（如 50 ms）与熔断。</li><li><b>上线清单</b>：ACL 账户与网络隔离；持久化配置按实例用途区分；监控命中率、延迟、内存、淘汰、复制；压测验证热点与大 key；演练主节点故障切换和缓存全部失效。</li></ol></section>
+<footer class="endnav"><div class="k">课程完成</div><a class="big" href="index.html">课程目录 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l24.js"></script>
+</body></html>
