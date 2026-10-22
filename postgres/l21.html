@@ -41,16 +41,16 @@ max_client_conn = 1000
 admin_users = postgres
 EOF
 echo &#x27;&quot;postgres&quot; &quot;pg&quot;&#x27; &gt; ~/pgb/userlist.txt</pre></div></div><div class="st"><span class="n">02</span><div><p>启动 PgBouncer（社区镜像 edoburu/pgbouncer）。</p><pre class="cmd">docker run -d --name pgb --network pgnet -p 6432:6432 -v ~/pgb:/etc/pgbouncer edoburu/pgbouncer
-psql &quot;postgresql://postgres:pg@localhost:6432/shop&quot; -c &quot;SELECT 1&quot;</pre><pre class="out"> ?column?
+docker exec -e PGPASSWORD=pg -u postgres pg psql -h pgb -p 6432 -d shop -c &quot;SELECT 1&quot;</pre><pre class="out"> ?column?
 ----------
         1</pre></div></div><div class="st"><span class="n">03</span><div><p>压测：100 个客户端。</p><pre class="cmd">docker exec -u postgres pg pgbench -i -s 10 shop
-docker exec -u postgres pg pgbench -h pgb -p 6432 -c 100 -j 4 -T 20 -S shop</pre><pre class="out">number of clients: 100
+docker exec -e PGPASSWORD=pg -u postgres pg pgbench -h pgb -p 6432 -c 100 -j 4 -T 20 -S shop</pre><pre class="out">number of clients: 100
 …
 tps = 18412.3 (without initial connection time)</pre></div></div><div class="st"><span class="n">04</span><div><p>压测期间在 PostgreSQL 上看实际连接数。</p><pre class="cmd">docker exec -u postgres pg psql -c &quot;SELECT count(*) FROM pg_stat_activity WHERE client_addr IS NOT NULL&quot;</pre><pre class="out"> count
 -------
-     5</pre></div></div><div class="st"><span class="n">05</span><div><p>管理控制台：池状态。</p><pre class="cmd">psql &quot;postgresql://postgres:pg@localhost:6432/pgbouncer&quot; -c &quot;SHOW POOLS&quot;</pre><pre class="out"> database |   user   | cl_active | cl_waiting | sv_active | sv_idle | sv_used | maxwait | pool_mode
+     5</pre></div></div><div class="st"><span class="n">05</span><div><p>管理控制台：池状态。</p><pre class="cmd">docker exec -e PGPASSWORD=pg -u postgres pg psql -h pgb -p 6432 -d pgbouncer -c &quot;SHOW POOLS&quot;</pre><pre class="out"> database |   user   | cl_active | cl_waiting | sv_active | sv_idle | sv_used | maxwait | pool_mode
 ----------+----------+-----------+------------+-----------+---------+---------+---------+-------------
- shop     | postgres |       100 |         37 |         5 |       0 |       0 |       0 | transaction</pre></div></div><div class="st"><span class="n">06</span><div><p>事务模式下 SET 的问题：两次查询可能落在不同的服务端连接上。</p><pre class="cmd">psql &quot;postgresql://postgres:pg@localhost:6432/shop&quot; -c &quot;SET statement_timeout = &#x27;1s&#x27;&quot; -c &quot;SHOW statement_timeout&quot;</pre><pre class="out"> statement_timeout
+ shop     | postgres |       100 |         37 |         5 |       0 |       0 |       0 | transaction</pre></div></div><div class="st"><span class="n">06</span><div><p>事务模式下 SET 的问题：两次查询可能落在不同的服务端连接上。</p><pre class="cmd">docker exec -e PGPASSWORD=pg -u postgres pg psql -h pgb -p 6432 -d shop -c &quot;SET statement_timeout = &#x27;1s&#x27;&quot; -c &quot;SHOW statement_timeout&quot;</pre><pre class="out"> statement_timeout
 -------------------
  0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>迁移一个服务到事务模式</h3><p>一个 Python 服务目前直连 PostgreSQL，代码里有：连接建立后 <code>SET search_path = tenant_42</code>；用 <code>pg_advisory_lock</code> 保证定时任务单实例；用 <code>LISTEN orders_changed</code> 接收通知。要改为通过 transaction 模式的 PgBouncer 连接，逐项说明怎么改。</p><details><summary>查看参考答案</summary><div><ul><li><b>search_path</b>：会话级 SET 会泄漏给共享同一服务端连接的其他客户端，也会在下一个事务中丢失。改为在每个事务开头 <code>SET LOCAL search_path = tenant_42</code>，或在 SQL 中写全限定名 <code>tenant_42.orders</code>，或为每个租户使用不同的角色并 <code>ALTER ROLE … SET search_path</code>（PgBouncer 按用户分池，每个池的连接都带着这个设置）。</li><li><b>咨询锁</b>：会话级锁在事务结束后服务端连接被别人拿走，锁仍然挂在那个连接上，释放时也可能发到别的连接。改为事务级 <code>pg_try_advisory_xact_lock</code>，并让整个任务（或其“领取”步骤）在一个事务中完成。</li><li><b>LISTEN</b>：需要一个长期保持的会话，事务模式下无法工作。为监听者单独建一个直连 PostgreSQL 的连接（或通过 session 模式的另一个 PgBouncer 池）。NOTIFY 可以照常通过事务池发送。</li></ul><p>另外检查：驱动是否使用协议级预备语句（psycopg 3 默认会在执行多次后自动 prepare，需 PgBouncer 1.21+ 并设置 <code>max_prepared_statements</code>，或在驱动中设 <code>prepare_threshold=None</code>）；临时表；<code>WITH HOLD</code> 游标。</p></div></details></div>
 </section>
