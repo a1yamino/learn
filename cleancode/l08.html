@@ -77,7 +77,7 @@ Traceback (most recent call last):
   File &quot;cart.py&quot;, line 22, in checkout
     return price * qty * (1 - c)
                           ~~^~~
-TypeError: unsupported operand type(s) for -: &#x27;int&#x27; and &#x27;NoneType&#x27;</pre></div></div><div class="st"><span class="n">02</span><div><p>没有优惠券时出现了 <code>TypeError</code>：None 被传到了算术里。之后：异常 + 特例对象。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
+TypeError: unsupported operand type(s) for -: &#x27;int&#x27; and &#x27;NoneType&#x27;</pre></div></div><div class="st"><span class="n">02</span><div><p>没有优惠券时出现了 <code>TypeError</code>：None 被传到了算术里。之后：异常 + 特例对象。先计算总价再扣库存，避免计价失败后库存已减少；本例仅适用于单线程内存演示，异常本身不提供事务或并发保护。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
 from dataclasses import dataclass
 
 STOCK = {&quot;pen&quot;: 3, &quot;ink&quot;: 0}
@@ -104,6 +104,8 @@ class NoCoupon:
 COUPONS = {&quot;SAVE10&quot;: Coupon(0.1)}
 
 def reserve(sku, qty):
+    if isinstance(qty, bool) or not isinstance(qty, int) or qty &lt;= 0:
+        raise ValueError(&quot;数量必须为正整数&quot;)
     if sku not in STOCK:
         raise UnknownProduct(f&quot;没有商品 {sku!r}&quot;)
     if STOCK[sku] &lt; qty:
@@ -114,8 +116,9 @@ def coupon_for(code):
     return COUPONS.get(code, NoCoupon())
 
 def checkout(sku, qty, price, code=None):
+    total = coupon_for(code).apply(price * qty)
     reserve(sku, qty)
-    return coupon_for(code).apply(price * qty)
+    return total
 EOF
 python3 -c &quot;
 from cart import *
@@ -159,7 +162,7 @@ def load_settings(path) -> Settings:
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>异常代替返回码</b>：返回码迫使调用方在每次调用后立即检查，主逻辑被 <code>if err</code> 淹没。异常把正常路径与错误处理分开。</li><li><b>try 块像事务</b>：try 中的代码要么全部完成，要么让程序回到一致的状态。先写出异常的测试，再填充实现。资源用 <code>with</code> 管理，保证释放。</li><li><b>提供上下文</b>：异常消息应说明失败的操作和原因（哪个文件、哪个订单号、期望什么）。包装底层异常时用 <code>raise NewError(...) from e</code> 保留因果链。</li><li><b>按调用者的需要定义异常</b>：调用者通常只关心“能否恢复、如何恢复”。把第三方库抛出的多种异常包装成少数几个有意义的领域异常（第 9 课）。</li><li><b>别返回 None，也别传入 None</b>：返回 None 让每个调用者都要检查，漏掉一处就是 <code>AttributeError</code>。改为抛出异常、返回空集合，或使用特例对象（如 <code>GuestUser</code>、空的 <code>NoDiscount</code>）。用类型注解 <code>Optional</code> 标明真正可选的值。</li><li><b>不要吞掉异常</b>：<code>except Exception: pass</code> 会隐藏 bug。只捕获你能处理的异常类型，范围尽量小；不能处理就让它向上传播，在边界（请求处理器、任务入口）统一记录。</li></ol></section>
+<ol class="sum"><li><b>异常代替返回码</b>：返回码迫使调用方在每次调用后立即检查，主逻辑被 <code>if err</code> 淹没。异常把正常路径与错误处理分开。</li><li><b>异常安全</b>：try/except 不会自动回滚已经发生的修改。先完成校验和可能失败的计算，再修改状态；跨多次写入则需数据库事务、显式补偿或其他一致性机制。先写出异常的测试，再填充实现。资源用 <code>with</code> 管理，保证释放。</li><li><b>提供上下文</b>：异常消息应说明失败的操作和原因（哪个文件、哪个订单号、期望什么）。包装底层异常时用 <code>raise NewError(...) from e</code> 保留因果链。</li><li><b>按调用者的需要定义异常</b>：调用者通常只关心“能否恢复、如何恢复”。把第三方库抛出的多种异常包装成少数几个有意义的领域异常（第 9 课）。</li><li><b>别返回 None，也别传入 None</b>：返回 None 让每个调用者都要检查，漏掉一处就是 <code>AttributeError</code>。改为抛出异常、返回空集合，或使用特例对象（如 <code>GuestUser</code>、空的 <code>NoDiscount</code>）。用类型注解 <code>Optional</code> 标明真正可选的值。</li><li><b>不要吞掉异常</b>：<code>except Exception: pass</code> 会隐藏 bug。只捕获你能处理的异常类型，范围尽量小；不能处理就让它向上传播，在边界（请求处理器、任务入口）统一记录。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 09</div><a class="big" href="l09.html">边界：包装第三方代码 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
