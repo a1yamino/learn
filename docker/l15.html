@@ -26,7 +26,7 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">不用 Docker，用 ip 和 iptables 亲手搭一个“容器网络”。需要 Linux（Mac / Windows：<code>docker run --rm -it --privileged ubuntu:24.04</code>，先 <code>apt-get update && apt-get install -y iproute2 iptables iputils-ping</code>）。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">不用 Docker，用 ip 和 iptables 亲手搭一个“容器网络”。需要可修改网络的独立 Linux 实验机，并安装 iproute2、iptables、iputils-ping。Mac / Windows 用户请连接 Linux 虚拟机。挑战需在这台机器上安装 Docker Engine，并使用 iptables 防火墙后端；nftables 后端没有 DOCKER-USER 链。普通工具容器的网络空间与 Docker 主机不同，不能在其中执行挑战。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>创建一个网络 namespace，相当于一个容器的网络。</p><pre class="cmd">sudo ip netns add c1
 sudo ip netns exec c1 ip -brief link</pre><pre class="out">lo  DOWN  00:00:00:00:00:00</pre></div></div><div class="st"><span class="n">02</span><div><p>创建网桥，给它一个地址。</p><pre class="cmd">sudo ip link add br0 type bridge
 sudo ip addr add 10.10.0.1/24 dev br0 &amp;&amp; sudo ip link set br0 up</pre></div></div><div class="st"><span class="n">03</span><div><p>创建 veth 对：一端放进 c1，一端接到 br0。</p><pre class="cmd">sudo ip link add veth-h type veth peer name veth-c
