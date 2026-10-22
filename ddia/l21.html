@@ -1,0 +1,67 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 21 课 · 分布式系统的麻烦：网络、超时与部分失效</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 21 课</span><span class="sp"></span><a href="l20.html">← 第 20 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 21 课</div><h1>分布式系统的麻烦：网络、超时与部分失效</h1>
+<p>第 9 章是全书的转折点：在单机上，程序要么正常运行、要么彻底崩溃；在分布式系统中，一部分节点坏了、另一部分好好的，而且你常常无法知道是哪一部分。本课讲部分失效、不可靠的网络（TCP 能保证什么、不能保证什么）、实际网络中的故障、如何检测故障，以及为什么超时没有正确的取值——延迟没有上界的根源在于排队。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">请求发出之后</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：设置超时</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">延迟来自排队</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">网络故障的样子</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>请求发出之后</h2><div class="goal">从发送方看，这些情况无法区分。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：设置超时</h2><div class="goal">选择超时时间，看故障发现速度与误判率。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>延迟来自排队</h2><div class="goal">一个请求经过的队列。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>网络故障的样子</h2><div class="goal">几种典型错误。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">需要 Docker 与 Python 3。用两个容器制造网络分区与延迟。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建网络和两个节点（netshoot 镜像带有网络工具）。</p><pre class="cmd">docker network create lab
+docker run -d --name a --network lab nicolaka/netshoot sleep infinity
+docker run -d --name b --network lab --cap-add NET_ADMIN nicolaka/netshoot sleep infinity
+docker exec a ping -c 3 b</pre><pre class="out">3 packets transmitted, 3 received, 0% packet loss
+rtt min/avg/max/mdev = 0.05/0.08/0.11/0.02 ms</pre></div></div><div class="st"><span class="n">02</span><div><p>给 b 的网卡加上 100 ms ± 80 ms 的随机延迟。</p><pre class="cmd">docker exec b tc qdisc add dev eth0 root netem delay 100ms 80ms
+docker exec a ping -c 5 b</pre><pre class="out">64 bytes from b.lab: icmp_seq=1 ttl=64 time=143 ms
+64 bytes from b.lab: icmp_seq=2 ttl=64 time=37.2 ms
+…（每次都不一样）</pre></div></div><div class="st"><span class="n">03</span><div><p>网络分区：把 b 从网络中断开。从 a 看，b 只是“没有响应”。</p><pre class="cmd">docker exec b tc qdisc del dev eth0 root
+docker network disconnect lab b
+docker exec a ping -c 3 -W 1 b</pre><pre class="out">ping: b: Name does not resolve
+（或 100% packet loss）</pre></div></div><div class="st"><span class="n">04</span><div><p>恢复连接。</p><pre class="cmd">docker network connect lab b
+docker exec a ping -c 1 b</pre><pre class="out">1 packets transmitted, 1 received, 0% packet loss</pre></div></div><div class="st"><span class="n">05</span><div><p>保存为 <code>to.py</code>：在长尾延迟下，不同超时的误判率。</p><pre class="cmd">import random, statistics
+random.seed(11)
+# 正常时 RTT 约 2 ms；偶尔排队、GC 导致长尾
+def rtt(): return random.lognormvariate(0.7, 0.4) + (random.expovariate(1/80) if random.random() &lt; 0.02 else 0)
+hist = [rtt() for _ in range(20000)]
+hist.sort()
+p999 = hist[int(len(hist) * 0.999)]
+print(f&quot;中位数 {statistics.median(hist):.1f} ms，p99 {hist[int(len(hist)*0.99)]:.1f} ms，p99.9 {p999:.1f} ms&quot;)
+for timeout in (5, 50, round(p999 * 2)):
+    false_alarm = sum(1 for _ in range(100000) if rtt() &gt; timeout) / 100000
+    print(f&quot;超时 {timeout:4} ms：健康节点被误判为死亡的比例 {false_alarm:.3%}&quot;)</pre><pre class="out">中位数 2.0 ms，p99 67.2 ms，p99.9 263.5 ms
+超时    5 ms：健康节点被误判为死亡的比例 3.018%
+超时   50 ms：健康节点被误判为死亡的比例 1.124%
+超时  527 ms：健康节点被误判为死亡的比例 0.001%</pre></div></div><div class="st"><span class="n">06</span><div><p>清理。</p><pre class="cmd">docker rm -f a b; docker network rm lab</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个服务调用设计超时与重试</h3><p>订单服务调用库存服务（p50 = 8 ms，p99 = 120 ms，p99.9 = 900 ms），订单接口的整体 SLO 是 p99 &lt; 500 ms。当前配置：超时 100 ms、重试 3 次、无退避。库存服务一次 GC 停顿 2 秒时，订单服务的线程池被占满，库存服务恢复后又被重试流量压垮。请重新设计并说明理由。</p><details><summary>查看参考答案</summary><div><ol><li><b>超时</b>：100 ms 低于 p99，正常时就有超过 1% 的请求超时并重试，等于在给下游加压。改为约 250–300 ms（高于 p99，并在 500 ms 的总预算之内）。更好的是给整个请求一个<b>截止时间</b>（deadline）并向下传递，剩余时间不足就不再重试。</li><li><b>对冲请求</b>：在 p95（例如 50 ms）还没响应时，向另一个副本发送第二个请求，取先返回者——只对幂等的读请求这样做，并限制对冲比例（如不超过 5%）。</li><li><b>重试</b>：最多 1–2 次，指数退避加随机抖动；使用<b>重试预算</b>（重试量不超过正常请求的 10%），防止下游变慢时重试流量翻倍。写请求带幂等键（第 10 课）。</li><li><b>熔断</b>：连续失败率超过阈值时短时间内直接失败（或降级为“库存待确认”），给下游恢复的时间；半开状态下少量试探。</li><li><b>隔离</b>：为库存调用使用独立、有上限的连接池/并发数（舱壁），避免一个下游拖垮订单服务全部线程。</li><li>监控库存服务的响应时间分布，动态调整超时，而不是凭感觉设定。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>部分失效</b>：单机程序是确定的：同样的操作产生同样的结果，硬件出问题时通常整机崩溃，而不是给出错误的结果。分布式系统中，某些部分以不可预测的方式失效，其他部分照常工作，而且失效是<b>不确定</b>的——同一个操作有时成功有时失败，你甚至不知道它是否成功了。要在不可靠的组件之上构建可靠的系统，首先要接受这一点。</li><li><b>不可靠的网络</b>：无共享系统中节点只能通过网络通信，而网络是<b>异步分组网络</b>：发出请求后，可能请求丢了、请求在排队、对方崩溃了、对方暂停了（GC）、对方处理了但响应丢了、响应在排队……从发送方看，这些情况<b>无法区分</b>。唯一的办法是超时，但超时后你仍然不知道对方是否收到了请求。</li><li><b>TCP 的局限</b>：TCP 提供重传、去重、按序交付、流量控制，但它不能告诉你“对方的应用已经处理了这条消息”——内核确认了收包，应用可能在处理前崩溃。连接中断时，你不知道哪些数据已被对方处理。所以应用层仍然需要确认与幂等。QUIC 等新协议也是如此。</li><li><b>实际网络中的故障</b>：交换机配置错误、光纤被挖断、鲨鱼咬海底光缆、某个方向的网络正常而另一个方向丢包、网卡丢弃所有入站包但出站正常、云中的虚拟网络抖动……<b>网络分区</b>（一部分节点与另一部分无法通信）在大型系统中是常态。软件必须定义好在网络故障时的行为，并且要测试（主动注入故障，第 3 课的混沌工程）。</li><li><b>故障检测</b>：有时能得到明确的反馈——端口没有进程监听时会返回 RST；进程崩溃但操作系统还活着时，脚本可以通知其他节点；可以查询交换机或云 API。但大多数情况下，只能依赖超时。</li><li><b>超时与无上界的延迟</b>：超时太长，故障发现慢、用户等待久；太短，会把暂时变慢的健康节点误判为死亡——把它的负载转给其他节点，可能引发级联故障；请求可能被执行两次。延迟的主要来源是<b>排队</b>：交换机队列、操作系统接收队列、虚拟机调度、TCP 流量控制、拥塞时的重传。电话网络用电路交换预留带宽，延迟有上界；数据中心网络和互联网为了突发流量下的高利用率选择了分组交换，延迟没有上界——这是一种成本与可靠性的权衡。实践做法：持续测量响应时间分布并自动调整超时（如 Phi Accrual 故障检测器，Cassandra、Akka 使用）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 22</div><a class="big" href="l22.html">不可靠的时钟、进程暂停与多数决 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l21.js"></script>
+</body></html>
