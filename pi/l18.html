@@ -82,8 +82,8 @@ function toPrintOutputMode(appMode: AppMode): Exclude&lt;Mode, &quot;rpc&quot;&g
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">先写一个只注册 faux 模型的扩展（这样不需要 API key），再用 <code>-e</code> 加载它运行真正的 pi CLI。注意 print 模式会读取管道输入，因此用 <code>&lt;/dev/null</code> 关闭 stdin。需要先在 pi-mono 根目录执行过 <code>npm run build</code>。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>faux 扩展。</p><pre class="cmd">cat &gt; pi-mono/scratch/faux-ext.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。先写一个只注册 faux 模型的扩展（这样不需要 API key），再用 <code>-e</code> 加载它运行真正的 pi CLI。注意 print 模式会读取管道输入，因此用 <code>&lt;/dev/null</code> 关闭 stdin。需要先在 pi-mono 根目录执行过 <code>npm run build</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>faux 扩展。</p><pre class="cmd">cat &gt; scratch/faux-ext.ts &lt;&lt;&#x27;EOF&#x27;
 // 课程练习用扩展：为 pi CLI 注册一个离线的 faux 模型（无需 API key）
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from &quot;@earendil-works/pi-ai/compat&quot;;
 
@@ -99,26 +99,26 @@ export default function (pi: any) {
       cost: m.cost, contextWindow: m.contextWindow, maxTokens: m.maxTokens })),
   });
 }
-EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>三种模式。</p><pre class="cmd">cat &gt; pi-mono/scratch/l18.sh &lt;&lt;&#x27;EOF&#x27;
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>三种模式。</p><pre class="cmd">cat &gt; scratch/l18.sh &lt;&lt;&#x27;EOF&#x27;
 #!/bin/bash
 # 同一个 AgentSession，三种运行模式（用 faux 扩展离线运行，无需 API key）
-CLI=&quot;node $PWD/../packages/coding-agent/dist/cli.js&quot;
-EXT=&quot;$PWD/faux-ext.ts&quot;
+CLI=(node &quot;$PWD/packages/coding-agent/dist/cli.js&quot;)
+EXT=&quot;$PWD/scratch/faux-ext.ts&quot;
 export HOME=$(mktemp -d); cd &quot;$(mktemp -d)&quot;
-PI=&quot;$CLI --no-session -e $EXT --model faux/faux-1&quot;
+PI=(&quot;${CLI[@]}&quot; --no-session -e &quot;$EXT&quot; --model faux/faux-1)
 
 echo &quot;== 1. print 模式（-p）：只打印最后的回答&quot;
-$PI -p &quot;运行一个命令&quot; &lt;/dev/null
+&quot;${PI[@]}&quot; -p &quot;运行一个命令&quot; &lt;/dev/null
 
 echo &quot;== 2. json 模式：每个事件一行 JSON（这里只列出事件类型）&quot;
-$PI --mode json -p &quot;运行一个命令&quot; &lt;/dev/null | grep -o &#x27;^{&quot;type&quot;:&quot;[a-z_]*&quot;&#x27; | cut -d&#x27;&quot;&#x27; -f4 | tr &#x27;\n&#x27; &#x27; &#x27;; echo
+&quot;${PI[@]}&quot; --mode json -p &quot;运行一个命令&quot; &lt;/dev/null | grep -o &#x27;^{&quot;type&quot;:&quot;[a-z_]*&quot;&#x27; | cut -d&#x27;&quot;&#x27; -f4 | tr &#x27;\n&#x27; &#x27; &#x27;; echo
 
 echo &quot;== 3. rpc 模式：stdin 发命令，stdout 收响应和事件&quot;
 (echo &#x27;{&quot;id&quot;:&quot;1&quot;,&quot;type&quot;:&quot;prompt&quot;,&quot;message&quot;:&quot;运行一个命令&quot;}&#x27;; sleep 2
  echo &#x27;{&quot;id&quot;:&quot;2&quot;,&quot;type&quot;:&quot;get_last_assistant_text&quot;}&#x27;; sleep 1) \
- | $PI --mode rpc | grep &#x27;&quot;type&quot;:&quot;response&quot;&#x27;
+ | &quot;${PI[@]}&quot; --mode rpc | grep &#x27;&quot;type&quot;:&quot;response&quot;&#x27;
 EOF
-cd pi-mono/scratch &amp;&amp; bash l18.sh</pre><pre class="out">== 1. print 模式（-p）：只打印最后的回答
+bash scratch/l18.sh</pre><pre class="out">== 1. print 模式（-p）：只打印最后的回答
 完成：bash 输出了一行文字。
 == 2. json 模式：每个事件一行 JSON（这里只列出事件类型）
 session agent_start turn_start message_start message_end message_start message_end message_start message_update message_update message_update message_update message_update message_end tool_execution_start tool_execution_update tool_execution_update tool_execution_end message_start message_end turn_end turn_start message_start message_update message_update message_update message_end turn_end agent_end agent_settled 
@@ -126,7 +126,7 @@ session agent_start turn_start message_start message_end message_start message_e
 {&quot;id&quot;:&quot;1&quot;,&quot;type&quot;:&quot;response&quot;,&quot;command&quot;:&quot;prompt&quot;,&quot;success&quot;:true,&quot;data&quot;:{&quot;disposition&quot;:&quot;started&quot;}}
 {&quot;id&quot;:&quot;2&quot;,&quot;type&quot;:&quot;response&quot;,&quot;command&quot;:&quot;get_last_assistant_text&quot;,&quot;success&quot;:true,&quot;data&quot;:{&quot;text&quot;:&quot;完成：bash 输出了一行文字。&quot;}}</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>RPC 中途 steer</h3><p>修改 RPC 部分：faux 的第一条响应改为调用 <code>bash</code> 执行 <code>sleep 1</code>；在发送 prompt 后 0.3 秒发送 <code>{"type":"steer","message":"改为列出文件"}</code>。观察 steer 的响应和后续事件中出现的用户消息。</p><details><summary>查看参考答案</summary><div><pre>(echo '{"id":"1","type":"prompt","message":"开始"}'; sleep 0.3
  echo '{"id":"2","type":"steer","message":"改为列出文件"}'; sleep 3) \
- | $PI --mode rpc | grep -E '"response"|"role":"user"' | cut -c1-120</pre><p>steer 立即得到 success 响应；消息进入转向队列，在当前工具调用结束后、下一次模型调用之前注入（第 2、8 课的机制），所以你会在 tool_execution_end 之后看到这条用户消息。faux 的响应列表需要多准备一条，供 steer 之后的那次调用使用。</p></div></details></div>
+ | "${PI[@]}" --mode rpc | grep -E '"response"|"role":"user"' | cut -c1-120</pre><p>steer 立即得到 success 响应；消息进入转向队列，在当前工具调用结束后、下一次模型调用之前注入（第 2、8 课的机制），所以你会在 tool_execution_end 之后看到这条用户消息。faux 的响应列表需要多准备一条，供 steer 之后的那次调用使用。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
