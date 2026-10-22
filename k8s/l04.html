@@ -27,7 +27,8 @@
 </section>
 
 <section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">完整走一遍：部署、更新、坏版本、回滚。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>部署 v1。--record 已弃用，用注解记录变更原因。</p><pre class="cmd">kubectl create deployment web --image=nginx:1.26-alpine --replicas=4
+<div class="prac"><div class="st"><span class="n">01</span><div><p>先删除第 2 课留下的 web（仅限本地 learn 练习集群），再部署本课 v1，避免同名对象和版本历史冲突。--record 已弃用，用注解记录变更原因。</p><pre class="cmd">kubectl delete deployment web --ignore-not-found
+kubectl create deployment web --image=nginx:1.26-alpine --replicas=4
 kubectl annotate deployment web kubernetes.io/change-cause=&quot;v1 nginx 1.26&quot;
 kubectl rollout status deployment web</pre><pre class="out">deployment &quot;web&quot; successfully rolled out</pre></div></div><div class="st"><span class="n">02</span><div><p>更新到 v2，同时观察 ReplicaSet。</p><pre class="cmd">kubectl set image deployment web nginx=nginx:1.27-alpine
 kubectl annotate deployment web kubernetes.io/change-cause=&quot;v2 nginx 1.27&quot; --overwrite
