@@ -1,0 +1,23 @@
+TITLE='Kafka Streams：状态、窗口与连接';DESC='计数、求和、去重、关联都需要记住之前看到的数据。本课讲 Kafka Streams 如何把状态放在本地 RocksDB 中、用变更日志主题保证故障后能恢复、用备用副本缩短恢复时间；时间窗口的几种类型与迟到数据的宽限期；三种连接（流—流、流—表、表—表）及共分区要求；以及交互式查询。';NEXT='性能调优：零拷贝、页缓存与批量';MIN=70
+SUM=['<b>状态存储</b>：<code>count()</code>、<code>aggregate()</code>、<code>reduce()</code> 等操作把中间结果放在任务本地的状态存储中（默认 RocksDB，位于 <code>state.dir</code>）。每次写入同时发送到一个压缩的<b>变更日志主题</b>（<code>&lt;application.id&gt;-&lt;store&gt;-changelog</code>）。',
+'任务迁移到别的实例或实例重启丢失本地磁盘时，从变更日志恢复状态，期间该任务暂停处理。<code>num.standby.replicas=1</code> 让另一个实例持续维护一份备用副本，故障时几乎可以立即接管；配合 <code>acceptable.recovery.lag</code> 与预热副本，任务只会分配给已经追上的实例。',
+'<b>窗口</b>：<b>滚动</b>窗口（固定大小、不重叠，如每 1 分钟）、<b>跳跃</b>窗口（大小 5 分钟、每 1 分钟前进一次，会重叠）、<b>会话</b>窗口（按活动间隔划分，间隔超过 30 分钟就开始新会话）、<b>滑动</b>窗口（用于连接和按时间差聚合）。时间默认使用记录的<b>事件时间</b>（时间戳）。',
+'<b>迟到数据</b>：窗口在 <code>窗口结束 + grace</code> 之后关闭，之后到达的记录被丢弃（并计入指标）。默认每次更新都会向下游发出新结果；需要“每个窗口只输出一次最终结果”时用 <code>suppress(Suppressed.untilWindowCloses(...))</code>，或 3.x 起的 <code>emitStrategy(EmitStrategy.onWindowClose())</code>。',
+'<b>连接</b>：<b>KStream–KStream</b> 必须有窗口（<code>JoinWindows.ofTimeDifferenceWithNoGrace(5 分钟)</code>），例如订单与支付在 5 分钟内匹配；<b>KStream–KTable</b> 用流中记录到达时表中的当前值来补充数据（如订单补充用户等级）；<b>KTable–KTable</b> 结果也是表；外键连接允许按 value 中的字段关联表。除 GlobalKTable 外，连接的两边必须<b>共分区</b>：相同的 key、相同的分区数、相同的分区器。',
+'<b>交互式查询</b>：应用可以通过 <code>streams.store(...)</code> 直接读取本地状态存储，并用 <code>queryMetadataForKey</code> 找到某个 key 所在的实例，把查询转发过去，从而直接把流处理结果当作服务的数据源。']
+def secs(prac,E):
+    return [
+('状态存储与变更日志','计数是如何被记住和恢复的。','<div id="p1"></div>'),
+('动手：窗口与迟到数据','滚动窗口 1 分钟，宽限期 30 秒。按顺序发送事件，看每个窗口的计数与被丢弃的记录。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('三种连接','用哪种取决于两边是事件还是状态。','<div id="p2"></div>'),
+('DSL 代码片段','有状态操作。','<div id="t4"></div>'),
+('在你的电脑上练习','运行自带的 WordCount 示例（有状态的 count）。',prac([
+ ('创建输出主题（输入主题沿用上一课的 streams-plaintext-input）。','bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic streams-wordcount-output --partitions 2 --config cleanup.policy=compact','Created topic streams-wordcount-output.'),
+ ('启动应用。','bin/kafka-run-class.sh org.apache.kafka.streams.examples.wordcount.WordCountDemo > /tmp/wc.log 2>&1 &','（后台运行）'),
+ ('写入文本。','printf "a b a\\nb a c\\n" | bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic streams-plaintext-input','（无输出）'),
+ ('读取结果（计数是 Long，需要指定反序列化器）。','bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic streams-wordcount-output --from-beginning --property print.key=true --value-deserializer org.apache.kafka.common.serialization.LongDeserializer --timeout-ms 10000','a\t3\nb\t2\nc\t1'),
+ ('看自动创建的内部主题：重分区和变更日志。','bin/kafka-topics.sh --bootstrap-server localhost:9092 --list | grep wordcount','streams-wordcount-KSTREAM-AGGREGATE-STATE-STORE-0000000003-changelog\nstreams-wordcount-KSTREAM-AGGREGATE-STATE-STORE-0000000003-repartition\nstreams-wordcount-output'),
+ ('变更日志就是状态：从头读取。','bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic streams-wordcount-KSTREAM-AGGREGATE-STATE-STORE-0000000003-changelog --from-beginning --property print.key=true --value-deserializer org.apache.kafka.common.serialization.LongDeserializer --timeout-ms 5000','a\t3\nc\t1\nb\t2')],
+ ('实现“下单 10 分钟内未支付则提醒”','输入：<code>orders</code>（key=订单号，下单事件）和 <code>payments</code>（key=订单号，支付事件，可能晚到 2 分钟）。输出：<code>unpaid-reminders</code>，下单后 10 分钟内没有对应支付的订单。另外要输出每个用户每小时的下单金额（按事件时间，允许 5 分钟迟到）。用 DSL 描述两个拓扑，并说明需要的配置（共分区、窗口、宽限期、状态恢复）。',
+ '<p><b>未支付提醒</b>：两个都是事件流，用窗口化的左连接：</p><pre>orders.leftJoin(payments,\n    (order, payment) -&gt; payment == null ? order : null,\n    JoinWindows.ofTimeDifferenceAndGrace(Duration.ofMinutes(10), Duration.ofMinutes(2)))\n  .filter((id, o) -&gt; o != null)\n  .to("unpaid-reminders");</pre><p>Kafka Streams 3.1 起的左连接会等窗口关闭（10 + 2 分钟）后才为没有匹配的记录发出 <code>payment == null</code> 的结果，避免“支付稍后到达”时误报。两个主题必须共分区：key 都是订单号，分区数相同，生产者使用默认分区器。</p><p><b>每用户每小时金额</b>：</p><pre>orders.selectKey((id, o) -&gt; o.userId)\n  .groupByKey()\n  .windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofHours(1), Duration.ofMinutes(5)))\n  .aggregate(() -&gt; 0L, (u, o, sum) -&gt; sum + o.amountCents, Materialized.as("user-hourly"))\n  .suppress(Suppressed.untilWindowCloses(Suppressed.BufferConfig.unbounded()))\n  .toStream().to("user-hourly-amount");</pre><p>selectKey 后的 groupByKey 会触发重分区。配置：<code>num.standby.replicas=1</code> 缩短故障恢复时间；<code>processing.guarantee=exactly_once_v2</code> 避免重复计算；状态目录使用持久卷，避免每次重启都从变更日志完整恢复。</p>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
