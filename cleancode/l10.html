@@ -46,12 +46,12 @@ ERROR: test_cart (unittest.loader._FailedTest.test_cart)
 ----------------------------------------------------------------------
 ImportError: Failed to import test module: test_cart
 Traceback (most recent call last):
-  File &quot;/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/loader.py&quot;, line 433, in _find_test_path
+  File &quot;/usr/lib/python3.13/unittest/loader.py&quot;, line 396, in _find_test_path
     module = self._get_module_from_name(name)
-  File &quot;/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/loader.py&quot;, line 374, in _get_module_from_name
+  File &quot;/usr/lib/python3.13/unittest/loader.py&quot;, line 339, in _get_module_from_name
     __import__(name)
     ~~~~~~~~~~^^^^^^
-  File &quot;/privatetest_cart.py&quot;, line 2, in &lt;module&gt;
+  File &quot;test_cart.py&quot;, line 2, in &lt;module&gt;
     from cart import Cart
 ModuleNotFoundError: No module named &#x27;cart&#x27;
 
@@ -81,13 +81,13 @@ python3 -m unittest</pre><pre class="out">.E
 ERROR: test_total_sums_item_prices (test_cart.CartTest.test_total_sums_item_prices)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File &quot;/privatetest_cart.py&quot;, line 10, in test_total_sums_item_prices
+  File &quot;test_cart.py&quot;, line 10, in test_total_sums_item_prices
     cart.add(&quot;pen&quot;, 10)
     ^^^^^^^^
 AttributeError: &#x27;Cart&#x27; object has no attribute &#x27;add&#x27;
 
 ----------------------------------------------------------------------
-Ran 2 tests in 0.000s
+Ran 2 tests in 0.001s
 
 FAILED (errors=1)</pre></div></div><div class="st"><span class="n">04</span><div><p>绿。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
 class Cart:
@@ -118,7 +118,7 @@ python3 -m unittest</pre><pre class="out">.E.E
 ERROR: test_shipping_is_8_by_default (test_cart.CartTest.test_shipping_is_8_by_default)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File &quot;/privatetest_cart.py&quot;, line 15, in test_shipping_is_8_by_default
+  File &quot;test_cart.py&quot;, line 15, in test_shipping_is_8_by_default
     self.assertEqual(Cart().shipping_fee(), 8)
                      ^^^^^^^^^^^^^^^^^^^
 AttributeError: &#x27;Cart&#x27; object has no attribute &#x27;shipping_fee&#x27;
@@ -127,7 +127,7 @@ AttributeError: &#x27;Cart&#x27; object has no attribute &#x27;shipping_fee&#x27
 ERROR: test_vip_gets_free_shipping (test_cart.CartTest.test_vip_gets_free_shipping)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File &quot;/privatetest_cart.py&quot;, line 18, in test_vip_gets_free_shipping
+  File &quot;test_cart.py&quot;, line 18, in test_vip_gets_free_shipping
     cart = Cart(is_vip=True)
 TypeError: Cart.__init__() got an unexpected keyword argument &#x27;is_vip&#x27;
 
