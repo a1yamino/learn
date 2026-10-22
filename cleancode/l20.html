@@ -7,7 +7,7 @@
 <div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 20 课</span><span class="sp"></span><a href="l19.html">← 第 19 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
 <main class="wrap">
 <section class="lede"><div class="k">Clean Code · 第 20 课</div><h1>综合项目：一步步重构一个混乱的订单模块</h1>
-<p>把整门课的手法用在一个真实感很强的模块上：一个 60 行的 <code>process_order</code> 函数，混合了解析、校验、库存、定价、折扣、持久化与通知，使用 dict 和魔法数，返回码与 None 混用，直接依赖全局状态与当前时间。你将按遗留代码的修改算法推进：先建立特征测试与快照，再按坏味道逐个重构，最后在整洁的结构上加入一个新需求，并对比前后的度量。约 90 分钟。</p>
+<p>把整门课的手法用在一个真实感很强的模块上：一个混乱的 <code>process_order</code> 函数，混合了解析、校验、库存、定价、折扣与通知（库存和通知均为内存模拟），使用 dict 和魔法数，返回码与 None 混用，直接依赖全局状态。先用特征测试记录旧行为，再区分结构重构与有意的契约变更。本课给出旧实现和新接口的终态对照：异常替代返回码、Decimal 舍入政策、非法数量拒绝和重复商品库存修复都须单独评审，不能统称为保行为重构。最后在新结构上添加满减规则，并比较度量。约 90 分钟。</p>
 <ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">重构路线图</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：每一步做了什么</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">起点代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">前后对比</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
 
 <section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>重构路线图</h2><div class="goal">从一个函数到一组清晰的部件。</div></div></div>
@@ -54,14 +54,14 @@ def process_order(d, flag):
     if flag:
         SENT.append((d["email"], "订单金额 %.2f" % t))
     return round(t, 2)</pre>
-<p>坏味道清单（与课程对应）：神秘的名字（<code>d</code>、<code>t</code>、<code>s</code>、<code>q</code>、<code>flag</code>）；魔法数（<code>2</code>、<code>200</code>、<code>0.95</code>）；基本类型偏执（str 解析、float 金额）；返回码与 None 混用；标识参数；全局可变数据；重复的解析逻辑；混合抽象层级；段落注释；隐藏的副作用（扣库存、发通知）。</p>
+<p>旧实现逐行检查库存，重复SKU可能超卖，负数量还会反向增加库存。新接口会明确修复这些行为，这些修复属于业务变更。坏味道清单（与课程对应）：神秘的名字（<code>d</code>、<code>t</code>、<code>s</code>、<code>q</code>、<code>flag</code>）；魔法数（<code>2</code>、<code>200</code>、<code>0.95</code>）；基本类型偏执（str 解析、float 金额）；返回码与 None 混用；标识参数；全局可变数据；重复的解析逻辑；混合抽象层级；段落注释；隐藏的副作用（扣库存、发通知）。</p>
 </section>
 
 <section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>前后对比</h2><div class="goal">用前几课写的小工具测量。</div></div></div>
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">完整走一遍。所有命令都只需要 Python 3.10+。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">完整走一遍。所有命令只需 Python 3.10+；这是顺序执行的内存演示，未实现并发库存事务或跨系统通知一致性。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>起点代码（与上面相同）。</p><pre class="cmd">cat &gt; order.py &lt;&lt;&#x27;EOF&#x27;
 STOCK = {&quot;pen&quot;: 20, &quot;ink&quot;: 2, &quot;pad&quot;: 0}
 PRICES = {&quot;pen&quot;: 12.5, &quot;ink&quot;: 30.0, &quot;pad&quot;: 8.0}
@@ -137,11 +137,14 @@ class Characterization(unittest.TestCase):
         self.assertEqual(order.STOCK[&quot;ink&quot;], 0)
         self.assertEqual(order.SENT, [(&quot;a@x.com&quot;, &quot;订单金额 60.00&quot;)])
 
-unittest.main(argv=[&quot;x&quot;], exit=False, verbosity=1)
+if __name__ == &quot;__main__&quot;:
+    unittest.main(argv=[&quot;x&quot;], verbosity=1)
 EOF
-python3 test_characterization.py 2&gt;&amp;1 | tail -n 3</pre><pre class="out">Ran 8 tests in 0.001s
+python3 test_characterization.py</pre><pre class="out">........
+----------------------------------------------------------------------
+Ran 8 tests in 0.000s
 
-OK</pre></div></div><div class="st"><span class="n">03</span><div><p>重构后的结构：领域对象、拆分阶段、异常、策略、注入。（实际中你应分成 6–8 个小提交，每次运行测试。）</p><pre class="cmd">cat &gt; order_after.py &lt;&lt;&#x27;EOF&#x27;
+OK</pre></div></div><div class="st"><span class="n">03</span><div><p>新接口的终态对照：领域对象、拆分阶段、异常、策略与注入。实际修改时应分成小提交；先做结构变换，再单独审查返回码→异常、Decimal 舍入与数量/库存规则的变更。下面的旧特征测试仍针对 order.py，下一步才测试 order_after.py；不能把两者混为同一套安全网。</p><pre class="cmd">cat &gt; order_after.py &lt;&lt;&#x27;EOF&#x27;
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
@@ -167,6 +170,7 @@ class OrderError(Exception): pass
 class EmptyOrder(OrderError): pass
 class UnknownProduct(OrderError): pass
 class OutOfStock(OrderError): pass
+class InvalidQuantity(OrderError): pass
 
 
 class CustomerType(Enum):
@@ -204,12 +208,12 @@ class Discount(Protocol):
 
 
 VIP_DISCOUNT_MIN = Money.of(200)
-VIP_DISCOUNT_RATE = Decimal(&quot;0.05&quot;)
+VIP_PAYABLE_RATE = Decimal(&quot;0.95&quot;)
 
 class VipDiscount:
     def amount(self, request, subtotal):
         if request.customer_type is CustomerType.VIP and subtotal &gt; VIP_DISCOUNT_MIN:
-            return subtotal.times(VIP_DISCOUNT_RATE)
+            return subtotal - subtotal.times(VIP_PAYABLE_RATE)
         return ZERO
 
 
@@ -222,10 +226,19 @@ class CouponDiscount:
 
 
 def parse_request(data):
-    lines = tuple(OrderLine(sku, int(qty)) for sku, qty in (i.split(&quot;:&quot;) for i in data.get(&quot;items&quot;, [])))
+    lines = []
+    for item in data.get(&quot;items&quot;) or []:
+        sku, qty = item.split(&quot;:&quot;)
+        try:
+            quantity = int(qty)
+        except ValueError as e:
+            raise InvalidQuantity(f&quot;{sku}: 数量必须为正整数&quot;) from e
+        if quantity &lt;= 0:
+            raise InvalidQuantity(f&quot;{sku}: 数量必须为正整数&quot;)
+        lines.append(OrderLine(sku, quantity))
     if not lines:
         raise EmptyOrder()
-    return OrderRequest(lines, data[&quot;email&quot;], CustomerType(data.get(&quot;type&quot;, 1)), data.get(&quot;coupon&quot;))
+    return OrderRequest(tuple(lines), data[&quot;email&quot;], CustomerType(data.get(&quot;type&quot;, 1)), data.get(&quot;coupon&quot;))
 
 
 def price(request, catalog, discounts):
@@ -240,13 +253,17 @@ def price(request, catalog, discounts):
 
 
 def place(quote, stock, notify):
+    total = quote.total
+    required = {}
     for line in quote.request.lines:
-        if stock[line.sku] &lt; line.quantity:
-            raise OutOfStock(f&quot;{line.sku}: 需要 {line.quantity}，库存 {stock[line.sku]}&quot;)
-    for line in quote.request.lines:
-        stock[line.sku] -= line.quantity
-    notify(quote.request.email, f&quot;订单金额 {quote.total.amount:.2f}&quot;)
-    return quote.total
+        required[line.sku] = required.get(line.sku, 0) + line.quantity
+    for sku, quantity in required.items():
+        if stock[sku] &lt; quantity:
+            raise OutOfStock(f&quot;{sku}: 需要 {quantity}，库存 {stock[sku]}&quot;)
+    for sku, quantity in required.items():
+        stock[sku] -= quantity
+    notify(quote.request.email, f&quot;订单金额 {total.amount:.2f}&quot;)
+    return total
 
 
 def process_order(data, *, catalog, stock, discounts, notify):
@@ -254,7 +271,7 @@ def process_order(data, *, catalog, stock, discounts, notify):
     quote = price(request, catalog, discounts)
     return place(quote, stock, notify)
 EOF
-python3 -c &quot;import ast; ast.parse(open(&#x27;order_after.py&#x27;).read()); print(&#x27;ok&#x27;)&quot;</pre><pre class="out">ok</pre></div></div><div class="st"><span class="n">04</span><div><p>把特征测试改写为针对新接口的测试：同样的场景、同样的金额；返回码变成异常。</p><pre class="cmd">cat &gt; test_order.py &lt;&lt;&#x27;EOF&#x27;
+python3 -c &quot;import ast; ast.parse(open(&#x27;order_after.py&#x27;).read()); print(&#x27;ok&#x27;)&quot;</pre><pre class="out">ok</pre></div></div><div class="st"><span class="n">04</span><div><p>在新接口上对应测试旧场景，并增加有意修正的边界：重复SKU按合计数量检查、拒绝非正整数数量、VIP按应付金额舍入。新接口返回 Money、以领域异常拒绝订单；Decimal 的 ROUND_HALF_UP 与旧 float/round 不在所有输入上等价，旧调用方需要适配或明确迁移。库存与通知之间没有事务：通知失败时库存已扣减，生产系统还需持久化订单、幂等和 Outbox 等设计，不能整单盲目重试。</p><pre class="cmd">cat &gt; test_order.py &lt;&lt;&#x27;EOF&#x27;
 import unittest
 from decimal import Decimal
 from order_after import *
@@ -277,11 +294,15 @@ class OrderTest(unittest.TestCase):
     def test_vip_discount_above_200(self):
         self.assertEqual(self.order(items=[&quot;pen:12&quot;, &quot;ink:2&quot;], type=2), Money.of(199.5))
 
+    def test_vip_rounds_payable_amount(self):
+        self.assertEqual(self.order(items=[&quot;pen:17&quot;], type=2), Money.of(201.88))
+
     def test_coupon(self):
         self.assertEqual(self.order(items=[&quot;pen:1&quot;], coupon=&quot;SAVE10&quot;), Money.of(2.5))
 
     def test_coupon_never_negative(self):
-        self.assertEqual(self.order(items=[&quot;pad:0&quot;], coupon=&quot;SAVE10&quot;), ZERO)
+        self.discounts = [CouponDiscount({&quot;SAVE20&quot;: Money.of(20)})]
+        self.assertEqual(self.order(items=[&quot;pen:1&quot;], coupon=&quot;SAVE20&quot;), ZERO)
 
     def test_unknown_product(self):
         self.assertRaises(UnknownProduct, self.order, items=[&quot;cap:1&quot;])
@@ -289,6 +310,17 @@ class OrderTest(unittest.TestCase):
     def test_out_of_stock_leaves_stock_untouched(self):
         self.assertRaises(OutOfStock, self.order, items=[&quot;pen:1&quot;, &quot;ink:3&quot;])
         self.assertEqual(self.stock[&quot;pen&quot;], 20)
+
+    def test_repeated_sku_uses_total_quantity(self):
+        self.assertRaises(OutOfStock, self.order, items=[&quot;pen:15&quot;, &quot;pen:15&quot;])
+        self.assertEqual(self.stock[&quot;pen&quot;], 20)
+        self.assertEqual(self.sent, [])
+
+    def test_invalid_quantity_leaves_stock_untouched(self):
+        for quantity in [&quot;0&quot;, &quot;-1&quot;, &quot;bad&quot;]:
+            with self.subTest(quantity=quantity):
+                self.assertRaises(InvalidQuantity, self.order, items=[f&quot;pen:{quantity}&quot;])
+                self.assertEqual(self.stock[&quot;pen&quot;], 20)
 
     def test_empty(self):
         self.assertRaises(EmptyOrder, self.order, items=[])
@@ -299,9 +331,11 @@ class OrderTest(unittest.TestCase):
         self.assertEqual(self.sent, [(&quot;a@x.com&quot;, &quot;订单金额 60.00&quot;)])
 
 if __name__ == &quot;__main__&quot;:
-    unittest.main(argv=[&quot;x&quot;], exit=False, verbosity=1)
+    unittest.main(argv=[&quot;x&quot;], verbosity=1)
 EOF
-python3 test_order.py 2&gt;&amp;1 | tail -n 3</pre><pre class="out">Ran 8 tests in 0.000s
+python3 test_order.py</pre><pre class="out">...........
+----------------------------------------------------------------------
+Ran 11 tests in 0.000s
 
 OK</pre></div></div><div class="st"><span class="n">05</span><div><p>新需求：“满 300 减 30”。只新增一个类，并在组装处注册。</p><pre class="cmd">cat &gt; threshold.py &lt;&lt;&#x27;EOF&#x27;
 from dataclasses import dataclass
@@ -335,18 +369,18 @@ EOF
 python3 longest.py order_before.py order_after.py; grep -c &quot;return -\|return None&quot; order_before.py order_after.py</pre><pre class="out">order_before.py  函数  1 个，最长 30 行（process_order）
 order_after.py   函数 13 个，最长  9 行（price）
 order_before.py:3
-order_after.py:0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>继续扩展</h3><p>在整洁的结构上完成两个新需求，并说明各自修改了哪些地方：① 优惠券与 VIP 折扣不能叠加，取其中较大者；② 下单成功后除了邮件，还要写一条审计日志，失败的订单也要记录原因。</p><details><summary>查看参考答案</summary><div><ol><li><b>折扣互斥</b>：把“如何组合多个折扣”提取为一个策略，<code>price()</code> 接收 <code>combine</code>：<pre class="cmd">def best_of(discounts):
+order_after.py:0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>继续扩展</h3><p>在整洁的结构上完成两个新需求，并说明各自修改了哪些地方：① 优惠券与 VIP 折扣不能叠加，取其中较大者；② 下单成功后除了邮件，还要写一条审计日志，业务拒绝的订单也要记录原因。</p><details><summary>查看参考答案</summary><div><ol><li><b>折扣互斥</b>：把“如何组合多个折扣”提取为一个策略，<code>price()</code> 接收 <code>combine</code>：<pre class="cmd">def best_of(discounts):
     def combine(request, subtotal):
         return max((d.amount(request, subtotal) for d in discounts), default=ZERO)
     return combine</pre>修改点：<code>price()</code> 一处（改为调用 <code>combine</code>）+ 组装处。VipDiscount 也作为普通策略注册，不再写死在 <code>price()</code> 中——这是对第一次重构的进一步改进。为“同时满足两者时取较大者”写测试。</li><li><b>审计日志</b>：这是横切关注点，不应写进 <code>place()</code>。在组合根包装 <code>process_order</code>：<pre class="cmd">def audited(process, audit):
     def run(data, **deps):
         try:
             total = process(data, **deps)
-            audit("placed", data, total)
-            return total
         except OrderError as e:
             audit("rejected", data, repr(e))
             raise
+        audit("placed", data, total)
+        return total
     return run</pre>修改点：只新增代码。<code>process_order</code> 本身与它的测试都没有改变。</li></ol></div></details></div>
 </section>
 
@@ -355,7 +389,7 @@ order_after.py:0</pre></div></div></div><div class="task2"><div class="k">挑战
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>先安全网，后重构</b>：特征测试固定当前行为（包括可疑的行为），参数接缝让依赖可替换（第 18 课）。</li><li><b>按坏味道推进</b>：神秘的名字 → 改名；魔法数 → 常量与枚举；基本类型偏执 → <code>Money</code>、<code>OrderLine</code>；过长函数 → 拆分阶段（解析 / 定价 / 执行）；返回码 → 异常；隐藏依赖 → 注入（第 2–17 课）。</li><li><b>每一步测试都是绿的</b>，并作为单独的提交。</li><li><b>结构服务于变化</b>：最后添加的新需求（新的折扣规则）只需要新增一个类和一行注册，证明了重构的价值（开闭原则）。</li><li><b>度量只是参考</b>：函数长度、复杂度、参数个数都下降了，但真正的检验是：下一个读者需要多长时间理解它，下一个需求需要改动多少地方。</li><li><b>课程回顾</b>：整洁代码的目标始终是降低理解与修改的成本。原则之间会冲突，判断依据是“什么会变化、谁会阅读”。</li></ol></section>
+<ol class="sum"><li><b>先安全网，后重构</b>：特征测试固定当前行为（包括可疑的行为），参数接缝让依赖可替换（第 18 课）。</li><li><b>按坏味道推进</b>：神秘的名字 → 改名；魔法数 → 常量与枚举；基本类型偏执 → <code>Money</code>、<code>OrderLine</code>；过长函数 → 拆分阶段（解析 / 定价 / 执行）；返回码 → 异常；隐藏依赖 → 注入（第 2–17 课）。</li><li><b>结构重构应保持已覆盖行为</b>；修改返回类型、异常、舍入或输入规则属于行为变更，应先明确新契约再调整对应测试。旧模块测试通过不能证明新模块正确。</li><li><b>结构服务于变化</b>：最后添加的新需求（新的折扣规则）只需要新增一个类和一行注册，证明了重构的价值（开闭原则）。</li><li><b>度量只是参考</b>：函数长度、复杂度、参数个数都下降了，但真正的检验是：下一个读者需要多长时间理解它，下一个需求需要改动多少地方。</li><li><b>课程回顾</b>：整洁代码的目标始终是降低理解与修改的成本。原则之间会冲突，判断依据是“什么会变化、谁会阅读”。</li></ol></section>
 <footer class="endnav"><div class="k">课程完成</div><a class="big" href="index.html">课程目录 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
