@@ -15,4 +15,4 @@ P
 bash /workspace/codex-course/sync.sh
 git add -A
 git status --porcelain | grep -E 'manifest.json|\.publish\.json' && exit 1 || true
-git -c user.name=a1yamino -c user.email=a1yamino@users.noreply.github.com commit -qm "Codex CLI course complete" && (git pull -q --rebase --autostash || (git rebase --abort; false)) && git push -q && git rev-parse --short HEAD
+git -c user.name=a1yamino -c user.email=a1yamino@users.noreply.github.com commit -qm "Codex CLI course complete" && (for t in 1 2 3 4; do (git pull -q --rebase --autostash || (git rebase --abort; false)) && git push -q && break; sleep 10; [ $t = 4 ] && exit 1; done) && git rev-parse --short HEAD

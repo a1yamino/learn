@@ -9,7 +9,7 @@ cd /workspace/codex-course/test; for t in 1 2 3 4 5 6; do r=$(timeout 250 node k
 pkill -f "http.server 8765" || true; echo "LOCAL $r"; [[ $r == 'errors []' ]] || exit 1
 /workspace/codex-course/sync.sh "Codex CLI l$N sources"
 cd /workspace/learn; if git status --short | grep -i 'manifest\|publish\|managekey'; then echo SECRET; exit 1; fi
-git add -A; git diff --cached --quiet || git -c user.name=a1yamino -c user.email=a1yamino@users.noreply.github.com commit -qm "Codex CLI lesson $N"; (git pull -q --rebase --autostash || (git rebase --abort; false)) && git push -q
+git add -A; git diff --cached --quiet || git -c user.name=a1yamino -c user.email=a1yamino@users.noreply.github.com commit -qm "Codex CLI lesson $N"; (for t in 1 2 3 4; do (git pull -q --rebase --autostash || (git rebase --abort; false)) && git push -q && break; sleep 10; [ $t = 4 ] && exit 1; done)
 SHA=$(git rev-parse --short=7 HEAD); sleep 45
 for i in $(seq 1 20); do s=$(gh api repos/a1yamino/learn/pages/builds/latest --jq '.status+" "+.commit[0:7]'); [[ $s == "built $SHA" ]] && break; sleep 15; done; echo "PAGES $s"; sleep 90
 echo "CURL $(curl -s https://a1yamino.github.io/learn/codex/l$N.html | grep -c 'id="p1"')"
