@@ -33,39 +33,57 @@ SELECT * FROM accounts;</pre><pre class="out">…</pre></div></div><div class="s
 SELECT pid, pg_blocking_pids(pid), wait_event_type, left(query, 40) FROM pg_stat_activity WHERE wait_event_type = &#x27;Lock&#x27;;</pre><pre class="out">  pid  | pg_blocking_pids | wait_event_type |                   left
 -------+------------------+-----------------+------------------------------------------
   2012 | {2001}           | Lock            | ALTER TABLE accounts ADD COLUMN note text
-  2023 | {2012}           | Lock            | SELECT * FROM accounts;</pre></div></div><div class="st"><span class="n">04</span><div><p>正确做法：DDL 加 lock_timeout。窗口 1 先 COMMIT 释放，再重做。</p><pre class="cmd">-- 窗口 2
+  2023 | {2012}           | Lock            | SELECT * FROM accounts;</pre></div></div><div class="st"><span class="n">04</span><div><p>保持窗口 1 的事务打开。在窗口 2、3 分别按 Ctrl+C 取消刚才等待的语句，再在窗口 2 设置锁超时并重试。确认超时报错后，回到窗口 1 执行 ROLLBACK 释放锁；不要先提交，否则无法观察超时。</p><pre class="cmd">-- 窗口 2（先 Ctrl+C 取消原来等待的 ALTER）
 SET lock_timeout = &#x27;2s&#x27;;
-ALTER TABLE accounts ADD COLUMN note text;</pre><pre class="out">ERROR:  canceling statement due to lock timeout</pre></div></div><div class="st"><span class="n">05</span><div><p>制造死锁：两个窗口交叉更新。</p><pre class="cmd">-- 窗口 1
+ALTER TABLE accounts ADD COLUMN note text;
+-- 窗口 1（超时报错之后）
+ROLLBACK;
+-- 窗口 2
+RESET lock_timeout;</pre><pre class="out">ERROR:  canceling statement due to lock timeout</pre></div></div><div class="st"><span class="n">05</span><div><p>制造死锁：两个窗口交叉更新。</p><pre class="cmd">-- 窗口 1
 BEGIN; UPDATE accounts SET balance = balance - 1 WHERE name = &#x27;A&#x27;;
 -- 窗口 2
 BEGIN; UPDATE accounts SET balance = balance - 1 WHERE name = &#x27;B&#x27;;
 -- 窗口 1
 UPDATE accounts SET balance = balance + 1 WHERE name = &#x27;B&#x27;;
 -- 窗口 2
-UPDATE accounts SET balance = balance + 1 WHERE name = &#x27;A&#x27;;</pre><pre class="out">ERROR:  deadlock detected
+UPDATE accounts SET balance = balance + 1 WHERE name = &#x27;A&#x27;;
+-- 出现 deadlock detected 后：两个窗口都执行 ROLLBACK，释放成功一方的行锁并清除失败一方的 aborted 状态
+-- 窗口 1
+ROLLBACK;
+-- 窗口 2
+ROLLBACK;</pre><pre class="out">ERROR:  deadlock detected
 DETAIL:  Process 2012 waits for ShareLock on transaction 1043; blocked by process 2001.
 Process 2001 waits for ShareLock on transaction 1044; blocked by process 2012.
 HINT:  See server log for query details.</pre></div></div><div class="st"><span class="n">06</span><div><p>SKIP LOCKED 任务队列：两个窗口各领一个任务。</p><pre class="cmd">CREATE TABLE jobs (id serial PRIMARY KEY, done bool DEFAULT false);
 INSERT INTO jobs (done) SELECT false FROM generate_series(1, 5);
 -- 两个窗口都执行：
 BEGIN;
-SELECT id FROM jobs WHERE NOT done ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED;</pre><pre class="out"> id
+SELECT id FROM jobs WHERE NOT done ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED;
+-- 观察到不同 id 后，两个窗口都执行 ROLLBACK；练习结束时不能保留领取事务</pre><pre class="out"> id
 ----
   1
 -- 另一个窗口：
  id
 ----
-  2</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一个可靠的任务领取</h3><p>用 jobs 表实现任务队列：多个 worker 并发领取，每个任务只被一个 worker 执行；worker 崩溃时任务不能永远卡在“处理中”。写出领取任务的 SQL，并说明锁的持有方式。</p><details><summary>查看参考答案</summary><div><pre class="cmd">-- 方案 A：在一个事务中领取并处理（任务短）
+  2</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一个可靠的任务领取</h3><p>在独立的 queue_jobs 表上实现任务队列（下面先给出完整结构）：多个 worker 并发领取，每个任务只被一个 worker 执行；worker 崩溃时任务不能永远卡在“处理中”。写出领取任务的 SQL，并说明锁的持有方式。</p><details><summary>查看参考答案</summary><div><pre class="cmd">CREATE TABLE queue_jobs (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  payload jsonb NOT NULL DEFAULT '{}',
+  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'done')),
+  locked_until timestamptz,
+  worker text
+);
+CREATE INDEX ON queue_jobs (status, id);
+-- 方案 A：在一个事务中领取并处理（任务短）
 BEGIN;
-SELECT id, payload FROM jobs WHERE status = 'queued'
+SELECT id, payload FROM queue_jobs WHERE status = 'queued'
 ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED;
 -- 处理……
-UPDATE jobs SET status = 'done' WHERE id = $1;
+UPDATE queue_jobs SET status = 'done' WHERE id = $1;
 COMMIT;
 
 -- 方案 B：领取后立即提交，用租约（任务长）
-UPDATE jobs SET status = 'running', locked_until = now() + interval '5 min', worker = $w
-WHERE id = (SELECT id FROM jobs
+UPDATE queue_jobs SET status = 'running', locked_until = now() + interval '5 min', worker = $w
+WHERE id = (SELECT id FROM queue_jobs
             WHERE status = 'queued' OR (status = 'running' AND locked_until &lt; now())
             ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)
 RETURNING id, payload;</pre><p>方案 A：行锁随事务持有，worker 崩溃时连接断开、事务回滚，锁自动释放，任务回到可领取状态。缺点是处理期间一直占着一个事务，长任务会阻止 VACUUM，不适合超过几秒的任务。</p><p>方案 B：行锁只在领取的那条 UPDATE 中持有，之后靠 <code>locked_until</code> 租约；worker 定期续约，崩溃后租约过期，其他 worker 可以重新领取。需要任务本身幂等，因为租约过期时原 worker 可能仍在运行。为 <code>(status, id)</code> 建索引，并定期清理已完成的任务，否则队列表膨胀后领取会越来越慢。</p></div></details></div>
