@@ -1,0 +1,4 @@
+# 执行策略规则（Starlark 语法），放在 $CODEX_HOME/rules/default.rules
+prefix_rule(pattern = ["git", "reset", "--hard"], decision = "forbidden", justification = "破坏性操作")
+prefix_rule(pattern = ["cp"], decision = "prompt")
+prefix_rule(pattern = ["ls"], decision = "allow")
