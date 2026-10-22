@@ -1,0 +1,66 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 3 课 · 可靠性、可扩展性与可维护性</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 3 课</span><span class="sp"></span><a href="l02.html">← 第 2 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 3 课</div><h1>可靠性、可扩展性与可维护性</h1>
+<p>第 2 章后半部分的三个非功能需求。可靠性：区分故障（fault）与失效（failure），硬件、软件与人为错误各有什么特点，为什么要主动注入故障。可扩展性：如何用负载参数描述增长，共享内存、共享磁盘、无共享三种架构，以及扩展的几条原则。可维护性：可操作性、简单性、可演化性。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">故障不等于失效</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">三种扩展架构</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：要几个副本</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">故障的规模</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>故障不等于失效</h2><div class="goal">冗余如何阻止一个故障变成系统失效。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>三种扩展架构</h2><div class="goal">共享内存、共享磁盘、无共享。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：要几个副本</h2><div class="goal">选择副本数与修复时间，看数据全部丢失的概率。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>故障的规模</h2><div class="goal">用 Python 估算一万块磁盘的故障。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 Docker 体会“故障 → 自动恢复”和“人为错误 → 从备份恢复”。需要第 1 课的 <code>pg</code> 容器。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>保存为 <code>disk.py</code> 并运行。</p><pre class="cmd">import random
+random.seed(1)
+AFR = 0.02          # 每块磁盘年故障率 2%
+DISKS = 10000
+days = 365
+fails = sum(1 for _ in range(DISKS) if random.random() &lt; AFR)
+print(f&quot;{DISKS} 块盘一年坏 {fails} 块，平均每天 {fails/days:.2f} 块&quot;)
+p_day = AFR / days
+print(f&quot;单块盘某天坏的概率 {p_day:.2e}&quot;)
+print(f&quot;3 副本在同一修复窗口内全坏的概率 {p_day**3:.2e}&quot;)</pre><pre class="out">10000 块盘一年坏 226 块，平均每天 0.62 块
+单块盘某天坏的概率 5.48e-05
+3 副本在同一修复窗口内全坏的概率 1.65e-13</pre></div></div><div class="st"><span class="n">02</span><div><p>让容器在进程崩溃后自动重启。</p><pre class="cmd">docker update --restart=always pg
+docker exec pg sh -c &#x27;kill 1&#x27;
+sleep 5; docker ps --filter name=pg --format &quot;{{.Status}}&quot;</pre><pre class="out">Up 3 seconds</pre></div></div><div class="st"><span class="n">03</span><div><p>人为错误前先做备份。</p><pre class="cmd">docker exec pg pg_dump -U postgres -t orders -Fc -f /tmp/orders.dump
+docker exec pg ls -lh /tmp/orders.dump</pre><pre class="out">-rw-r--r-- 1 root root 13M … /tmp/orders.dump</pre></div></div><div class="st"><span class="n">04</span><div><p>模拟误操作：忘了 WHERE。</p><pre class="cmd">docker exec pg psql -U postgres -c &quot;DELETE FROM orders;&quot;</pre><pre class="out">DELETE 1000000</pre></div></div><div class="st"><span class="n">05</span><div><p>从备份恢复。</p><pre class="cmd">docker exec pg pg_restore -U postgres -d postgres --data-only -t orders /tmp/orders.dump
+docker exec pg psql -U postgres -c &quot;SELECT count(*) FROM orders;&quot;</pre><pre class="out"> count
+---------
+ 1000000</pre></div></div><div class="st"><span class="n">06</span><div><p>防止人为错误的另一种方式：在事务里先看影响行数再提交。</p><pre class="cmd">docker exec -it pg psql -U postgres
+BEGIN;
+DELETE FROM orders WHERE created_at &lt; &#x27;2026-01-02&#x27;;
+-- 看到 DELETE 3334，确认无误再 COMMIT，否则 ROLLBACK
+ROLLBACK;</pre><pre class="out">BEGIN
+DELETE 3334
+ROLLBACK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个支付系统写可靠性设计</h3><p>系统：支付 API（无状态，8 台）、PostgreSQL 主库 + 1 个同机房从库、Redis 缓存、每晚全量备份。过去一年的事故：一次机房断电（停机 4 小时）、一次错误配置推送导致全部 API 节点崩溃、一次 DBA 误删表（从昨晚备份恢复，丢失 14 小时数据）。请针对每次事故提出改进，并列出你会主动做的故障演练。</p><details><summary>查看参考答案</summary><div><ol><li><b>机房断电</b>：单机房是单点故障。至少跨两个可用区部署 API 与数据库副本；主库故障时自动或半自动切换（第 11 课）；定期演练切换。</li><li><b>错误配置</b>：同一个错误同时击中所有节点，是相关性故障。配置也要走代码评审与校验；灰度发布（先 1 台、再 5%、再全量）并自动比较错误率；一键回滚；配置变更要有审计记录。</li><li><b>误删表</b>：每晚全量备份的 RPO 是 24 小时。加入 WAL 归档实现时间点恢复（PITR，见 PostgreSQL 课程），RPO 降到秒级；生产库权限最小化，危险操作需要两人确认；延迟从库（如延迟 1 小时）可以快速找回误删数据；定期做恢复演练，确认备份真的可用。</li><li><b>演练清单</b>：随机杀掉一台 API 节点；关闭主库，测量切换时间；断开可用区间网络；把 Redis 清空看数据库能否扛住；磁盘写满；在预发环境从备份做一次完整恢复并计时。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>故障与失效</b>：故障（fault）是某个组件偏离了规格，失效（failure）是整个系统不再向用户提供所需服务。容错的目标是让故障不演变成失效。不可能容忍所有故障（整个地球消失），所以要说清楚容忍哪些故障。<b>单点故障</b>是指一个组件出错就会导致整个系统失效。可以用<b>混沌工程</b>主动注入故障，确认容错机制真的有效。</li><li><b>硬件故障</b>：大量机器下故障是常态——磁盘年故障率约 1–2%，一万块盘每天都会坏几块；还有内存位翻转、CPU 计算错误、整个机房断电。对策是冗余（RAID、多副本、多可用区），并让软件能容忍整台机器丢失，这样还可以滚动升级。<b>软件故障</b>彼此相关：同一个 bug 会同时击中所有节点（例如闰秒、证书过期、某个输入触发的崩溃），比随机的硬件故障更危险。</li><li><b>人为错误</b>是线上事故的主要原因之一（配置变更尤甚）。对策不是责怪个人，而是改进系统：好的抽象与默认值、在沙箱或预发环境演练、渐进发布与快速回滚、详细监控（遥测）、无责复盘（blameless postmortem）。</li><li><b>可扩展性</b>不是一个二元标签，而是“负载增长到某个程度时，系统如何应对”。先用<b>负载参数</b>描述负载（请求率、读写比、数据量、并发用户、分布偏斜），再问：负载翻倍时性能如何变化？要保持性能需要增加多少资源？架构：<b>共享内存</b>（垂直扩展，一台更大的机器），<b>共享磁盘</b>（多台机器共享存储阵列或云存储服务），<b>无共享</b>（水平扩展，每个节点独立，通过网络协调）。</li><li>扩展的原则：把系统拆成可以独立运作的部分；不要为远期规模过早设计（10 倍增长时多半需要重新设计）；简单的方案往往能撑很久；弹性伸缩适合负载不可预测的场景，手动扩容更简单、意外更少。</li><li><b>可维护性</b>：软件的大部分成本在上线之后。<b>可操作性</b>——让运维容易：良好的监控、文档、可预测的行为、避免依赖单台机器、合理的默认值同时允许覆盖。<b>简单性</b>——区分本质复杂度与偶然复杂度；好的<b>抽象</b>（如 SQL、事务）隐藏实现细节。<b>可演化性</b>——让需求变化时容易修改（第 9–10 课的模式演进就是一例）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 04</div><a class="big" href="l04.html">数据模型：关系、文档与规范化 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l03.js"></script>
+</body></html>
