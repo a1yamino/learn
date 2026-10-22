@@ -1,6 +1,7 @@
 #!/bin/bash
 # run.sh <剧本.py> [codex 参数...]：启动假模型，用临时 CODEX_HOME 运行 codex exec
-# 环境变量 KEEP=1 时保留工作目录；W 指定工作目录
+# 可选环境变量：MODEL、EXTRA_CONFIG（追加到顶层配置）、EXTRA_PROVIDER（追加到提供方）、
+#   REQ_RETRIES/STREAM_RETRIES；RUN 设置时运行 "$RUN 参数…" 而不是 codex exec（例如 app-server 客户端）
 MODEL=${MODEL:-gpt-5.5}
 SCRIPT=$(realpath "$1"); shift
 export CODEX_HOME=${CODEX_HOME:-$(mktemp -d)}; mkdir -p $CODEX_HOME; LOG=$CODEX_HOME/requests
@@ -20,4 +21,4 @@ request_max_retries = ${REQ_RETRIES:-0}
 stream_max_retries = ${STREAM_RETRIES:-0}
 TOML
 sleep 0.5
-codex exec --skip-git-repo-check "$@" </dev/null
+if [ -n "$RUN" ]; then $RUN "$@"; else codex exec --skip-git-repo-check "$@" </dev/null; fi
