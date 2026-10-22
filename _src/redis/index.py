@@ -13,5 +13,5 @@ for g,ls in G:
         n+=1;on=n<=LIVE
         items+=f'<li><a href="l{n:02d}.html"{"" if on else " class=\"off\""}><span class="n">{n:02d}</span><span><div class="t">{t}</div></span><span class="s">{"" if on else "未上线"}</span><span class="ar">→</span></a></li>'
 head=open('/workspace/learn/docker/index.html').read().split('<main')[0].replace('Docker · 课程目录','Redis · 课程目录').replace('<span class="crumb">Docker</span>','<span class="crumb">Redis</span>')
-open('/workspace/learn/redis/index.html','w').write(head+f'<main class="wrap"><section class="lede"><div class="k">课程</div><h1>Redis</h1><p>{n} 节课：基础、内部原理、进阶命令、高可用与扩展、缓存设计、生产、综合项目。每课包含在 Docker 里的 Redis 上做的练习和一个挑战。</p></section>\n<ul class="list" style="border-top:0">{items}</ul><footer class="foot"><a href="../index.html">← 学习</a><span>代码 MIT · 内容 CC BY 4.0</span></footer></main><script src="../assets/play.js"></script></body></html>\n')
+open('/workspace/learn/redis/index.html','w').write(head+f'<main class="wrap"><section class="lede"><div class="k">课程</div><h1>Redis</h1><p>{n} 节课，已全部完成：基础、内部原理、进阶命令、高可用与扩展、缓存设计、生产、综合项目。每课包含在 Docker 里的 Redis 上做的练习和一个挑战。</p></section>\n<ul class="list" style="border-top:0">{items}</ul><footer class="foot"><a href="../index.html">← 学习</a><span>代码 MIT · 内容 CC BY 4.0</span></footer></main><script src="../assets/play.js"></script></body></html>\n')
 print(n)

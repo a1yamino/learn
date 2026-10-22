@@ -9,6 +9,7 @@ def secs(prac,E):
     return [
 ('一次未授权访问','从扫描到拿到服务器权限。','<div id="p1"></div>'),
 ('动手：ACL 检查','用户 app 的规则：<code>on &gt;*** ~shop:* +@read +@write -@dangerous</code>。选择一条命令，看会不会被允许。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:60px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('ACL 如何判断一条命令','用户、命令类别、键模式依次检查。','<div id="p2"></div>'),
 ('相关命令','ACL 管理。','<div id="t4"></div>'),
 ('在你的电脑上练习','在 redis-cli 中（默认用户此时无密码）。',prac([
  ('创建应用账户。','ACL SETUSER app on >s3cret ~shop:* +@read +@write -@dangerous','OK'),

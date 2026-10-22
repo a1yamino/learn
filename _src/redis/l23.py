@@ -9,6 +9,7 @@ def secs(prac,E):
     return [
 ('延迟从哪里来','一条请求经过的各个环节。','<div id="p1"></div>'),
 ('动手：根据现象判断原因','选择一个现象，看应该查什么、可能的原因。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('内存都去了哪里','INFO memory 各项之间的关系。','<div id="p2"></div>'),
 ('相关命令','诊断工具一览。','<div id="t4"></div>'),
 ('在你的电脑上练习','在 redis-cli 中。',prac([
  ('把慢日志阈值调到 1 毫秒并制造一条慢命令。','CONFIG SET slowlog-log-slower-than 1000\nDEBUG SLEEP 0.05\nSLOWLOG GET 1','OK\nOK\n1) 1) (integer) 0\n   2) (integer) 1761118800\n   3) (integer) 50123\n   4) 1) "DEBUG"\n      2) "SLEEP"\n      3) "0.05"\n   5) "172.17.0.1:53122"\n   6) ""'),
