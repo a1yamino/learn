@@ -53,26 +53,35 @@ class T(unittest.TestCase):
     def test_checkout(self): self.assertEqual(checkout_total(100), 113)
     def test_invoice(self): self.assertEqual(invoice_tax([100, 50]), 19.5)
     def test_report(self): self.assertEqual(vat_report(1000), &quot;VAT: 130.00&quot;)
-unittest.main(argv=[&quot;x&quot;], exit=False, verbosity=0)
+    def test_checkout_keeps_current_float_rounding(self):
+        self.assertEqual(checkout_total(1.50), 1.69)
+if __name__ == &quot;__main__&quot;:
+    unittest.main(argv=[&quot;x&quot;], verbosity=0)
 EOF
-python3 test_billing.py 2&gt;&amp;1 | tail -n 1; grep -c &quot;0\.13\|1\.13&quot; billing.py</pre><pre class="out">OK
-3</pre></div></div><div class="st"><span class="n">02</span><div><p>规则 2 与 3：一个知识只有一处，名字表达意图。</p><pre class="cmd">cat &gt; billing.py &lt;&lt;&#x27;EOF&#x27;
+python3 test_billing.py &amp;&amp; grep -c &quot;0\.13\|1\.13&quot; billing.py</pre><pre class="out">----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK
+3</pre></div></div><div class="st"><span class="n">02</span><div><p>规则 2 与 3：一个知识只有一处，名字表达意图。保留原来的浮点运算顺序；不要在结构重构时顺便改变金额舍入。1.50 的当前结果1.69由特征测试固定，金额类型的改进放到下一课单独处理。</p><pre class="cmd">cat &gt; billing.py &lt;&lt;&#x27;EOF&#x27;
 VAT_RATE = 0.13
 
 def vat_of(amount):
     return amount * VAT_RATE
 
 def checkout_total(subtotal):
-    return round(subtotal + vat_of(subtotal), 2)
+    return round(subtotal * (1 + VAT_RATE), 2)
 
 def invoice_tax(lines):
-    return round(vat_of(sum(lines)), 2)
+    return round(sum(vat_of(line) for line in lines), 2)
 
 def vat_report(revenue):
     return f&quot;VAT: {vat_of(revenue):.2f}&quot;
 EOF
-python3 test_billing.py 2&gt;&amp;1 | tail -n 1; grep -c &quot;0\.13\|1\.13&quot; billing.py</pre><pre class="out">OK
-1</pre></div></div><div class="st"><span class="n">03</span><div><p>税率改变时，只需改一处，所有测试都能感知。</p><pre class="cmd">sed -i &quot;s/VAT_RATE = 0.13/VAT_RATE = 0.125/&quot; billing.py &amp;&amp; python3 -c &quot;from billing import *; print(checkout_total(100), invoice_tax([100, 50]), vat_report(1000))&quot;</pre><pre class="out">112.5 18.75 VAT: 125.00</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>合并还是保留？</h3><p>一个电商系统中：① 商品详情页和购物车页面都显示“预计送达日期”，计算逻辑相同；② 注册表单和收货地址表单都校验手机号，正则相同；③ 管理员报表与用户订单页面都把金额格式化为“¥1,234.50”；④ 用户密码与 API 密钥都要求“至少 12 位”。逐一判断是知识重复还是偶然相似。</p><details><summary>查看参考答案</summary><div><ol><li><b>知识重复</b>：同一条业务规则（物流承诺），必须一致，否则用户会看到两个日期。合并。</li><li><b>知识重复</b>：“什么是合法的中国手机号”是同一个知识。合并为 <code>PhoneNumber.parse()</code>。</li><li><b>知识重复</b>：货币显示格式是全站统一的约定。合并。</li><li><b>偶然相似</b>：密码长度由安全策略与用户体验决定；API 密钥长度由密钥生成方式决定（通常更长、随机生成）。它们会独立变化，保持分开，各自命名：<code>MIN_PASSWORD_LENGTH</code>、<code>API_KEY_LENGTH</code>。</li></ol></div></details></div>
+python3 test_billing.py &amp;&amp; grep -c &quot;0\.13\|1\.13&quot; billing.py</pre><pre class="out">----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK
+1</pre></div></div><div class="st"><span class="n">03</span><div><p>税率改变时，只改一处即可影响三种输出。这属于业务规则变更，需要另行确认并更新测试期望；此处先打印新税率下的结果。</p><pre class="cmd">sed -i.bak &quot;s/VAT_RATE = 0.13/VAT_RATE = 0.125/&quot; billing.py &amp;&amp; python3 -c &quot;from billing import *; print(checkout_total(100), invoice_tax([100, 50]), vat_report(1000))&quot;</pre><pre class="out">112.5 18.75 VAT: 125.00</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>合并还是保留？</h3><p>一个电商系统中：① 商品详情页和购物车页面都显示“预计送达日期”，计算逻辑相同；② 注册表单和收货地址表单都校验手机号，正则相同；③ 管理员报表与用户订单页面都把金额格式化为“¥1,234.50”；④ 用户密码与 API 密钥都要求“至少 12 位”。逐一判断是知识重复还是偶然相似。</p><details><summary>查看参考答案</summary><div><ol><li><b>知识重复</b>：同一条业务规则（物流承诺），必须一致，否则用户会看到两个日期。合并。</li><li><b>知识重复</b>：“什么是合法的中国手机号”是同一个知识。合并为 <code>PhoneNumber.parse()</code>。</li><li><b>知识重复</b>：货币显示格式是全站统一的约定。合并。</li><li><b>偶然相似</b>：密码长度由安全策略与用户体验决定；API 密钥长度由密钥生成方式决定（通常更长、随机生成）。它们会独立变化，保持分开，各自命名：<code>MIN_PASSWORD_LENGTH</code>、<code>API_KEY_LENGTH</code>。</li></ol></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
