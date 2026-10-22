@@ -58,20 +58,21 @@ if (exitCode !== 0) {
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">准备整门课的练习环境：Node.js 22.19 以上、git。所有练习都在仓库根目录下的 <code>scratch/</code> 目录中进行，使用 faux 模型，不需要 API key。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">除首次克隆外，以下命令均在 pi-mono 仓库根目录执行，完成一个代码块后仍留在根目录。准备整门课的练习环境：Node.js 22.19 以上、git。练习脚本保存在仓库根目录下的 <code>scratch/</code>。本课使用 faux 模型，不需要真实 API key；依赖安装和首次模型目录生成需要联网，后续第 2–3 课使用 faux，第 4 课检查目录与凭据，第 5 课使用本地模拟服务。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>克隆仓库并固定到本课程使用的提交。</p><pre class="cmd">git clone https://github.com/badlogic/pi-mono.git
 cd pi-mono
-git checkout db774055e3ecae05ab6eae8656454cde98e36780</pre><pre class="out">HEAD is now at db77405 …</pre></div></div><div class="st"><span class="n">02</span><div><p>安装依赖并构建（约 1 分钟）。<code>--ignore-scripts</code> 跳过依赖的安装脚本，pi 的正常构建并不需要它们。</p><pre class="cmd">npm ci --ignore-scripts
-npm run build</pre><pre class="out">…
-Built packages/coding-agent/dist/bundle (82 files, 8.8 MiB)</pre></div></div><div class="st"><span class="n">03</span><div><p>每个包有多少行 TypeScript 源码？</p><pre class="cmd">cd pi-mono &amp;&amp; for p in ai agent coding-agent tui mcp codemode; do printf &quot;%-14s %6s\n&quot; $p $(cat $(find packages/$p/src -name &quot;*.ts&quot;) | wc -l); done</pre><pre class="out">ai              27941
+git checkout db774055e3ecae05ab6eae8656454cde98e36780</pre><pre class="out">HEAD is now at db77405 …</pre></div></div><div class="st"><span class="n">02</span><div><p>安装依赖并构建（首次需要联网，耗时取决于网络和机器）。<code>--ignore-scripts</code> 跳过依赖的安装脚本，pi 的正常构建并不需要它们。</p><pre class="cmd">npm ci --ignore-scripts
+npm run build
+# 后续已生成模型目录且只需重新构建时，可用 npm run build:offline</pre><pre class="out">…
+Built packages/coding-agent/dist/bundle (82 files, 8.8 MiB)</pre></div></div><div class="st"><span class="n">03</span><div><p>每个包有多少行 TypeScript 源码？</p><pre class="cmd">for p in ai agent coding-agent tui mcp codemode; do printf &quot;%-14s %6s\n&quot; $p $(cat $(find packages/$p/src -name &quot;*.ts&quot;) | wc -l); done</pre><pre class="out">ai              27941
 agent            2539
 coding-agent    76069
 tui             19623
 mcp              3277
-codemode         3037</pre></div></div><div class="st"><span class="n">04</span><div><p>包之间的依赖（只看 pi 自己的包）。</p><pre class="cmd">cd pi-mono &amp;&amp; for p in ai agent coding-agent tui; do node -e &quot;const j=require(&#x27;./packages/$p/package.json&#x27;); console.log(j.name.padEnd(32), Object.keys(j.dependencies||{}).filter(d=&gt;d.startsWith(&#x27;@earendil&#x27;)).join(&#x27; &#x27;) || &#x27;-&#x27;)&quot;; done</pre><pre class="out">@earendil-works/pi-ai            @earendil-works/pi-telemetry
+codemode         3037</pre></div></div><div class="st"><span class="n">04</span><div><p>包之间的依赖（只看 pi 自己的包）。</p><pre class="cmd">for p in ai agent coding-agent tui; do node -e &quot;const j=require(&#x27;./packages/$p/package.json&#x27;); console.log(j.name.padEnd(32), Object.keys(j.dependencies||{}).filter(d=&gt;d.startsWith(&#x27;@earendil&#x27;)).join(&#x27; &#x27;) || &#x27;-&#x27;)&quot;; done</pre><pre class="out">@earendil-works/pi-ai            @earendil-works/pi-telemetry
 @earendil-works/pi-agent-core    @earendil-works/pi-ai
 @earendil-works/pi-coding-agent  @earendil-works/pi-agent-core @earendil-works/pi-ai @earendil-works/pi-codemode @earendil-works/pi-mcp @earendil-works/pi-tui
-@earendil-works/pi-tui           -</pre></div></div><div class="st"><span class="n">05</span><div><p>第一个程序：用 faux 模型驱动真实的 Agent。模型被“脚本化”：第一次回复调用 <code>add</code> 工具，第二次给出答案。</p><pre class="cmd">mkdir -p pi-mono/scratch &amp;&amp; cat &gt; pi-mono/scratch/hello.ts &lt;&lt;&#x27;EOF&#x27;
+@earendil-works/pi-tui           -</pre></div></div><div class="st"><span class="n">05</span><div><p>第一个程序：用 faux 模型驱动真实的 Agent。模型被“脚本化”：第一次回复调用 <code>add</code> 工具，第二次给出答案。</p><pre class="cmd">mkdir -p scratch &amp;&amp; cat &gt; scratch/hello.ts &lt;&lt;&#x27;EOF&#x27;
 import { Type } from &quot;@earendil-works/pi-ai&quot;;
 import { fauxAssistantMessage, fauxText, fauxToolCall, registerFauxProvider, streamSimple } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { Agent } from &quot;@earendil-works/pi-agent-core&quot;;
@@ -97,7 +98,7 @@ agent.subscribe((e) =&gt; { if (e.type !== &quot;message_update&quot;) console.l
 await agent.prompt(&quot;2+3=?&quot;);
 for (const m of agent.state.messages) console.log(m.role.padEnd(10), JSON.stringify(m.content).slice(0, 70));
 EOF
-cd pi-mono/scratch &amp;&amp; node hello.ts</pre><pre class="out">事件 agent_start
+node scratch/hello.ts</pre><pre class="out">事件 agent_start
 事件 turn_start
 事件 message_start
 事件 message_end
