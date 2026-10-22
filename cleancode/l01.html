@@ -118,7 +118,7 @@ OK</pre></div></div><div class="st"><span class="n">04</span><div><p>确认行�
     if len(x) != 2:
         return False
     # TODO 以后支持手机号
-    return True</pre></p><details><summary>查看参考答案</summary><div><ol><li><b>函数名</b>：<code>proc</code> → <code>is_valid_signup</code>。它返回布尔值并判断注册数据是否合法，名字应该说出来。</li><li><b>字典键</b>：<code>d["a"]</code>、<code>d["e"]</code> → <code>signup["age"]</code>、<code>signup["email"]</code>（或改为数据类）。键名是读者最大的猜谜来源。</li><li><b>魔法数和无用注释</b>：<code>18</code> → <code>MINIMUM_AGE = 18</code>；删除“# 检查”这种复述代码的注释；TODO 移到问题跟踪系统里。</li></ol><p>没有选择大改结构：童子军规则要求的是每次一点点、有测试兜底，而不是在修 bug 时顺手重写模块。</p></div></details></div>
+    return True</pre></p><details><summary>查看参考答案</summary><div><ol><li><b>函数名</b>：<code>proc</code> → <code>is_valid_signup</code>。它返回布尔值并判断注册数据是否合法，名字应该说出来。</li><li>局部名称：将 d 命名为 signup，再用 <code>age = signup["a"]</code>、<code>email = signup["e"]</code> 表达含义。这里保留原字典键；改成 age/email 会改变输入契约，需另行迁移调用方，不能当作行为不变的小清理。</li><li><b>魔法数和无用注释</b>：<code>18</code> → <code>MINIMUM_AGE = 18</code>；删除“# 检查”这种复述代码的注释；TODO 移到问题跟踪系统里。</li></ol><p>没有选择大改结构：童子军规则要求的是每次一点点、有测试兜底，而不是在修 bug 时顺手重写模块。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
