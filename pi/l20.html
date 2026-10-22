@@ -65,8 +65,8 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">需要 pi-mono 已构建（<code>npm install &amp;&amp; npm run build</code>）、Node 22.18+（可直接运行 .ts）。<code>faux-session.ts</code> 是本课程反复使用的辅助文件。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>辅助文件（若前面课程已创建可跳过）。</p><pre class="cmd">cat &gt; pi-mono/scratch/faux-session.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。需要 pi-mono 已构建（<code>npm install &amp;&amp; npm run build</code>）、Node 22.19+（可直接运行 .ts）。<code>faux-session.ts</code> 是本课程反复使用的辅助文件。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>辅助文件（若前面课程已创建可跳过）。</p><pre class="cmd">cat &gt; scratch/faux-session.ts &lt;&lt;&#x27;EOF&#x27;
 // 课程练习用的小工具：用 faux 模型创建一个真实的 AgentSession（无需 API key）。
 import { type FauxResponseStep, registerFauxProvider } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { type CreateAgentSessionOptions, createAgentSession, ModelRuntime, SessionManager, SettingsManager } from &quot;@earendil-works/pi-coding-agent&quot;;
@@ -108,7 +108,7 @@ export function show(messages: readonly any[]) {
     console.log(m.role.padEnd(11), c.replace(/\s+/g, &quot; &quot;).slice(0, 90));
   }
 }
-EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>fixbot。</p><pre class="cmd">cat &gt; pi-mono/scratch/l20.ts &lt;&lt;&#x27;EOF&#x27;
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>fixbot。</p><pre class="cmd">cat &gt; scratch/l20.ts &lt;&lt;&#x27;EOF&#x27;
 // 毕业项目：fixbot —— 用 pi SDK 组装的迷你编码 agent
 // 组成：AgentSession（第 2–8 课）+ 内置 read/edit（第 9–10 课）+ 自定义工具 run_tests
 //      + tool_call 守卫（第 15 课）+ 自己写的极简“界面”（订阅事件，第 3/18 课）
@@ -181,7 +181,7 @@ console.log(&quot;--- 修复后的 math.js ---\n&quot; + readFileSync(join(dir, 
 console.log(`--- 会话共 ${session.messages.length} 条消息，${session.messages.filter((m: any) =&gt; m.role === &quot;toolResult&quot;).length} 次工具调用`);
 session.dispose();
 EOF
-cd pi-mono/scratch &amp;&amp; node l20.ts</pre><pre class="out">→ run_tests {}
+node scratch/l20.ts</pre><pre class="out">→ run_tests {}
   ✓ &quot;FAIL\nadd(2,3) = -1，期望 5&quot;
 → read {&quot;path&quot;:&quot;math.js&quot;}
   ✓ &quot;export function add(a, b) {\n  return a - b;\n}\n&quot;
@@ -215,7 +215,7 @@ session.subscribe((e: any) =&gt; {
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>内核</b>：<code>createAgentSession()</code>（<code>sdk.ts</code>）解析 cwd、agentDir、ModelRuntime、设置、资源加载器与工具集，构造 <code>AgentSession</code>（第 2、8 课）。</li><li><b>工具</b>：<code>tools: ["read","edit","bash","run_tests"]</code> 是允许列表；<code>customTools</code> 中的 <code>defineTool()</code> 工具用 TypeBox 声明参数，循环负责校验（第 7 课）。</li><li><b>守卫</b>：会话已在 <code>agent.beforeToolCall</code> 上安装钩子（用于分发扩展的 <code>tool_call</code>）。我们<b>串联</b>而不是覆盖它；正式项目更推荐写成扩展（第 15、19 课）。</li><li><b>并行与顺序</b>：edit 与被拦截的 bash 在同一条助手消息中，拦截结果先返回，edit 后返回——同一消息中的工具调用并行执行，事件按完成顺序发出（第 7 课）。</li><li><b>界面</b>：只是 <code>session.subscribe()</code>。把它换成 pi-tui（第 17 课）就是交互模式，换成 JSON 输出就是 print/json/rpc（第 18 课）。</li><li><b>换真模型</b>：把 faux 换成 <code>modelRuntime</code> 中的真实模型（第 4 课），其余代码不变。</li></ol></section>
+<ol class="sum"><li><b>内核</b>：<code>createAgentSession()</code>（<code>sdk.ts</code>）解析 cwd、agentDir、ModelRuntime、设置、资源加载器与工具集，构造 <code>AgentSession</code>（第 2、8 课）。</li><li><b>工具</b>：<code>tools: ["read","edit","bash","run_tests"]</code> 是允许列表；<code>customTools</code> 中的 <code>defineTool()</code> 工具用 TypeBox 声明参数，循环负责校验（第 7 课）。</li><li><b>守卫</b>：会话已在 <code>agent.beforeToolCall</code> 上安装钩子（用于分发扩展的 <code>tool_call</code>）。我们<b>串联</b>而不是覆盖它；正式项目更推荐写成扩展（第 15、19 课）。</li><li><b>并行与顺序</b>：edit 与被拦截的 bash 在同一条助手消息中，拦截结果先返回，edit 后返回——同一消息中的工具调用并行执行，tool_execution_end 可以先后到达（被拦截的调用在准备阶段立即结束），但写入转录的 toolResult 消息仍按原调用顺序发出（第 7 课）。</li><li><b>界面</b>：只是 <code>session.subscribe()</code>。把它换成 pi-tui（第 17 课）就是交互模式，换成 JSON 输出就是 print/json/rpc（第 18 课）。</li><li><b>换真模型</b>：把 faux 换成 <code>modelRuntime</code> 中的真实模型（第 4 课），其余代码不变。</li></ol></section>
 <footer class="endnav"><div class="k">课程完成</div><a class="big" href="index.html">课程目录 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
