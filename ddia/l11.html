@@ -1,0 +1,74 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 11 课 · 单主复制</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 11 课</span><span class="sp"></span><a href="l10.html">← 第 10 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 11 课</div><h1>单主复制</h1>
+<p>第 6 章开篇。复制就是在多台机器上保存同一份数据：为了容错、为了扩展读、为了让数据离用户更近。难点全在“数据会变”。本课讲最常见的单主（基于领导者）复制：写入只发给主节点，主节点把变更日志发给从节点；同步与异步复制的取舍；如何不停机地添加新的从节点；从节点与主节点故障时的处理（故障切换的各种陷阱）；以及复制日志的四种实现。练习中你会用两个 PostgreSQL 容器搭建流复制并手工完成一次故障切换。约 65 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">主从复制与故障切换</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：异步复制下的故障切换</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">添加新的从节点</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">查看复制状态</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>主从复制与故障切换</h2><div class="goal">一次写入如何到达从节点，以及主节点故障后发生了什么。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：异步复制下的故障切换</h2><div class="goal">选择主节点崩溃的时刻，看哪些写入会丢失。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>添加新的从节点</h2><div class="goal">快照加日志位置。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>查看复制状态</h2><div class="goal">PostgreSQL 中的复制视图与函数。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">搭建一主一从的 PostgreSQL 流复制。需要 Docker。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建网络并启动主节点，创建复制用户。</p><pre class="cmd">docker network create pgnet
+docker run -d --name pg1 --network pgnet -e POSTGRES_PASSWORD=pw postgres:18
+sleep 5
+docker exec pg1 psql -U postgres -c &quot;CREATE ROLE rep WITH REPLICATION LOGIN PASSWORD &#x27;rep&#x27;;&quot;
+docker exec pg1 sh -c &#x27;echo &quot;host replication rep all scram-sha-256&quot; &gt;&gt; &quot;$PGDATA/pg_hba.conf&quot;&#x27;
+docker exec pg1 psql -U postgres -c &quot;SELECT pg_reload_conf();&quot;</pre><pre class="out">CREATE ROLE
+ pg_reload_conf
+----------------
+ t</pre></div></div><div class="st"><span class="n">02</span><div><p>启动从节点：pg_basebackup 复制快照并记录位置，-R 生成连接主节点的配置。</p><pre class="cmd">docker run -d --name pg2 --network pgnet -u postgres -e PGPASSWORD=rep postgres:18 \
+  bash -c &#x27;pg_basebackup -h pg1 -U rep -D /tmp/rep -R -X stream &amp;&amp; chmod 700 /tmp/rep &amp;&amp; exec postgres -D /tmp/rep&#x27;
+sleep 8
+docker exec pg1 psql -U postgres -c &quot;SELECT client_addr, state, sync_state FROM pg_stat_replication;&quot;</pre><pre class="out"> client_addr |   state   | sync_state
+-------------+-----------+------------
+ 172.19.0.3  | streaming | async</pre></div></div><div class="st"><span class="n">03</span><div><p>在主节点写入，在从节点读取。</p><pre class="cmd">docker exec pg1 psql -U postgres -c &quot;CREATE TABLE t(id int, v text); INSERT INTO t VALUES (1, &#x27;hello&#x27;);&quot;
+docker exec pg2 psql -U postgres -c &quot;SELECT * FROM t;&quot;</pre><pre class="out">CREATE TABLE
+INSERT 0 1
+ id |   v
+----+-------
+  1 | hello</pre></div></div><div class="st"><span class="n">04</span><div><p>从节点是只读的。</p><pre class="cmd">docker exec pg2 psql -U postgres -c &quot;INSERT INTO t VALUES (2, &#x27;x&#x27;);&quot;</pre><pre class="out">ERROR:  cannot execute INSERT in a read-only transaction</pre></div></div><div class="st"><span class="n">05</span><div><p>故障切换：停掉主节点，提升从节点。</p><pre class="cmd">docker stop pg1
+docker exec pg2 psql -U postgres -c &quot;SELECT pg_promote();&quot;
+docker exec pg2 psql -U postgres -c &quot;INSERT INTO t VALUES (2, &#x27;after failover&#x27;); SELECT * FROM t;&quot;</pre><pre class="out"> pg_promote
+------------
+ t
+INSERT 0 1
+ id |       v
+----+----------------
+  1 | hello
+  2 | after failover</pre></div></div><div class="st"><span class="n">06</span><div><p>如果此时旧主恢复，它仍以为自己是主：这就是脑裂的风险。真实系统会用 fencing 阻止它（第 22 课）。</p><pre class="cmd">docker start pg1
+docker exec pg1 psql -U postgres -c &quot;SELECT pg_is_in_recovery();&quot;</pre><pre class="out"> pg_is_in_recovery
+-------------------
+ f
+（两个节点都可写！实际中必须先隔离旧主，再用 pg_rewind 把它变成新主的从节点）</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个电商数据库设计复制方案</h3><p>要求：主库所在机器故障时，已确认的订单一笔都不能丢；故障切换在 1 分钟内完成；读流量是写流量的 10 倍；某可用区整体故障也能继续服务。请设计副本数、同步方式与部署位置，说明故障切换流程与防脑裂措施，以及代价。</p><details><summary>查看参考答案</summary><div><ol><li>三个可用区各放一个节点：主（AZ-a）、从 1（AZ-b）、从 2（AZ-c），另加 1–2 个只读从节点承担读流量。</li><li>同步方式：<code>synchronous_standby_names = 'ANY 1 (s1, s2)'</code>（法定数同步）+ <code>synchronous_commit = on</code>：每次提交至少有一个其他可用区的从节点已持久化 WAL，主库故障时已确认的订单不会丢；只有一个同步从节点故障时写入不受影响。代价：每次提交增加一次跨可用区往返（约 1–2 ms）。只读从节点异步，读取可能滞后（第 12 课）。</li><li>故障切换：由 Patroni 之类的工具配合 etcd（共识存储）管理：主库持有租约，租约过期才能选新主；选择已确认 LSN 最大的同步从节点提升；客户端通过 VIP / 服务发现 / 支持多主机的连接串（<code>target_session_attrs=read-write</code>）找到新主。</li><li>防脑裂：旧主在失去租约后自动降级为只读或自杀（watchdog）；必要时通过云 API 隔离旧主的网络（STONITH）；旧主恢复后用 <code>pg_rewind</code> 回退分叉的 WAL，再作为从节点加入。</li><li>定期做切换演练，测量真实的 RTO。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>单主复制</b>：一个副本被指定为<b>主节点</b>（leader，也叫 primary），所有写入都发给它；它把变更写入本地存储，同时作为<b>复制日志</b>发送给所有<b>从节点</b>（follower，也叫 replica / standby），从节点按相同顺序应用。读可以发给任何副本。PostgreSQL、MySQL、MongoDB、Kafka 分区（<a href="../kafka/l09.html">Kafka 第 9 课</a>）、Redis 主从都是这种模式。</li><li><b>同步与异步</b>：同步复制时，主节点要等从节点确认写入后才向客户端报告成功——保证从节点有最新数据，但任何一个同步从节点卡住，所有写入都被阻塞。所以实践中常用<b>半同步</b>：一个从节点同步、其余异步，保证至少两个节点有最新数据。全部异步时，主节点故障会丢失尚未复制的写入，但吞吐与可用性最好。</li><li><b>添加新从节点</b>：不能简单复制数据文件（数据在不断变化），也不想锁库。做法：对主节点做一致性快照（不加锁），记下快照对应的复制日志位置（PostgreSQL 的 LSN、MySQL 的 binlog 坐标）；把快照复制到新节点；新节点从该位置开始拉取后续变更，<b>追上</b>后就成为正常的从节点。<code>pg_basebackup</code> 正是这样工作的。</li><li><b>节点故障</b>：从节点故障后，根据本地日志知道自己处理到哪里，重连后从那里继续追赶。主节点故障要<b>故障切换</b>：判断主节点已死（通常靠超时）、选出新主（数据最新的从节点，属于共识问题，第 24 课）、让客户端和其他从节点改连新主。陷阱：异步复制下新主可能缺少旧主最后的写入，旧主恢复后这些写入通常被丢弃——如果其他系统（如 Redis 缓存）已经用过这些数据（例如自增 ID），就会产生不一致；两个节点都认为自己是主（<b>脑裂</b>）；超时设得太短会在负载高时误判、引发不必要的切换，太长则恢复慢。</li><li><b>复制日志的实现</b>：① <b>基于语句</b>——转发 SQL 语句；<code>NOW()</code>、<code>RAND()</code>、自增与触发器会在不同副本上产生不同结果。② <b>预写日志传输</b>——直接发送存储引擎的 WAL（PostgreSQL 流复制）；非常底层，主从必须是相同的存储格式与版本，影响零停机升级。③ <b>逻辑（基于行）日志</b>——按行描述插入、更新、删除（MySQL 行格式 binlog、PostgreSQL 逻辑复制）；与存储格式解耦，可以跨版本，也便于外部系统消费（CDC，第 26 课）。④ <b>基于触发器</b>——在应用层用触发器记录变更，灵活但开销大、易出错。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 12</div><a class="big" href="l12.html">复制延迟带来的问题与对策 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l11.js"></script>
+</body></html>

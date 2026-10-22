@@ -1,0 +1,77 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 13 课 · 多主复制、同步引擎与冲突解决</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 13 课</span><span class="sp"></span><a href="l12.html">← 第 12 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 13 课</div><h1>多主复制、同步引擎与冲突解决</h1>
+<p>单主复制的限制是：所有写入都要经过一个节点。多主复制允许多个节点同时接受写入，用于多区域部署、离线可用的客户端与实时协作编辑——第 2 版把“同步引擎与本地优先软件”作为重点。代价是写冲突。本课讲多主的使用场景与复制拓扑，冲突是如何产生的，以及处理冲突的几种办法：避免冲突、最后写入者胜、手动合并、CRDT 与操作转换。约 65 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">多区域多主</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：选择冲突解决策略</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">协作编辑中的 CRDT</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">冲突检测示例</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>多区域多主</h2><div class="goal">两个区域并发修改同一条记录。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：选择冲突解决策略</h2><div class="goal">两个离线设备修改同一张购物清单，比较合并结果。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>协作编辑中的 CRDT</h2><div class="goal">每个字符有稳定的标识，并发插入不会打乱位置。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>冲突检测示例</h2><div class="goal">用 PostgreSQL 的逻辑复制看冲突。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">只需要 Python 3。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>保存为 <code>crdt.py</code>：LWW、G-Counter 与 OR-Set。</p><pre class="cmd"># 两个离线副本各自修改，之后合并
+# 1) 最后写入者胜（LWW）：按时间戳取一个值，另一个修改静默丢失
+a = (&quot;标题：周会&quot;, 1001)            # (值, 时间戳)
+b = (&quot;标题：周例会&quot;, 1002)
+print(&quot;LWW 合并：&quot;, max(a, b, key=lambda x: x[1])[0], &quot;（副本 A 的修改丢失）&quot;)
+
+# 2) G-Counter：每个副本只增加自己的槽，合并取各槽最大值
+class GCounter:
+    def __init__(self, me): self.me, self.c = me, {}
+    def inc(self, n=1): self.c[self.me] = self.c.get(self.me, 0) + n
+    def merge(self, o):
+        for k, v in o.c.items(): self.c[k] = max(self.c.get(k, 0), v)
+    def value(self): return sum(self.c.values())
+x, y = GCounter(&quot;A&quot;), GCounter(&quot;B&quot;)
+x.inc(3); y.inc(2); x.merge(y); y.merge(x); x.merge(y)   # 重复合并也没关系（幂等）
+print(&quot;计数器：&quot;, x.value(), y.value())
+
+# 3) OR-Set：添加带唯一标签，删除只删除自己看到的标签 → 并发的“添加”胜出
+import itertools; tag = itertools.count()
+class ORSet:
+    def __init__(self): self.adds, self.removes = set(), set()
+    def add(self, e): self.adds.add((e, next(tag)))
+    def remove(self, e): self.removes |= {t for t in self.adds if t[0] == e}
+    def merge(self, o): self.adds |= o.adds; self.removes |= o.removes
+    def value(self): return sorted({e for e, t in self.adds - self.removes})
+s1 = ORSet(); s1.add(&quot;牛奶&quot;); s1.add(&quot;鸡蛋&quot;)
+s2 = ORSet(); s2.merge(s1)
+s1.remove(&quot;牛奶&quot;)                 # A 删除牛奶
+s2.add(&quot;牛奶&quot;); s2.add(&quot;面包&quot;)     # B 同时又加了一次牛奶、加了面包
+s1.merge(s2); s2.merge(s1)
+print(&quot;购物清单：&quot;, s1.value(), s2.value())</pre><pre class="out">LWW 合并： 标题：周例会 （副本 A 的修改丢失）
+计数器： 5 5
+购物清单： [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;] [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;]</pre></div></div><div class="st"><span class="n">02</span><div><p>思考：为什么 OR-Set 中“牛奶”还在？因为 A 删除时只删除了自己看到过的那个标签，B 后来添加的牛奶带有新标签，A 从未见过。这种语义叫“添加胜出”。如果你需要“删除胜出”，就要用另一种 CRDT。</p></div></div><div class="st"><span class="n">03</span><div><p>改一改：把 G-Counter 合并时的 max 换成相加，重复合并两次，看看计数为什么会出错（合并不再幂等）。</p><pre class="cmd">sed -i &#x27;s/max(self.c.get(k, 0), v)/self.c.get(k, 0) + v/&#x27; crdt.py &amp;&amp; python3 crdt.py</pre><pre class="out">LWW 合并： 标题：周例会 （副本 A 的修改丢失）
+计数器： 12 7
+购物清单： [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;] [&#x27;牛奶&#x27;, &#x27;面包&#x27;, &#x27;鸡蛋&#x27;]</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个离线优先的待办应用选择数据结构</h3><p>功能：待办列表（可以增删、重排）、每项有标题、完成状态、截止日期；同一用户的手机与电脑可能都离线修改几天。请为每种操作选择冲突解决语义，并说明哪些可以用现成的 CRDT、哪些需要提示用户。</p><details><summary>查看参考答案</summary><div><ol><li><b>列表成员（增删）</b>：OR-Set（添加胜出）——一个设备删除、另一个设备在同一项上修改时，保留该项更安全；或者用“删除标记 + 修改时自动复活”。</li><li><b>顺序</b>：列表 CRDT（如 RGA，或 Automerge/Yjs 的 list），每项有稳定的位置标识；或者给每项一个分数位置（fractional index），重排时只改被移动项的位置，冲突时以 LWW 解决该项的位置。</li><li><b>标题</b>：短文本可用 LWW 寄存器（按 Lamport 时间戳 + 设备 ID 打破平局，而不是墙上时钟）；若希望保留两边的编辑，用文本 CRDT 或多值寄存器，把冲突显示给用户选择。</li><li><b>完成状态</b>：LWW 寄存器即可；或者“完成胜出”的标志。</li><li><b>截止日期</b>：LWW 寄存器；如果两个设备都改了，可以在同步后提示“该项在另一设备上也被修改了”。</li><li>整体：用 Automerge/Yjs 之类的库，文档存在本地（IndexedDB/SQLite），同步服务器只转发和存储变更，不需要理解冲突。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>多区域部署</b>：每个区域一个主节点，区域内是普通的单主复制，区域之间异步地互相复制。写入在本地区域完成，延迟低，某个区域故障或区域间网络中断时其他区域仍可写。代价：两个区域可能并发修改同一份数据，产生冲突；自增 ID、触发器、约束等特性与多主配合困难。很多数据库的多主功能是后加的，要谨慎使用。</li><li><b>同步引擎与本地优先</b>：离线可用的应用（笔记、日历）在每台设备上都有一个本地数据库，可以离线读写，联网后与服务器及其他设备同步——每台设备都是一个“主节点”，复制延迟可能长达几天。<b>实时协作</b>（多人同时编辑文档）是同一个问题的极端情况：每次按键都是一次本地写入，再异步同步给其他人。同步引擎把这些复杂性封装起来，让 UI 直接读写本地数据，<b>本地优先</b>软件进一步强调数据由用户掌握、无需服务器也能工作。</li><li><b>复制拓扑</b>：环形、星形、全互连。环形和星形中一个节点故障会中断复制；全互连容错更好，但消息可能经由不同路径以不同顺序到达，一个“更新”可能比它依赖的“插入”先到——需要版本向量等机制来排序（第 14 课）。</li><li><b>冲突处理</b>：① <b>避免冲突</b>——同一条记录的写入总是路由到同一个主节点（例如用户的“主区域”）；最简单，但区域故障时仍要切换。② <b>最后写入者胜（LWW）</b>——给每个写入一个时间戳，保留最大的；会静默丢失并发写入，而且依赖时钟（第 22 课）。③ <b>手动解决</b>——保存所有冲突的版本（兄弟值），让应用或用户合并（如 Git）。④ <b>自动合并</b>——用 CRDT 或操作转换。</li><li><b>CRDT</b>（无冲突复制数据类型）：设计成任意顺序、任意次数合并都得到相同结果的数据结构（合并满足交换律、结合律、幂等）。例如：计数器（每个副本只加自己的槽，合并取最大）、集合（添加带唯一标签，删除只删除看到过的标签，因此并发的添加胜出）、文本（为每个字符分配稳定的位置标识，Automerge、Yjs）。<b>操作转换（OT）</b>是协作编辑的另一种方法（Google Docs），依赖中心服务器为操作排序并相应地变换索引。</li><li>冲突的形式不只是“同一字段被改成两个值”：两个人同时预订了同一个会议室，在各自的副本上都没有违反约束，合并后却违反了——这类问题需要协调（第 19、27 课）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 14</div><a class="big" href="l14.html">无主复制：Quorum 与并发写 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l13.js"></script>
+</body></html>

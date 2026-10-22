@@ -1,0 +1,76 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 14 课 · 无主复制：Quorum 与并发写</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 14 课</span><span class="sp"></span><a href="l13.html">← 第 13 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 14 课</div><h1>无主复制：Quorum 与并发写</h1>
+<p>Amazon 的 Dynamo 论文让另一种复制方式流行起来：没有主节点，客户端直接把写入发给多个副本，读取时也从多个副本读取并取最新值。Cassandra、ScyllaDB、Riak 都是这种风格。本课讲 Quorum 读写（w + r &gt; n）、读修复与反熵、Quorum 一致性的局限、宽松 Quorum，单主与无主在性能与多区域上的比较，以及如何用版本向量检测并发写入。约 65 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">Quorum 读写</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：调整 w 与 r</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">版本向量</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">Cassandra 的一致性级别</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>Quorum 读写</h2><div class="goal">n=3、w=2、r=2，一个副本宕机时。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：调整 w 与 r</h2><div class="goal">选择配置，看读到旧值的概率与可用性。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>版本向量</h2><div class="goal">判断两个写入是先后关系还是并发。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>Cassandra 的一致性级别</h2><div class="goal">cqlsh 中按请求设置 w 和 r。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">只需要 Python 3。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>保存为 <code>quorum.py</code>：每次写入只有 w 个节点及时收到，随后读 r 个节点。</p><pre class="cmd">import random
+random.seed(5)
+N = 3
+nodes = [{&quot;v&quot;: 0, &quot;ver&quot;: 0} for _ in range(N)]
+
+def write(val, ver, w):
+    up = random.sample(range(N), N)        # 随机顺序
+    for i in up[:w]: nodes[i] = {&quot;v&quot;: val, &quot;ver&quot;: ver}   # 只有 w 个节点及时收到
+def read(r):
+    got = [nodes[i] for i in random.sample(range(N), r)]
+    return max(got, key=lambda x: x[&quot;ver&quot;])[&quot;v&quot;]  # 取版本号最大的
+
+for w, r in [(1, 1), (2, 1), (2, 2), (3, 1)]:
+    stale = 0
+    for t in range(1, 10001):
+        for n in nodes: n.update(v=0, ver=0)
+        write(t, t, w)
+        if read(r) != t: stale += 1
+    print(f&quot;n={N} w={w} r={r}  w+r&gt;n: {str(w + r &gt; N):5}  读到旧值 {stale/100:.1f}%&quot;)</pre><pre class="out">n=3 w=1 r=1  w+r&gt;n: False  读到旧值 66.9%
+n=3 w=2 r=1  w+r&gt;n: False  读到旧值 34.0%
+n=3 w=2 r=2  w+r&gt;n: True   读到旧值 0.0%
+n=3 w=3 r=1  w+r&gt;n: True   读到旧值 0.0%</pre></div></div><div class="st"><span class="n">02</span><div><p>保存为 <code>vv.py</code>：比较两个版本向量。</p><pre class="cmd">def compare(a, b):
+    keys = set(a) | set(b)
+    le = all(a.get(k, 0) &lt;= b.get(k, 0) for k in keys)
+    ge = all(a.get(k, 0) &gt;= b.get(k, 0) for k in keys)
+    if le and ge: return &quot;相同&quot;
+    if le: return &quot;a 发生在 b 之前（b 可以覆盖 a）&quot;
+    if ge: return &quot;b 发生在 a 之前（a 可以覆盖 b）&quot;
+    return &quot;并发（需要保留两者或合并）&quot;
+print(compare({&quot;A&quot;: 1}, {&quot;A&quot;: 2}))
+print(compare({&quot;A&quot;: 2, &quot;B&quot;: 1}, {&quot;A&quot;: 1}))
+print(compare({&quot;A&quot;: 2}, {&quot;A&quot;: 1, &quot;B&quot;: 1}))</pre><pre class="out">a 发生在 b 之前（b 可以覆盖 a）
+b 发生在 a 之前（a 可以覆盖 b）
+并发（需要保留两者或合并）</pre></div></div><div class="st"><span class="n">03</span><div><p>想一想：在 quorum.py 中，如果把 read() 中“取版本号最大的”改成“取第一个读到的”，w=2、r=2 时还能保证读到新值吗？为什么无主复制必须给值附带版本？</p></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个全球用户会话存储选择 Quorum 配置</h3><p>三个区域（上海、法兰克福、弗吉尼亚），每个区域 3 个副本（共 n=9，Cassandra 风格）。会话数据：登录时写入，之后每个请求读取，用户通常只在一个区域活动；要求区域内单节点故障不影响读写，区域间网络中断时各区域仍能服务本区域用户；读延迟 p99 &lt; 10 ms。请选择写和读的一致性级别，并分析它提供和不提供哪些保证。</p><details><summary>查看参考答案</summary><div><ol><li>写 <code>LOCAL_QUORUM</code>（本区域 3 个副本中的 2 个确认），读 <code>LOCAL_QUORUM</code>：本区域内 w + r = 4 &gt; 3，同一区域的读能看到同一区域已成功的写；只等待本地副本，延迟低；区域内一个节点故障仍满足 2/3；区域间断网时各区域独立工作。其他区域的副本异步获得数据（以及读修复、反熵）。</li><li>不提供的保证：用户切换到另一个区域（例如漫游、DNS 切换）后可能读不到刚登录写入的会话——可以在客户端带上会话令牌（自包含的签名令牌）兜底，或在读不到时退回 <code>EACH_QUORUM</code>/跨区读取。</li><li>不提供线性一致性：并发的“登出”与“刷新会话”可能以 LWW 方式解决，取决于时间戳；如果登出必须立即全局生效（安全要求），应该用单独的、强一致的吊销列表或短有效期令牌。</li><li>若用 <code>QUORUM</code>（9 个中的 5 个）就必须跨区域等待，延迟无法满足 10 ms，且区域间断网时可能无法凑足 5 个。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>无主复制</b>：每个键存在 n 个副本上。客户端（或一个协调节点）把写入并行发给全部 n 个副本，收到 w 个确认即算成功；读取时并行读 r 个副本，按版本号取最新的值。某个副本宕机时，写入照常进行，不需要故障切换。</li><li><b>Quorum 条件</b>：只要 <b>w + r &gt; n</b>，读到的 r 个副本中至少有一个包含最新成功写入的值。常见配置 n=3、w=2、r=2，可以容忍一个节点不可用。读多写少可以用 w=n、r=1，但任何一个节点故障都会让写入失败。</li><li><b>追赶</b>：宕机后恢复的节点缺少一些写入。<b>读修复</b>——读取时发现某个副本是旧值，就把新值写回去（只修复被读到的键）。<b>反熵</b>——后台进程比较副本之间的差异（用 Merkle 树快速定位不同的键范围）并复制缺失的数据。<b>提示移交</b>——写入时某个副本不可达，先写到另一个节点并附上“提示”，目标恢复后再转交。</li><li><b>Quorum 的局限</b>：即使 w + r &gt; n，也可能读到旧值——写入只在部分副本成功（总体判定失败）却没有回滚；读写并发时，读可能只碰到已经写好的部分副本；节点从旧副本恢复数据；LWW 下时钟偏差使较新的写入被丢弃。所以 Quorum 不提供线性一致性（第 23 课），更不提供读己之写等保证，除非额外处理。<b>宽松 Quorum</b>允许把写入暂存到不属于这个键的 n 个“家”节点之外的节点，提高写可用性，但连 w + r &gt; n 的保证都没有了。</li><li><b>性能与多区域</b>：无主复制没有故障切换的停顿；读写都发给多个副本、取最快的 w 或 r 个响应，天然降低尾延迟（类似<b>请求对冲</b>）。但每个请求消耗更多资源，并且副本越多，碰到慢节点的概率越大。多区域部署时，可以让 n 包含所有区域的副本，而 w、r 只等待本地区域（Cassandra 的 LOCAL_QUORUM）。</li><li><b>检测并发写入</b>：两个客户端并发写同一个键，各副本收到的顺序可能不同，必须用相同的规则收敛。“并发”不是指时间上同时，而是指彼此都<b>不知道</b>对方的存在（没有 happens-before 关系）。<b>版本号</b>：服务器为每个键维护版本号，客户端写入时带上自己读到的版本，服务器据此判断哪些旧值可以覆盖、哪些是并发的<b>兄弟值</b>需要保留。多副本时每个副本一个计数器，合起来就是<b>版本向量</b>。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 15</div><a class="big" href="l15.html">分片：按键范围、按哈希与热点 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l14.js"></script>
+</body></html>
