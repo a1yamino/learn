@@ -36,7 +36,7 @@ Execution Time: 300 ms 左右（取决于机器）</pre></div></div><div class="
 SELECT * FROM monthly ORDER BY m LIMIT 3;</pre><pre class="out">SELECT 10
            m            |   n    |  total
 ------------------------+--------+---------
- 2026-01-01 00:00:00+00 | 103334 | …</pre></div></div><div class="st"><span class="n">05</span><div><p>派生数据会过期：修改记录系统，视图不变，直到刷新。</p><pre class="cmd">UPDATE orders SET amount = amount + 1000 WHERE id = 1;
+ 2026-01-01 00:00:00+00 | 103353 | …</pre></div></div><div class="st"><span class="n">05</span><div><p>派生数据会过期：修改记录系统，视图不变，直到刷新。</p><pre class="cmd">UPDATE orders SET amount = amount + 1000 WHERE id = 1;
 SELECT total FROM monthly ORDER BY m LIMIT 1;
 REFRESH MATERIALIZED VIEW monthly;
 SELECT total FROM monthly ORDER BY m LIMIT 1;</pre><pre class="out">（第一次：旧值）

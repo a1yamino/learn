@@ -13,7 +13,7 @@
 | [PostgreSQL](https://a1yamino.github.io/learn/postgres/) | 初级后端工程师 | 已完成（26 课） |
 | [Redis](https://a1yamino.github.io/learn/redis/) | 初级后端工程师 | 已完成（24 课） |
 | [Kafka](https://a1yamino.github.io/learn/kafka/) | 初级后端工程师 | 已完成（24 课） |
-| [DDIA：数据密集型应用设计](https://a1yamino.github.io/learn/ddia/) | 有一定经验的后端工程师 | 更新中（28 课） |
+| [DDIA：数据密集型应用设计](https://a1yamino.github.io/learn/ddia/) | 有一定经验的后端工程师 | 已完成（28 课） |
 
 ### Docker 课程大纲
 基础：1 为什么需要 Docker · 2 容器生命周期与核心命令 · 3 Dockerfile 与构建缓存 · 4 实战：把后端 API 打包成镜像 · 5 多阶段构建与镜像瘦身 · 6 数据卷与持久化 · 7 网络与端口映射 · 8 Docker Compose 入门 · 9 配置、环境变量与密钥 · 10 镜像仓库、标签与推送
