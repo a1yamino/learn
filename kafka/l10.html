@@ -1,0 +1,62 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka 第 10 课 · KRaft：控制器与元数据日志</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kafka</a><span class="crumb">第 10 课</span><span class="sp"></span><a href="l09.html">← 第 9 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kafka · 第 10 课</div><h1>KRaft：控制器与元数据日志</h1>
+<p>集群需要有人记录“有哪些 Broker、有哪些主题和分区、谁是 Leader、ISR 是什么”。Kafka 4.x 用 KRaft 完成这件事：几个控制器节点通过 Raft 协议维护一条元数据日志，Broker 像消费者一样读取它。本课讲控制器 quorum 如何选举、元数据如何复制和快照、Broker 如何注册与被隔离，以及部署、扩缩控制器和 metadata.version 升级。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次元数据变更</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">控制器故障切换</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：quorum 能容忍几个故障</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次元数据变更</h2><div class="goal">创建主题时发生了什么。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>控制器故障切换</h2><div class="goal">活跃控制器宕机。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：quorum 能容忍几个故障</h2><div class="goal">选择控制器数量和故障数量。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">观察 quorum 与元数据。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">三节点集群（第 2 课），在 k1 中 cd /opt/kafka; B="--bootstrap-server k1:19092"。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>查看 quorum 状态。</p><pre class="cmd">bin/kafka-metadata-quorum.sh $B describe --status</pre><pre class="out">ClusterId: 4L6g3nShT-eMCtK--X86sw
+LeaderId: 2
+LeaderEpoch: 3
+HighWatermark: 1287
+MaxFollowerLag: 0
+…
+CurrentVoters: [{&quot;id&quot;: 1 …}, {&quot;id&quot;: 2 …}, {&quot;id&quot;: 3 …}]</pre></div></div><div class="st"><span class="n">02</span><div><p>查看每个副本的复制进度。</p><pre class="cmd">bin/kafka-metadata-quorum.sh $B describe --replication</pre><pre class="out">NodeId DirectoryId LogEndOffset Lag LastFetchTimestamp LastCaughtUpTimestamp Status
+2      …           1290         0   …                  …                     Leader
+1      …           1290         0   …                  …                     Follower
+3      …           1290         0   …                  …                     Follower</pre></div></div><div class="st"><span class="n">03</span><div><p>停掉活跃控制器所在节点（这里是 k2），再看。</p><pre class="cmd">docker compose stop k2
+bin/kafka-metadata-quorum.sh $B describe --status | head -n 3</pre><pre class="out">ClusterId: …
+LeaderId: 3
+LeaderEpoch: 4</pre></div></div><div class="st"><span class="n">04</span><div><p>浏览元数据日志（交互式 shell）。</p><pre class="cmd">bin/kafka-metadata-shell.sh --snapshot /tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log
+ls /
+ls /topics</pre><pre class="out">&gt;&gt; ls /
+image  local
+&gt;&gt; ls image/topics/byName
+rep  orders  …</pre></div></div><div class="st"><span class="n">05</span><div><p>把元数据日志转储为文本。</p><pre class="cmd">bin/kafka-dump-log.sh --cluster-metadata-decoder --files /tmp/kraft-combined-logs/__cluster_metadata-0/00000000000000000000.log | grep TopicRecord | head -n 2</pre><pre class="out">… payload: {&quot;type&quot;:&quot;TOPIC_RECORD&quot;,&quot;version&quot;:0,&quot;data&quot;:{&quot;name&quot;:&quot;orders&quot;,&quot;topicId&quot;:&quot;…&quot;}}</pre></div></div><div class="st"><span class="n">06</span><div><p>查看功能版本。</p><pre class="cmd">docker compose start k2
+bin/kafka-features.sh $B describe</pre><pre class="out">Feature: kraft.version  SupportedMinVersion: 0 SupportedMaxVersion: 1 FinalizedVersionLevel: 1 …
+Feature: metadata.version SupportedMinVersion: 3.3-IV3 SupportedMaxVersion: 4.4-IV… FinalizedVersionLevel: 4.4-IV… …</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>规划生产集群的控制器</h3><p>要建一个 12 台 Broker、约 3 万个分区的集群，分布在 3 个可用区。回答：① 控制器用组合模式还是独立部署，为什么；② 部署几个控制器、放在哪里；③ 控制器机器的配置要点；④ 以后需要更换一台控制器机器时怎么做。</p><details><summary>查看参考答案</summary><div><ol><li><b>独立部署</b>（<code>process.roles=controller</code>）：组合模式下 Broker 的负载（网络、磁盘、GC）会影响控制器的心跳和元数据提交，控制器问题也会和数据节点耦合；组合模式只适合开发和很小的集群。</li><li><b>3 个</b>，每个可用区一个：任一可用区故障仍有 2/3 多数。需要容忍两个故障时用 5 个（如 2+2+1），但多数写入延迟略增。</li><li>配置：不需要大磁盘，但元数据日志写入要快（SSD）；内存几 GB 即可，JVM 堆 1–4 GB；网络延迟低；独立的监听器 <code>CONTROLLER</code>，并启用 TLS/认证；监控 <code>ActiveControllerCount</code>（全集群应为 1）、元数据提交延迟、<code>MaxFollowerLag</code>。</li><li>更换：使用动态 quorum（<code>controller.quorum.bootstrap.servers</code>）。在新机器上 <code>kafka-storage.sh format --no-initial-controllers</code> 并启动为观察者，追上后 <code>kafka-metadata-quorum.sh add-controller</code>，再对旧控制器执行 <code>remove-controller</code> 并下线。始终保持多数在线，一次只更换一台。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>KRaft 中有两种角色：<code>process.roles=broker</code> 和 <code>controller</code>（学习环境可以组合）。控制器组成一个 <b>Raft quorum</b>（通常 3 或 5 个），选出一个<b>活跃控制器</b>（Leader），其余为热备。多数存活才能工作：3 个容忍 1 个故障，5 个容忍 2 个。</li><li>所有元数据变更（创建主题、分区 Leader 和 ISR 变化、配置、ACL、Broker 注册）由活跃控制器追加到内部主题 <code>__cluster_metadata</code>（单分区）。多数控制器写入后即提交。和 ZooKeeper 时代相比，元数据变成了一条有序的事件日志。</li><li><b>Broker</b> 从活跃控制器拉取这条日志，在内存中维护一份元数据镜像（metadata image），据此决定自己是哪些分区的 Leader 或 Follower。日志定期生成<b>快照</b>，新节点或落后太多的节点先加载快照再追增量。</li><li>Broker 启动时向控制器<b>注册</b>并持续发送心跳；心跳超时（<code>broker.session.timeout.ms</code>，默认 9 秒）的 Broker 被<b>隔离</b>（fenced），它上面的 Leader 被迁走。受控关闭时 Broker 先请求迁走 Leader 再退出，减少不可用时间。</li><li>相比 ZooKeeper：只有一个系统需要部署和保护；控制器故障切换是秒级的热备切换，不需要从 ZooKeeper 重新加载全部元数据；支持的分区数大幅提高（数百万级）。Kafka 4.0 已移除 ZooKeeper，旧集群必须先在 3.x（推荐 3.9）上完成迁移再升级到 4.x。</li><li>部署与运维：每个节点首次启动前用 <code>kafka-storage.sh format</code> 写入集群 ID。3.9 起支持<b>动态 quorum</b>（KIP-853），用 <code>controller.quorum.bootstrap.servers</code> 配置，在线增删控制器（<code>kafka-metadata-quorum.sh add-controller / remove-controller</code>）。功能版本 <code>metadata.version</code> 在所有节点升级完成后用 <code>kafka-features.sh upgrade</code> 提升。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 11</div><a class="big" href="l11.html">事务与精确一次 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l10.js"></script>
+</body></html>
