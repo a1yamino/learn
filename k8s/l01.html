@@ -27,8 +27,8 @@
 </section>
 
 <section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 kind（Kubernetes in Docker）在本机起一个集群。第 2 课会详细讲 kind 和 kubectl，这里先体验。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>安装 kind 和 kubectl（需要 Docker 已运行）。macOS：<code>brew install kind kubectl</code>。Linux 见右侧命令。Windows：<code>winget install Kubernetes.kind Kubernetes.kubectl</code>。</p><pre class="cmd">curl -Lo kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64 &amp;&amp; chmod +x kind &amp;&amp; sudo mv kind /usr/local/bin/
-curl -LO &quot;https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl&quot; &amp;&amp; chmod +x kubectl &amp;&amp; sudo mv kubectl /usr/local/bin/
+<div class="prac"><div class="st"><span class="n">01</span><div><p>安装 kind 和 kubectl（需要 Docker 已运行）。macOS：<code>brew install kind kubectl</code>。Linux 见右侧命令：为匹配示例中的 kind v0.24.0 / Kubernetes v1.31，kubectl 固定为 v1.31.1；升级集群时需一起选择版本差不超过一个小版本的 kubectl。Windows：<code>winget install Kubernetes.kind Kubernetes.kubectl</code>。</p><pre class="cmd">curl -Lo kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64 &amp;&amp; chmod +x kind &amp;&amp; sudo mv kind /usr/local/bin/
+curl -LO &quot;https://dl.k8s.io/release/v1.31.1/bin/linux/amd64/kubectl&quot; &amp;&amp; chmod +x kubectl &amp;&amp; sudo mv kubectl /usr/local/bin/
 kind version &amp;&amp; kubectl version --client</pre><pre class="out">kind v0.24.0 go1.22.6 linux/amd64
 Client Version: v1.31.1</pre></div></div><div class="st"><span class="n">02</span><div><p>创建集群（约 1 分钟）。</p><pre class="cmd">kind create cluster --name learn</pre><pre class="out">Creating cluster &quot;learn&quot; ...
  ✓ Ensuring node image (kindest/node:v1.31.0) 🖼
