@@ -4,7 +4,7 @@ SUM=['Kafka 的核心是<b>日志</b>：只追加、不可修改、按顺序编�
 '<b>Broker</b> 是 Kafka 服务器进程。每个分区有多个<b>副本</b>分布在不同 Broker 上，其中一个是 Leader，负责读写；其余是 Follower，复制 Leader 的数据（第 9 课）。',
 '<b>消费者组</b>：同一组内的消费者分摊一个主题的分区，每个分区同一时刻只被组内一个消费者读取；不同组互不影响，各自读到全部消息。组的消费进度（每个分区的偏移量）保存在内部主题 <code>__consumer_offsets</code> 中。',
 '与传统消息队列（RabbitMQ 等）的区别：消息被持久保存、可以回放；多个消费者组独立读取同一份数据；按分区顺序读、批量读写，吞吐量很高；但不支持按单条消息确认和删除、没有内建的延迟消息和优先级。',
-'版本：Kafka 4.0（2025 年 3 月）起完全移除 ZooKeeper，只支持 <b>KRaft</b> 模式（元数据由 Kafka 自己的 Raft 控制器管理，第 10 课），并默认启用新的消费者再平衡协议。本课程使用 2026 年 10 月发布的 4.4.0（Docker 镜像 <code>apache/kafka:4.4.0</code>）；Kafka 采用 Apache License 2.0。']
+'版本：Kafka 4.0（2025 年 3 月）起完全移除 ZooKeeper，只支持 <b>KRaft</b> 模式（元数据由 Kafka 自己的 Raft 控制器管理，第 10 课），并在服务端默认启用新的消费者再平衡协议（客户端设置 <code>group.protocol=consumer</code> 使用，第 7 课）。本课程使用 2026 年 10 月发布的 4.4.0（Docker 镜像 <code>apache/kafka:4.4.0</code>）；Kafka 采用 Apache License 2.0。']
 def secs(prac,E):
     return [
 ('日志：只追加，按偏移量读','生产者写到末尾，消费者各自记住读到哪里。','<div id="p1"></div>'),
