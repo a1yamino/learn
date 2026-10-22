@@ -1,0 +1,76 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 4 课 · 数据结构编码：SDS、listpack、intset 与 quicklist</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 4 课</span><span class="sp"></span><a href="l03.html">← 第 3 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 4 课</div><h1>数据结构编码：SDS、listpack、intset 与 quicklist</h1>
+<p>同一种类型在内部可以有不同的实现。小集合用紧凑的连续内存，元素变多或变大时自动转换为指针结构。本课讲 redisObject、字符串的三种编码与 SDS、listpack 的布局、intset、quicklist，以及控制转换阈值的配置项——这是理解 Redis 内存占用的基础。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个 Hash 的编码转换</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">String 的三种编码</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：猜编码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个 Hash 的编码转换</h2><div class="goal">从 listpack 到 hashtable。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>String 的三种编码</h2><div class="goal">int、embstr、raw。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：猜编码</h2><div class="goal">选择一个写入操作，看结果的编码和内存占用。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查看编码与内存。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 redis-cli 中执行。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>String 编码。</p><pre class="cmd">SET a 12345
+SET b &quot;hello&quot;
+SET c &quot;这是一段超过四十四个字节的字符串，用来观察 raw 编码&quot;
+OBJECT ENCODING a
+OBJECT ENCODING b
+OBJECT ENCODING c</pre><pre class="out">OK
+OK
+OK
+&quot;int&quot;
+&quot;embstr&quot;
+&quot;raw&quot;</pre></div></div><div class="st"><span class="n">02</span><div><p>小 Hash 是 listpack。</p><pre class="cmd">HSET h f1 v1 f2 v2
+OBJECT ENCODING h
+MEMORY USAGE h</pre><pre class="out">(integer) 2
+&quot;listpack&quot;
+(integer) 40</pre></div></div><div class="st"><span class="n">03</span><div><p>一个值超过 64 字节：转为 hashtable，内存明显增大。</p><pre class="cmd">HSET h big &quot;0123456789012345678901234567890123456789012345678901234567890123456789&quot;
+OBJECT ENCODING h
+MEMORY USAGE h</pre><pre class="out">(integer) 1
+&quot;hashtable&quot;
+(integer) 272</pre></div></div><div class="st"><span class="n">04</span><div><p>删掉它也不会转回去。</p><pre class="cmd">HDEL h big
+OBJECT ENCODING h</pre><pre class="out">(integer) 1
+&quot;hashtable&quot;</pre></div></div><div class="st"><span class="n">05</span><div><p>Set：整数用 intset，加入字符串后变为 listpack。</p><pre class="cmd">SADD s 1 2 3
+OBJECT ENCODING s
+SADD s x
+OBJECT ENCODING s</pre><pre class="out">(integer) 3
+&quot;intset&quot;
+(integer) 1
+&quot;listpack&quot;</pre></div></div><div class="st"><span class="n">06</span><div><p>查看阈值配置。</p><pre class="cmd">CONFIG GET *max-listpack*</pre><pre class="out">1) &quot;hash-max-listpack-entries&quot;
+2) &quot;128&quot;
+3) &quot;hash-max-listpack-value&quot;
+4) &quot;64&quot;
+5) &quot;zset-max-listpack-entries&quot;
+6) &quot;128&quot;
+ …</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用小 Hash 存 1000 万个用户的积分</h3><p>需要存 1000 万个 user_id → 积分（整数）的映射。方案 A：每个用户一个 String 键 <code>score:{uid}</code>；方案 B：按 uid 分桶 <code>score:{uid / 100}</code>，每个桶一个 Hash，字段为 <code>uid % 100</code>。估算两者的内存差异并解释原因，说明方案 B 的代价。</p><details><summary>查看参考答案</summary><div><p>方案 A：每个键都是全局字典中的一个条目（dictEntry 约 24 字节 + 键的 SDS 约 20 字节 + redisObject 16 字节 + 分配器对齐），值是 int 编码。实测大约每个键 60–70 字节，1000 万个约 650 MB。</p><p>方案 B：10 万个 Hash，每个 100 个字段，低于 128 的阈值，都是 listpack：每个字段只需几个字节（字段名 “37” 和值 “1520” 紧凑存放），每个桶约 600–800 字节。总计约 70–80 MB，节省近 90%。</p><pre class="cmd">HSET score:123456 78 1520      # uid = 12345678
+HINCRBY score:123456 78 10</pre><p>代价：桶内查找是 O(N)，但 N ≤ 100，实际只有几百纳秒；不能对单个用户设置过期时间（7.4+ 的 HEXPIRE 可以，但带过期的字段会使用额外的编码和内存）；一定要保证每个桶的字段数不超过阈值，否则会整体转为 hashtable，节省就没了。可以用 <code>MEMORY USAGE</code> 抽样验证。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>每个值是一个 <b>redisObject</b>：类型（type）、编码（encoding）、LRU/LFU 信息、引用计数和指向数据的指针，约 16 字节。<code>OBJECT ENCODING key</code> 查看编码。</li><li>String 有三种编码：<code>int</code>（可表示为 64 位整数的值，直接存在指针位置）；<code>embstr</code>（≤ 44 字节，对象头和字符串一次分配、连续存放）；<code>raw</code>（更长，分开分配）。字符串本身用 <b>SDS</b>：记录长度和剩余容量，O(1) 取长度、二进制安全、追加时预分配空间。</li><li><b>listpack</b>（Redis 7 起取代 ziplist）：一整块连续内存，元素依次紧凑存放，每个元素记录自身长度以便双向遍历。没有指针开销，缓存友好；但查找是 O(N)，插入删除要移动内存。适合元素少且小的 Hash、ZSet、Set 和 List 节点。</li><li><b>intset</b>：只含整数的小集合，按大小有序存放，二分查找，按最大值选择 16/32/64 位宽度。</li><li><b>quicklist</b>：List 的实现，是由多个 listpack 节点组成的双向链表，兼顾两端操作 O(1) 和内存紧凑。<code>list-max-listpack-size -2</code> 表示每个节点最大 8 KB。</li><li>转换阈值（默认）：Hash/ZSet 元素数 ≤ 128 且每个值 ≤ 64 字节用 listpack；Set 全为整数且 ≤ 512 用 intset，否则 ≤ 128 个小元素用 listpack；超出就转为 hashtable / skiplist，而且<b>不会再转回去</b>。把一个大对象拆成多个小 Hash，可以大幅节省内存。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 05</div><a class="big" href="l05.html">哈希表与渐进式 rehash、有序集合与跳表 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l04.js"></script>
+</body></html>
