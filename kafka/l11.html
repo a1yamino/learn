@@ -1,0 +1,60 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka 第 11 课 · 事务与精确一次</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kafka</a><span class="crumb">第 11 课</span><span class="sp"></span><a href="l10.html">← 第 10 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kafka · 第 11 课</div><h1>事务与精确一次</h1>
+<p>“读一条消息、处理、写出结果、提交偏移量”这四步如果不能原子完成，崩溃后就会重复或丢失。Kafka 事务让一个生产者对多个分区的写入和消费偏移量的提交要么全部可见、要么全部不可见。本课讲 transactional.id 与僵尸隔离、事务协调器的两阶段提交、控制标记与 LSO、read_committed 的读取方式，以及精确一次的适用边界。约 70 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次事务：读—处理—写</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：read_committed 与 LSO</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">僵尸隔离</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次事务：读—处理—写</h2><div class="goal">输入 orders，输出 enriched，偏移量与输出一起提交。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：read_committed 与 LSO</h2><div class="goal">一个分区中交错着两个事务的消息。选择事件，看两种隔离级别的消费者能读到什么。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>僵尸隔离</h2><div class="goal">网络分区后，两个实例使用同一个 transactional.id。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">观察事务。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">单节点容器（单节点时需要 transaction.state.log.replication.factor=1，apache/kafka 镜像的默认配置已设好）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建输出主题。</p><pre class="cmd">bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic tx-out --partitions 1</pre><pre class="out">Created topic tx-out.</pre></div></div><div class="st"><span class="n">02</span><div><p>用 Python 写一个中止的事务和一个提交的事务（宿主机，pip install confluent-kafka）。</p><pre class="cmd">python3 - &lt;&lt;&#x27;X&#x27;
+from confluent_kafka import Producer
+p=Producer({&#x27;bootstrap.servers&#x27;:&#x27;localhost:9092&#x27;,&#x27;transactional.id&#x27;:&#x27;demo-1&#x27;})
+p.init_transactions()
+p.begin_transaction(); p.produce(&#x27;tx-out&#x27;,b&#x27;aborted-1&#x27;); p.abort_transaction()
+p.begin_transaction(); p.produce(&#x27;tx-out&#x27;,b&#x27;committed-1&#x27;); p.commit_transaction()
+X</pre><pre class="out">（无输出）</pre></div></div><div class="st"><span class="n">03</span><div><p>read_uncommitted（默认）看到两条。</p><pre class="cmd">bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic tx-out --from-beginning --timeout-ms 5000</pre><pre class="out">aborted-1
+committed-1</pre></div></div><div class="st"><span class="n">04</span><div><p>read_committed 只看到提交的。</p><pre class="cmd">bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic tx-out --from-beginning --isolation-level read_committed --timeout-ms 5000</pre><pre class="out">committed-1</pre></div></div><div class="st"><span class="n">05</span><div><p>偏移量包含控制标记：两条消息占用了 4 个偏移量。</p><pre class="cmd">bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic tx-out
+bin/kafka-dump-log.sh --files /tmp/kraft-combined-logs/tx-out-0/00000000000000000000.log | grep -o &quot;isControl: [a-z]*\|endTxnMarker: [A-Z]*&quot;</pre><pre class="out">tx-out:0:4
+isControl: false
+isControl: true
+endTxnMarker: ABORT
+isControl: false
+isControl: true
+endTxnMarker: COMMIT</pre></div></div><div class="st"><span class="n">06</span><div><p>查看事务状态。</p><pre class="cmd">bin/kafka-transactions.sh --bootstrap-server localhost:9092 list
+bin/kafka-transactions.sh --bootstrap-server localhost:9092 describe --transactional-id demo-1</pre><pre class="out">TransactionalId Coordinator ProducerId TransactionState
+demo-1          1           2000       CompleteCommit
+…</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>判断哪些流程能做到精确一次</h3><p>对下面四个流程，判断仅用 Kafka 事务能否做到精确一次，不能的话怎么办：① 从 <code>clicks</code> 读取，按用户计数，结果写入 <code>click-counts</code>；② 从 <code>orders</code> 读取，调用第三方支付接口扣款；③ 从 <code>orders</code> 读取，写入 Elasticsearch 索引；④ 订单服务在 MySQL 中创建订单，同时向 <code>orders</code> 发送事件。</p><details><summary>查看参考答案</summary><div><ol><li><b>能</b>。Kafka → Kafka，使用 Kafka Streams <code>exactly_once_v2</code>（状态存储的变更日志也在同一事务中），或手写事务：输出与输入偏移量一起提交。下游消费者使用 <code>read_committed</code>。</li><li><b>不能</b>。扣款是外部副作用，事务中止后无法撤销。用支付接口的幂等键（如订单号）保证重复调用只扣一次，并以至少一次语义消费。</li><li><b>不能</b>直接做到，但可以“效果上”精确一次：用事件中的唯一 ID 作为文档 ID，写入是覆盖（upsert），重复写入结果相同；按至少一次消费即可。Kafka Connect 的 Elasticsearch Sink 就是这样做的。</li><li><b>不能</b>，因为 MySQL 事务和 Kafka 事务不是同一个。使用 Outbox 模式：在 MySQL 同一事务中写入 outbox 表，再由 Debezium 等 CDC 发送到 Kafka（第 21 课）；消费者按事件 ID 幂等。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>事务性生产者配置 <code>transactional.id</code>（每个逻辑实例固定、唯一，例如 <code>order-enricher-3</code>）。流程：<code>initTransactions()</code> → 循环 { <code>beginTransaction()</code> → <code>send()</code>… → <code>sendOffsetsToTransaction(offsets, consumer.groupMetadata())</code> → <code>commitTransaction()</code> }，出错时 <code>abortTransaction()</code>。</li><li><b>事务协调器</b>是某个 Broker（由 transactional.id 哈希到 <code>__transaction_state</code> 的分区决定）。生产者第一次向某分区写入前，先在协调器登记该分区；提交时协调器写入 PREPARE_COMMIT，再向每个涉及的分区写入<b>提交标记</b>（控制记录），最后写入 COMPLETE_COMMIT。偏移量提交也是写入 <code>__consumer_offsets</code> 的事务性消息。</li><li><b>僵尸隔离</b>：<code>initTransactions()</code> 会让该 transactional.id 的生产者 epoch 加 1，并中止它未完成的事务。旧实例（例如网络分区后仍在运行的“僵尸”）用旧 epoch 写入会被拒绝（ProducerFenced）。Kafka 4.0 起的事务协议 v2（KIP-890）在每个事务都提升 epoch，并由 Broker 校验，堵住了更多的边界情况。</li><li>消费者 <code>isolation.level=read_committed</code> 只返回已提交事务的消息，跳过中止的；它最多读到 <b>LSO</b>（last stable offset，最早的未完成事务之前的位置）。所以一个长时间未完成的事务会阻塞 read_committed 消费者；<code>transaction.timeout.ms</code>（默认 60 秒）后协调器主动中止。默认的 <code>read_uncommitted</code> 能看到所有消息（包括后来被中止的）。</li><li><b>精确一次</b>（EOS）的范围是 “从 Kafka 读 → 处理 → 写回 Kafka”：输入偏移量和输出消息在同一事务中提交。Kafka Streams 设置 <code>processing.guarantee=exactly_once_v2</code> 即可自动完成。处理中的<b>外部副作用</b>（调用 HTTP 接口、写数据库、发邮件）不在事务内，仍需要幂等或 Outbox 等手段。</li><li>代价：每个事务额外几次请求和标记写入，事务越小开销越明显，一般每 100 ms–1 s 或每几千条提交一次；读端延迟增加到一个事务周期。不需要跨分区原子性、只需要不重复写入时，幂等生产者就够了。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 12</div><a class="big" href="l12.html">保留策略与日志压缩 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l11.js"></script>
+</body></html>
