@@ -26,7 +26,7 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">前三步任何平台都可以；后面需要 Linux（Mac / Windows：在 <code>docker run --rm -it --privileged ubuntu:24.04</code> 里安装 runc 后做）。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本节和挑战在已安装 Docker Engine、runc、curl、Python 3 的 Linux 实验机上执行，需要 sudo 权限；第 1、2 步假定本机 daemon 的 socket 为 /var/run/docker.sock。Mac / Windows 用户请连接这样的 Linux 虚拟机或实验机。普通 Ubuntu 工具容器看不到宿主机进程树、Docker socket 和运行时状态目录，不能直接替代本节环境。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>绕过 CLI，直接调用 Docker 的 REST API。</p><pre class="cmd">curl -s --unix-socket /var/run/docker.sock http://localhost/version | python3 -m json.tool | head -6</pre><pre class="out">{
     &quot;Platform&quot;: { &quot;Name&quot;: &quot;Docker Engine - Community&quot; },
     &quot;Components&quot;: [
