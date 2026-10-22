@@ -26,31 +26,42 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 kind 集群中体验 PDB 与 drain，并给 etcd 做一次快照并检查完整性。恢复演练需另建隔离集群，不能仅凭 snapshot status 就认定恢复成功。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>3 副本应用加 PDB：任何时候至少 2 个可用。</p><pre class="cmd">kubectl create deploy web --image=nginx:alpine --replicas=3
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在独立的三节点 ha 集群中体验 PDB 与 drain，避免前课遗留的裸 Pod、本地 PVC、节点污点影响维护实验。再给 etcd 做一次快照并检查完整性。恢复演练需另建隔离集群，不能仅凭 snapshot status 就认定恢复成功。完成练习与挑战后再按参考答案末尾清理。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建本课独立集群；原 learn 集群继续保留。</p><pre class="cmd">cat &gt; kind-ha.yaml &lt;&lt;&#x27;EOF&#x27;
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+EOF
+kind create cluster --name ha --config kind-ha.yaml
+kubectl config current-context</pre><pre class="out">kind-ha</pre></div></div><div class="st"><span class="n">02</span><div><p>3 副本应用加 PDB：任何时候至少 2 个可用。</p><pre class="cmd">kubectl create deploy web --image=nginx:alpine --replicas=3
+kubectl rollout status deploy/web
 kubectl create pdb web --selector=app=web --min-available=2
 kubectl get pdb web</pre><pre class="out">NAME   MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
-web    2               N/A               1                     5s</pre></div></div><div class="st"><span class="n">02</span><div><p>drain 一个节点：驱逐遵守 PDB。</p><pre class="cmd">kubectl drain learn-worker --ignore-daemonsets --delete-emptydir-data
+web    2               N/A               1                     5s</pre></div></div><div class="st"><span class="n">03</span><div><p>drain 一个节点：驱逐遵守 PDB。</p><pre class="cmd">kubectl drain ha-worker --ignore-daemonsets --delete-emptydir-data
 kubectl get pods -l app=web -o wide | awk &#x27;{print $1, $7}&#x27;</pre><pre class="out">evicting pod default/web-6d4b9-x2k9l
 evicting pod default/web-6d4b9-qw8r4
 error when evicting pods/&quot;web-6d4b9-qw8r4&quot; -n &quot;default&quot; (will retry after 5s): Cannot evict pod as it would violate the pod&#x27;s disruption budget.
 pod/web-6d4b9-x2k9l evicted
 pod/web-6d4b9-qw8r4 evicted
-node/learn-worker drained
+node/ha-worker drained
 NAME NODE
-web-6d4b9-7tqzr learn-worker2
-web-6d4b9-c7m1d learn-worker2
-web-6d4b9-k2p9x learn-worker2</pre></div></div><div class="st"><span class="n">03</span><div><p>恢复节点调度。</p><pre class="cmd">kubectl uncordon learn-worker
+web-6d4b9-7tqzr ha-worker2
+web-6d4b9-c7m1d ha-worker2
+web-6d4b9-k2p9x ha-worker2</pre></div></div><div class="st"><span class="n">04</span><div><p>恢复节点调度。</p><pre class="cmd">kubectl uncordon ha-worker
 kubectl get nodes</pre><pre class="out">NAME                  STATUS   ROLES           AGE   VERSION
-learn-control-plane   Ready    control-plane   2d    v1.31.0
-learn-worker          Ready    &lt;none&gt;          2d    v1.31.0
-learn-worker2         Ready    &lt;none&gt;          2d    v1.31.0</pre></div></div><div class="st"><span class="n">04</span><div><p>在控制平面节点上给 etcd 做快照。</p><pre class="cmd">kubectl -n kube-system exec etcd-learn-control-plane -- etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd/snapshot.db 2&gt;&amp;1 | tail -1</pre><pre class="out">Snapshot saved at /var/lib/etcd/snapshot.db</pre></div></div><div class="st"><span class="n">05</span><div><p>检查快照。</p><pre class="cmd">kubectl -n kube-system exec etcd-learn-control-plane -- etcdutl snapshot status /var/lib/etcd/snapshot.db -w table</pre><pre class="out">+----------+----------+------------+------------+
+ha-control-plane   Ready    control-plane   2d    v1.31.0
+ha-worker          Ready    &lt;none&gt;          2d    v1.31.0
+ha-worker2         Ready    &lt;none&gt;          2d    v1.31.0</pre></div></div><div class="st"><span class="n">05</span><div><p>在控制平面节点上给 etcd 做快照。</p><pre class="cmd">kubectl -n kube-system exec etcd-ha-control-plane -- etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd/snapshot.db 2&gt;&amp;1 | tail -1</pre><pre class="out">Snapshot saved at /var/lib/etcd/snapshot.db</pre></div></div><div class="st"><span class="n">06</span><div><p>检查快照。</p><pre class="cmd">kubectl -n kube-system exec etcd-ha-control-plane -- etcdutl snapshot status /var/lib/etcd/snapshot.db -w table</pre><pre class="out">+----------+----------+------------+------------+
 |   HASH   | REVISION | TOTAL KEYS | TOTAL SIZE |
 +----------+----------+------------+------------+
 | 5c2b8e91 |   184213 |       1207 |     6.1 MB |
-+----------+----------+------------+------------+</pre></div></div><div class="st"><span class="n">06</span><div><p>升级前检查：集群里是否还在使用已弃用的 API（看 API Server 的指标）。</p><pre class="cmd">kubectl get --raw /metrics | grep apiserver_requested_deprecated_apis</pre><pre class="out">apiserver_requested_deprecated_apis{group=&quot;flowcontrol.apiserver.k8s.io&quot;,removed_release=&quot;1.32&quot;,resource=&quot;flowschemas&quot;,version=&quot;v1beta3&quot;} 1</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>PDB 让 drain 卡住了</h3><p>一个 Deployment 只有 1 个副本，PDB 设置 <code>minAvailable: 1</code>。运维 drain 这个节点时会怎样？列出至少两种正确的处理方式，并说明 <code>maxUnavailable</code> 和 <code>minAvailable</code> 在副本数变化时的区别。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl drain learn-worker --ignore-daemonsets --timeout=60s</pre><pre class="out">error when evicting pods/"api-5f7d8-x2k9l" -n "shop" (will retry after 5s): Cannot evict pod as it would violate the pod's disruption budget.
++----------+----------+------------+------------+</pre></div></div><div class="st"><span class="n">07</span><div><p>升级前检查：集群里是否还在使用已弃用的 API（看 API Server 的指标）。</p><pre class="cmd">kubectl get --raw /metrics | grep apiserver_requested_deprecated_apis</pre><pre class="out">apiserver_requested_deprecated_apis{group=&quot;flowcontrol.apiserver.k8s.io&quot;,removed_release=&quot;1.32&quot;,resource=&quot;flowschemas&quot;,version=&quot;v1beta3&quot;} 1</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>PDB 让 drain 卡住了</h3><p>一个 Deployment 只有 1 个副本，PDB 设置 <code>minAvailable: 1</code>。运维 drain 这个节点时会怎样？列出至少两种正确的处理方式，并说明 <code>maxUnavailable</code> 和 <code>minAvailable</code> 在副本数变化时的区别。</p><details><summary>查看参考答案</summary><div><pre class="cmd">kubectl drain ha-worker --ignore-daemonsets --timeout=60s</pre><pre class="out">error when evicting pods/"api-5f7d8-x2k9l" -n "shop" (will retry after 5s): Cannot evict pod as it would violate the pod's disruption budget.
 …
-error: unable to drain node "learn-worker" due to error: … global timeout reached: 1m0s</pre><p>ALLOWED DISRUPTIONS 为 0，驱逐永远不被允许，drain 会一直重试直到超时；节点自动扩缩和托管集群的升级也会被卡住。处理方式：① 把副本数提高到 2 以上（这才是 PDB 的前提）；② 单副本应用如果能接受短暂中断，就不要设置 PDB，或设置 <code>maxUnavailable: 1</code>；③ 临时情况下先扩容 <code>kubectl scale --replicas=2</code>，新 Pod 就绪后再 drain。不要用 <code>--disable-eviction</code> 绕过，那会直接删除 Pod。</p><p><code>minAvailable: 2</code> 是绝对下限，副本从 3 扩到 10 时仍只要求 2 个，等于允许同时驱逐 8 个；<code>maxUnavailable: 1</code> 随副本数自动适应，始终一次只驱逐一个，通常更合适。也可以写百分比。</p></div></details></div>
+error: unable to drain node "ha-worker" due to error: … global timeout reached: 1m0s</pre><p>ALLOWED DISRUPTIONS 为 0，驱逐永远不被允许，drain 会一直重试直到超时；节点自动扩缩和托管集群的升级也会被卡住。处理方式：① 把副本数提高到 2 以上（这才是 PDB 的前提）；② 单副本应用如果能接受短暂中断，就不要设置 PDB，或设置 <code>maxUnavailable: 1</code>；③ 临时情况下先扩容 <code>kubectl scale --replicas=2</code>，新 Pod 就绪后再 drain。不要用 <code>--disable-eviction</code> 绕过，那会直接删除 Pod。</p><p><code>minAvailable: 2</code> 是绝对下限，副本从 3 扩到 10 时仍只要求 2 个，等于允许同时驱逐 8 个；<code>maxUnavailable: 1</code> 随副本数自动适应，始终一次只驱逐一个，通常更合适。也可以写百分比。</p><p>完成本课全部练习与挑战后，删除临时集群并切回原课程 context：</p><pre class="cmd">kind delete cluster --name ha
+kubectl config use-context kind-learn</pre></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
