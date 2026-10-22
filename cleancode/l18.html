@@ -58,10 +58,10 @@ python3 -c &quot;import billing; billing.overdue_notices()&quot;</pre><pre class
   File &quot;&lt;string&gt;&quot;, line 1, in &lt;module&gt;
     import billing; billing.overdue_notices()
                     ~~~~~~~~~~~~~~~~~~~~~~~^^
-  File &quot;/privatebilling.py&quot;, line 18, in overdue_notices
+  File &quot;billing.py&quot;, line 18, in overdue_notices
     SmtpClient().send(inv[&quot;email&quot;], f&quot;发票 {inv[&#x27;id&#x27;]} 已逾期&quot;)
     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File &quot;/privatebilling.py&quot;, line 11, in send
+  File &quot;billing.py&quot;, line 11, in send
     raise RuntimeError(&quot;测试中不能真的发邮件&quot;)
 RuntimeError: 测试中不能真的发邮件</pre></div></div><div class="st"><span class="n">02</span><div><p>参数接缝：加带默认值的参数，现有调用方不受影响。</p><pre class="cmd">python3 - &lt;&lt;&#x27;EOF&#x27;
 s = open(&quot;billing.py&quot;).read()
@@ -85,7 +85,6 @@ from billing import overdue_notices, INVOICES
 
 class Recorder:
     def __init__(self): self.sent = []
-    def __bool__(self): return False  # 合法的假值替身也应被保留
     def send(self, to, text): self.sent.append((to, text))
 
 class Characterization(unittest.TestCase):
@@ -114,7 +113,7 @@ python3 test_billing.py</pre><pre class="out">test_current_behaviour_skips_dispu
 FAIL: test_current_behaviour_skips_disputed_invoices (__main__.Characterization.test_current_behaviour_skips_disputed_invoices)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File &quot;/privatetest_billing.py&quot;, line 13, in test_current_behaviour_skips_disputed_invoices
+  File &quot;test_billing.py&quot;, line 12, in test_current_behaviour_skips_disputed_invoices
     self.assertEqual(n, 1)
     ~~~~~~~~~~~~~~~~^^^^^^
 AssertionError: 2 != 1
