@@ -1,0 +1,76 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 5 课 · 图模型、查询语言与事件溯源</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 5 课</span><span class="sp"></span><a href="l04.html">← 第 4 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 5 课</div><h1>图模型、查询语言与事件溯源</h1>
+<p>第 3 章后半部分。当多对多关系成为主角时，图模型更自然：顶点与边，可以任意遍历。本课讲属性图与 Cypher、在 SQL 中用递归 CTE 做图查询、三元组与 SPARQL、Datalog 的递归规则、GraphQL 的定位；声明式与命令式查询的区别；再把事件溯源与 CQRS 看作一种数据模型；最后简述 DataFrame 与数组模型。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一张属性图</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：沿边遍历</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">事件溯源与 CQRS</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">三种写法</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一张属性图</h2><div class="goal">人、地点与它们之间的关系。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：沿边遍历</h2><div class="goal">选择一个查询，看图上被访问的顶点。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>事件溯源与 CQRS</h2><div class="goal">一个事件日志，多个读视图。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>三种写法</h2><div class="goal">同一个查询的 Cypher、SQL 与 Datalog 写法。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 PostgreSQL 的递归 CTE 做图查询：找出“出生在中国、住在东京”的人。使用 <code>pg</code> 容器。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>顶点表与边表。</p><pre class="cmd">CREATE TABLE vertices(id int PRIMARY KEY, kind text, name text);
+CREATE TABLE edges(tail int, head int, label text);
+INSERT INTO vertices VALUES (1,&#x27;国家&#x27;,&#x27;中国&#x27;),(2,&#x27;省&#x27;,&#x27;浙江&#x27;),(3,&#x27;市&#x27;,&#x27;杭州&#x27;),(4,&#x27;区&#x27;,&#x27;西湖区&#x27;),(5,&#x27;国家&#x27;,&#x27;日本&#x27;),(6,&#x27;都道府县&#x27;,&#x27;东京都&#x27;),(7,&#x27;人&#x27;,&#x27;小林&#x27;),(8,&#x27;人&#x27;,&#x27;小王&#x27;),(9,&#x27;省&#x27;,&#x27;广东&#x27;),(10,&#x27;市&#x27;,&#x27;深圳&#x27;);
+INSERT INTO edges VALUES (2,1,&#x27;within&#x27;),(3,2,&#x27;within&#x27;),(4,3,&#x27;within&#x27;),(6,5,&#x27;within&#x27;),(9,1,&#x27;within&#x27;),(10,9,&#x27;within&#x27;),(7,4,&#x27;born_in&#x27;),(7,6,&#x27;lives_in&#x27;),(8,10,&#x27;born_in&#x27;),(8,6,&#x27;lives_in&#x27;);</pre><pre class="out">CREATE TABLE
+CREATE TABLE
+INSERT 0 10
+INSERT 0 10</pre></div></div><div class="st"><span class="n">02</span><div><p>从“中国”出发，沿 within 边反向走任意步。</p><pre class="cmd">WITH RECURSIVE r(id, d) AS (
+  SELECT 1, 0
+  UNION
+  SELECT e.tail, d + 1 FROM edges e JOIN r ON e.head = r.id WHERE e.label = &#x27;within&#x27;
+)
+SELECT v.name, d FROM r JOIN vertices v USING (id) ORDER BY d, v.id;</pre><pre class="out"> name  | d
+-------+---
+ 中国   | 0
+ 浙江   | 1
+ 广东   | 1
+ 杭州   | 2
+ 深圳   | 2
+ 西湖区 | 3</pre></div></div><div class="st"><span class="n">03</span><div><p>完整查询：出生在中国境内、住在东京都境内的人。</p><pre class="cmd">WITH RECURSIVE
+ in_china(id) AS (SELECT id FROM vertices WHERE name = &#x27;中国&#x27;
+   UNION SELECT e.tail FROM edges e JOIN in_china ON e.head = in_china.id WHERE e.label = &#x27;within&#x27;),
+ in_tokyo(id) AS (SELECT id FROM vertices WHERE name = &#x27;东京都&#x27;
+   UNION SELECT e.tail FROM edges e JOIN in_tokyo ON e.head = in_tokyo.id WHERE e.label = &#x27;within&#x27;)
+SELECT p.name FROM vertices p
+ JOIN edges b ON b.tail = p.id AND b.label = &#x27;born_in&#x27; JOIN in_china ON b.head = in_china.id
+ JOIN edges l ON l.tail = p.id AND l.label = &#x27;lives_in&#x27; JOIN in_tokyo ON l.head = in_tokyo.id
+ORDER BY p.name;</pre><pre class="out"> name
+------
+ 小林
+ 小王</pre></div></div><div class="st"><span class="n">04</span><div><p>事件溯源的最小例子：事件表 + 派生视图。</p><pre class="cmd">CREATE TABLE cart_events(seq serial, cart int, type text, sku text);
+INSERT INTO cart_events(cart,type,sku) VALUES (1,&#x27;added&#x27;,&#x27;A&#x27;),(1,&#x27;added&#x27;,&#x27;B&#x27;),(1,&#x27;removed&#x27;,&#x27;A&#x27;);
+SELECT sku FROM cart_events WHERE cart = 1 GROUP BY sku HAVING sum(CASE type WHEN &#x27;added&#x27; THEN 1 ELSE -1 END) &gt; 0;</pre><pre class="out"> sku
+-----
+ B</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>选择数据模型</h3><p>为下列三个功能各选一种数据模型并说明理由：① 支付风控：“这笔交易的设备、IP、收货地址，与已知欺诈账户之间是否在 3 步以内相连”；② 移动端首页：一次请求取回用户信息、最近 5 个订单和每个订单的商品缩略图；③ 购物车：要求能回答“用户在下单前删除过哪些商品”。</p><details><summary>查看参考答案</summary><div><ol><li><b>图模型</b>（图数据库或 SQL/PGQ、递归 CTE）：账户、设备、IP、地址是顶点，使用关系是边；问题是有界深度的路径查询 <code>(t)-[*..3]-(:Account {fraud:true})</code>，用连接表达会非常繁琐且慢。</li><li><b>GraphQL</b>（API 层）+ 关系库：客户端声明需要的嵌套 JSON 结构，服务端解析器从订单表、商品表取数并处理 N+1（DataLoader 批量）。GraphQL 不负责存储，只是查询接口。</li><li><b>事件溯源</b>：记录 <code>ItemAdded</code>、<code>ItemRemoved</code>、<code>QuantityChanged</code> 事件；当前购物车是派生视图，而“下单前删除过的商品”可以从事件中直接回答——如果只存当前状态，这个信息就丢失了。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>属性图</b>：顶点和边都有唯一 ID、标签和属性；每条边有起点和终点。任何顶点之间都可以连边，可以沿边双向遍历，不同类型的事物可以放在同一张图里（人、地点、事件）。社交关系、知识图谱、路网、欺诈检测都适合。</li><li><b>Cypher</b>（Neo4j 等）用 ASCII 箭头描述模式：<code>(p:Person)-[:BORN_IN]->()-[:WITHIN*0..]->(:Location {name:'中国'})</code>，<code>*0..</code> 表示沿 WITHIN 边走任意步。它是<b>声明式</b>的：只描述要找什么，由查询优化器决定怎么找。</li><li><b>SQL 中的图查询</b>：把顶点和边存成两张表，可变长度路径用 <code>WITH RECURSIVE</code> 表达。能做到，但比 Cypher 冗长得多——不同的数据模型适合不同的用例。SQL:2023 新增了属性图查询（SQL/PGQ）。<b>三元组</b>（主语、谓语、宾语）是另一种图表示，查询语言为 SPARQL。<b>Datalog</b> 用规则组合出新事实，规则可以递归，适合复杂的推理。</li><li><b>GraphQL</b> 名字里有 Graph，但它不是图数据库查询语言：它让客户端声明需要的 JSON 结构，由服务端解析器取数，故意不支持任意递归，以免客户端发起代价过高的查询。</li><li><b>事件溯源与 CQRS</b>：把所有变化记录为不可变事件（记录系统），再由事件派生出多个为读取优化的视图（物化视图）。写模型与读模型分开（CQRS），读视图可以随时从事件重建，新需求只需新建一个视图。事件要用过去时、描述业务事实；纠错用补偿事件而不是修改历史。<a href="../kafka/l22.html">Kafka 课程第 22 课</a>有完整的动手练习。</li><li><b>DataFrame、矩阵与数组</b>：数据科学与机器学习常用的模型（pandas、Spark DataFrame），按行列操作，适合把关系数据转成特征矩阵；多维数组用于科学计算与地理数据。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 06</div><a class="big" href="l06.html">存储引擎：日志结构与 LSM 树 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l05.js"></script>
+</body></html>

@@ -47,9 +47,9 @@ docker exec pg psql -U postgres -c &quot;SELECT count(*) FROM orders;&quot;</pre
  1000000</pre></div></div><div class="st"><span class="n">06</span><div><p>防止人为错误的另一种方式：在事务里先看影响行数再提交。</p><pre class="cmd">docker exec -it pg psql -U postgres
 BEGIN;
 DELETE FROM orders WHERE created_at &lt; &#x27;2026-01-02&#x27;;
--- 看到 DELETE 3334，确认无误再 COMMIT，否则 ROLLBACK
+-- 看到 DELETE 3333，确认无误再 COMMIT，否则 ROLLBACK
 ROLLBACK;</pre><pre class="out">BEGIN
-DELETE 3334
+DELETE 3333
 ROLLBACK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为一个支付系统写可靠性设计</h3><p>系统：支付 API（无状态，8 台）、PostgreSQL 主库 + 1 个同机房从库、Redis 缓存、每晚全量备份。过去一年的事故：一次机房断电（停机 4 小时）、一次错误配置推送导致全部 API 节点崩溃、一次 DBA 误删表（从昨晚备份恢复，丢失 14 小时数据）。请针对每次事故提出改进，并列出你会主动做的故障演练。</p><details><summary>查看参考答案</summary><div><ol><li><b>机房断电</b>：单机房是单点故障。至少跨两个可用区部署 API 与数据库副本；主库故障时自动或半自动切换（第 11 课）；定期演练切换。</li><li><b>错误配置</b>：同一个错误同时击中所有节点，是相关性故障。配置也要走代码评审与校验；灰度发布（先 1 台、再 5%、再全量）并自动比较错误率；一键回滚；配置变更要有审计记录。</li><li><b>误删表</b>：每晚全量备份的 RPO 是 24 小时。加入 WAL 归档实现时间点恢复（PITR，见 PostgreSQL 课程），RPO 降到秒级；生产库权限最小化，危险操作需要两人确认；延迟从库（如延迟 1 小时）可以快速找回误删数据；定期做恢复演练，确认备份真的可用。</li><li><b>演练清单</b>：随机杀掉一台 API 节点；关闭主库，测量切换时间；断开可用区间网络；把 Redis 清空看数据库能否扛住；磁盘写满；在预发环境从备份做一次完整恢复并计时。</li></ol></div></details></div>
 </section>
 
