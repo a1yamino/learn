@@ -2,7 +2,7 @@ TITLE='从应用连接：客户端、连接池与 Pipeline';DESC='应用通过�
 SUM=['<b>RESP</b>：命令以数组发送，如 <code>*3\\r\\n$3\\r\\nSET\\r\\n$1\\r\\nk\\r\\n$1\\r\\nv\\r\\n</code>；回复有简单字符串 <code>+OK</code>、错误 <code>-ERR</code>、整数 <code>:1</code>、块字符串 <code>$5</code>、数组 <code>*2</code>。RESP3（<code>HELLO 3</code>）增加了 map、set、推送等类型。',
 '一次命令的耗时 ≈ 网络往返（同机房约 0.1–0.5 ms）+ 执行时间（微秒级）。循环执行 1000 次 GET 就是 1000 次往返。',
 '<b>批量命令</b>（<code>MGET/MSET/HMGET</code>）把多次读写合并成一条；<b>Pipeline</b> 把多条任意命令连续发出、最后一次性读取回复，往返从 N 次降到 1 次。Pipeline 不是事务：中间的命令可能与其他客户端的命令交错，也可能部分失败。',
-'<b>连接池</b>：建立 TCP 连接（和 TLS 握手、AUTH）比执行命令贵得多。阻塞式客户端（redis-py、Jedis）每个并发请求占用一个连接，池大小要覆盖并发度；Lettuce、go-redis 等可以在少量连接上多路复用。注意 <code>maxclients</code>（默认 10000）。',
+'<b>连接池</b>：建立 TCP 连接（和 TLS 握手、AUTH）比执行命令贵得多。阻塞式客户端（redis-py、Jedis）每个并发请求占用一个连接，池大小要覆盖并发度；Lettuce 等可以在少量连接上多路复用；go-redis 默认使用连接池。注意 <code>maxclients</code>（默认 10000）。',
 '设置<b>超时</b>：连接超时和读写超时（几十到几百毫秒）。Redis 卡顿时没有超时的客户端会耗尽应用线程。阻塞命令（<code>BLPOP</code>、<code>XREAD BLOCK</code>）的读超时要大于阻塞时间，并使用独立的连接。',
 '<b>客户端缓存</b>（Redis 6+）：<code>CLIENT TRACKING on</code> 后，服务器记住每个连接读过的键，键被修改时推送失效消息，客户端在本地内存缓存热点值，命中时完全不经过网络。']
 def secs(prac,E):

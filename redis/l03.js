@@ -17,7 +17,7 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
 ['MGET 100 个键（值为 JSON 字符串）','1 次往返 ≈ 0.35 ms','ok','批量命令最简单。注意：在 Cluster 中，MGET 的所有键必须在同一个槽，否则报 CROSSSLOT；客户端库通常提供按槽拆分的版本。'],
 ['Pipeline 100 条 HGETALL','1 次往返 ≈ 0.4 ms','ok','任意命令都可以放进 Pipeline。'],
 ['MULTI … 100 条 HGETALL … EXEC','1 次往返 ≈ 0.4 ms\n（多了 MULTI/EXEC 两条命令）','sig','也只有一次往返，但额外保证原子执行。只读场景不需要。'],
-['Pipeline 10 万条 HGETALL','服务器把 10 万个回复堆在输出缓冲区：约 400 MB\nclient-output-buffer-limit 触发 → 连接被断开','bad','分批发送，每批几百到几千条。'],
+['Pipeline 10 万条 HGETALL','服务器把 10 万个回复堆在输出缓冲区：约 400 MB\n普通客户端默认没有输出缓冲区上限；若已配置上限，超限会被断开','bad','分批发送，每批几百到几千条。'],
 ['客户端缓存命中','本地内存读取 ≈ 0.001 ms，不经过网络','ok','开启 CLIENT TRACKING 的客户端（如 redis-py 5.1+ 的 cache_config、Lettuce）对热点键效果最好；键被修改时服务器推送失效通知。']];
  const q=document.getElementById('hq'),p=document.getElementById('hp'),m=document.getElementById('hm');
  Q.forEach(([t],i)=>{const b=document.createElement('button');b.className='btn';b.textContent=t;b.addEventListener('click',()=>{q.querySelectorAll('.btn').forEach(x=>x.classList.toggle('pri',x===b));p.textContent=Q[i][1];m.className='msg '+Q[i][2];m.innerHTML=Q[i][3]});q.appendChild(b)});
