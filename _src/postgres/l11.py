@@ -1,5 +1,5 @@
 TITLE='GIN、GiST、BRIN 与表达式、部分索引';DESC='B-tree 处理不了“数组包含某元素”“jsonb 里有某个键”“全文检索”“范围是否重叠”这些问题。本课讲 PostgreSQL 的其他索引类型各自的结构和适用场景，以及两种能让任何索引更精准的技巧：表达式索引和部分索引。';NEXT='查询规划器与 EXPLAIN';MIN=60
-SUM=['<b>GIN</b>（倒排索引）：把一个值拆成多个元素（数组元素、jsonb 键值、全文词元），为每个元素存一个指向行的列表。适合 <code>@&gt;</code>、<code>?</code>、<code>&amp;&amp;</code>、<code>@@</code>。查询快，写入慢（用 fastupdate 的待处理列表缓冲），索引较大。jsonb 用 <code>jsonb_path_ops</code> 更小，但只支持 <code>@&gt;</code>。',
+SUM=['<b>GIN</b>（倒排索引）：把一个值拆成多个元素（数组元素、jsonb 键值、全文词元），为每个元素存一个指向行的列表。适合 <code>@&gt;</code>、<code>?</code>、<code>&amp;&amp;</code>、<code>@@</code>。查询快，写入慢（用 fastupdate 的待处理列表缓冲），索引较大。jsonb 用 <code>jsonb_path_ops</code> 通常更小，支持 <code>@&gt;</code>、<code>@?</code>、<code>@@</code>，不支持 <code>?</code> 等键存在判断；需要这些判断时用默认的 jsonb_ops。',
 '<b>GiST</b>：平衡树框架，每个节点存子树的“外包”（如边界框、范围）。适合几何、范围类型（<code>tstzrange</code> 的 <code>&amp;&amp;</code>）、最近邻 <code>ORDER BY 坐标 &lt;-&gt; 点</code>、排他约束 <code>EXCLUDE USING gist</code>，以及 pg_trgm 的模糊匹配。',
 '<b>BRIN</b>：每一段连续的堆页（默认 128 页）只存最小值和最大值，索引极小（几十 KB 对应几十 GB 的表）。只在列值与物理顺序强相关时有效，典型是只追加的日志表的时间列。',
 '<b>Hash</b> 只支持 <code>=</code>，现在已经写 WAL、可以安全使用，但通常不比 B-tree 有明显优势。<b>SP-GiST</b> 用于四叉树、前缀树等不平衡分区结构（IP 地址、电话前缀）。',
