@@ -64,7 +64,7 @@ class LineItem:
 @dataclass(frozen=True)
 class Invoice:
     customer: str
-    items: tuple
+    items: tuple[LineItem, ...]
     discount: float = 0.0
 
     def total(self):
@@ -87,7 +87,7 @@ bob = Invoice(&#x27;bob&#x27;, (LineItem(&#x27;ink&#x27;, 20),), discount=0.1)
 print(ann.lines()); print(bob.lines())
 mailer = Mailer(); mailer.send(bob); print(mailer.sent)&quot;</pre><pre class="out">[&#x27;pen: 10&#x27;, &#x27;total: 10.00&#x27;]
 [&#x27;ink: 20&#x27;, &#x27;total: 18.00&#x27;]
-[&#x27;bob&#x27;]</pre></div></div><div class="st"><span class="n">03</span><div><p>发送是独立的命令，生成是独立的查询；<code>Invoice</code> 不可变，可以放心地传递。</p><pre class="cmd">python3 -c &quot;
+[&#x27;bob&#x27;]</pre></div></div><div class="st"><span class="n">03</span><div><p>发送是独立的命令，生成是独立的查询。本例用 tuple 保存冻结的 LineItem；frozen=True 只禁止字段重新赋值，不会递归冻结传入的 list 等对象。</p><pre class="cmd">python3 -c &quot;
 from invoice import *
 i = Invoice(&#x27;c&#x27;, (LineItem(&#x27;a&#x27;, 1),))
 try:
@@ -120,7 +120,7 @@ def search_orders(
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>参数越少越好</b>：每个参数都是读者必须理解、测试必须覆盖的维度。三个以上的参数通常说明一些参数应该组成一个对象（<code>Point(x, y)</code>、<code>DateRange(start, end)</code>）。</li><li><b>标识参数是坏味道</b>：<code>render(page, True)</code> 中的 <code>True</code> 是什么？它说明函数做了两件事。拆成 <code>render_for_print(page)</code> 与 <code>render_for_screen(page)</code>，或至少要求关键字参数。</li><li><b>仅限关键字参数</b>（Python 的 <code>*</code>）让调用处必须写出名字：<code>transfer(a, b, amount=100, *, notify=False)</code> → 调用时 <code>notify=True</code> 一目了然。</li><li><b>避免隐藏的副作用</b>：<code>check_password()</code> 内部顺便初始化会话，就制造了时间耦合——只有在“可以初始化会话”的时候才能调用它。副作用要么移出去，要么写进名字。</li><li><b>命令查询分离（CQS）</b>：<code>set(attr, value)</code> 既修改又返回成功与否，导致 <code>if set("name", "x")</code> 这种含混的代码。要么做事（命令，返回 None），要么回答问题（查询，无副作用）。例外：<code>pop()</code> 这类约定俗成的操作。</li><li><b>不修改传入的参数</b>：输出参数让读者困惑“它会被改吗”。返回新值；Python 中尤其要警惕可变默认参数 <code>def f(items=[])</code>，它在多次调用之间共享。</li></ol></section>
+<ol class="sum"><li><b>参数越少越好</b>：每个参数都是读者必须理解、测试必须覆盖的维度。三个以上的参数通常说明一些参数应该组成一个对象（<code>Point(x, y)</code>、<code>DateRange(start, end)</code>）。</li><li><b>标识参数是坏味道</b>：<code>render(page, True)</code> 中的 <code>True</code> 是什么？它说明函数做了两件事。拆成 <code>render_for_print(page)</code> 与 <code>render_for_screen(page)</code>，或至少要求关键字参数。</li><li><b>仅限关键字参数</b>（Python 的 <code>*</code>）让调用处必须写出名字：定义 <code>def transfer(source, target, amount, *, notify=False): ...</code>，调用 <code>transfer(a, b, 100, notify=True)</code>。裸 <code>*</code> 写在定义处，不是调用处。</li><li><b>避免隐藏的副作用</b>：<code>check_password()</code> 内部顺便初始化会话，就制造了时间耦合——只有在“可以初始化会话”的时候才能调用它。副作用要么移出去，要么写进名字。</li><li><b>命令查询分离（CQS）</b>：<code>set(attr, value)</code> 既修改又返回成功与否，导致 <code>if set("name", "x")</code> 这种含混的代码。要么做事（命令，返回 None），要么回答问题（查询，无副作用）。例外：<code>pop()</code> 这类约定俗成的操作。</li><li><b>不修改传入的参数</b>：输出参数让读者困惑“它会被改吗”。返回新值；Python 中尤其要警惕可变默认参数 <code>def f(items=[])</code>，它在多次调用之间共享。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 05</div><a class="big" href="l05.html">注释：何时该写，何时该删 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
