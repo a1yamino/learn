@@ -12,11 +12,12 @@ model = "$MODEL"
 model_provider = "mock"
 $EXTRA_CONFIG
 [model_providers.mock]
+$EXTRA_PROVIDER
 name = "Mock"
 base_url = "http://127.0.0.1:$PORT/v1"
 wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
+request_max_retries = ${REQ_RETRIES:-0}
+stream_max_retries = ${STREAM_RETRIES:-0}
 TOML
 sleep 0.5
 codex exec --skip-git-repo-check "$@" </dev/null

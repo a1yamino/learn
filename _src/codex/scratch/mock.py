@@ -25,13 +25,18 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))) or b"{}")
         n = next(counter)
-        json.dump({"path": self.path, "body": body}, open(f"{LOG}/req{n:02d}.json", "w"), ensure_ascii=False, indent=1)
+        json.dump({"path": self.path, "headers": dict(self.headers), "body": body}, open(f"{LOG}/req{n:02d}.json", "w"), ensure_ascii=False, indent=1)
         items = script.reply(n, body)
+        if isinstance(items, dict) and "http_status" in items:  # 模拟 HTTP 错误
+            self.send_response(items["http_status"]); self.send_header("content-type", "application/json"); self.end_headers()
+            self.wfile.write(json.dumps({"error": {"message": items.get("message", "mock error")}}).encode()); return
         self.send_response(200); self.send_header("content-type", "text/event-stream"); self.end_headers()
         def ev(d): self.wfile.write(f"event: {d['type']}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n".encode())
         rid = f"resp_{n}"
         ev({"type": "response.created", "response": {"id": rid}})
         for i, it in enumerate(items):
+            if it.get("type") == "__drop__":  # 模拟流中断：不发 response.completed 就断开
+                self.wfile.flush(); self.close_connection = True; return
             it = {"id": f"item_{n}_{i}", **it}
             if it["type"] == "message":
                 ev({"type": "response.output_item.added", "output_index": i, "item": {**it, "content": []}})
