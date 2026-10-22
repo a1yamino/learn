@@ -1,0 +1,113 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 6 课 · 格式：垂直与水平的排版</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 6 课</span><span class="sp"></span><a href="l05.html">← 第 5 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 6 课</div><h1>格式：垂直与水平的排版</h1>
+<p>格式是沟通的一部分。本课讲垂直格式（文件大小、报纸隐喻、用空行分隔概念、相关的代码靠近、变量在使用处附近声明、调用者在被调用者之上）与水平格式（行宽、空格表达优先级、缩进），以及团队规则为什么比个人偏好更重要——在 Python 中这意味着把格式交给 Black 或 Ruff 自动处理，把精力留给名字和结构。约 35 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">报纸式的文件</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这些格式问题，谁来解决？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">Python 项目的格式配置</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">格式化工具在做什么</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>报纸式的文件</h2><div class="goal">从上往下，从概括到细节。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这些格式问题，谁来解决？</h2><div class="goal">选择一个问题，看它属于人还是工具。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>Python 项目的格式配置</h2><div class="goal">一份典型配置：格式与 lint 交给 Ruff，在提交前和 CI 中运行。</div></div></div>
+<pre class="cmd" style="overflow-x:auto;white-space:pre"># pyproject.toml
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]   # 风格、错误、导入顺序、常见 bug、升级、简化
+
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff         # lint，--fix 自动修复
+        args: [--fix]
+      - id: ruff-format  # 格式化</pre>
+<p>一旦格式由工具决定，团队就把讨论集中在工具无法判断的事情上：名字、函数边界、模块边界、概念的远近。这正是本课程后面所有课的主题。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>格式化工具在做什么</h2><div class="goal">对一个格式混乱的文件运行 Ruff。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用标准库就能完成：Python 自带的 <code>ast</code> 可以按“报纸”顺序检查函数排列。如果已安装 ruff，也可以运行它。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>一个顺序混乱的模块：被调用者在调用者之前，相关函数分散。</p><pre class="cmd">cat &gt; export.py &lt;&lt;&#x27;EOF&#x27;
+def _format_cell(v):
+    return str(v).replace(&quot;,&quot;, &quot; &quot;)
+
+def unrelated_helper():
+    return 42
+
+def export_orders(orders):
+    return &quot;\n&quot;.join(_to_row(o) for o in orders)
+
+def _to_row(order):
+    return &quot;,&quot;.join(_format_cell(v) for v in order)
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>写一个小检查：如果函数在它的第一个调用者之前定义，就报告出来（违反下降规则）。</p><pre class="cmd">cat &gt; stepdown.py &lt;&lt;&#x27;EOF&#x27;
+import ast, sys
+
+def check(path):
+    tree = ast.parse(open(path).read())
+    defs = {n.name: n.lineno for n in tree.body if isinstance(n, ast.FunctionDef)}
+    first_caller = {}
+    for fn in tree.body:
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in defs:
+                first_caller.setdefault(node.func.id, fn.lineno)
+    for name, line in defs.items():
+        caller = first_caller.get(name)
+        if caller and caller &gt; line:
+            print(f&quot;{path}:{line}: {name} 定义在调用者（第 {caller} 行）之前&quot;)
+
+check(sys.argv[1])
+EOF
+python3 stepdown.py export.py</pre><pre class="out">export.py:1: _format_cell 定义在调用者（第 10 行）之前</pre></div></div><div class="st"><span class="n">03</span><div><p>按报纸顺序重排，删除无关函数（它应在别的模块里）。</p><pre class="cmd">cat &gt; export.py &lt;&lt;&#x27;EOF&#x27;
+&quot;&quot;&quot;把订单导出为 CSV 文本。&quot;&quot;&quot;
+
+
+def export_orders(orders):
+    return &quot;\n&quot;.join(_to_row(o) for o in orders)
+
+
+def _to_row(order):
+    return &quot;,&quot;.join(_format_cell(v) for v in order)
+
+
+def _format_cell(value):
+    return str(value).replace(&quot;,&quot;, &quot; &quot;)
+EOF
+python3 stepdown.py export.py; echo &quot;检查通过: $?&quot;; python3 -c &quot;from export import export_orders; print(export_orders([(1, &#x27;a,b&#x27;), (2, &#x27;c&#x27;)]))&quot;</pre><pre class="out">检查通过: 0
+1,a b
+2,c</pre></div></div><div class="st"><span class="n">04</span><div><p>（可选）如果装了 ruff：<code>pip install ruff</code>，再检查格式。</p><pre class="cmd">command -v ruff &gt;/dev/null &amp;&amp; ruff format --check export.py || echo &quot;未安装 ruff，跳过&quot;</pre><pre class="out">未安装 ruff，跳过</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>排列一个类</h3><p>一个 <code>ReportGenerator</code> 类有这些方法：<code>_fetch_rows</code>、<code>generate</code>（公共入口，依次调用 <code>_fetch_rows</code>、<code>_summarize</code>、<code>_render</code>）、<code>_render</code>（调用 <code>_format_money</code>）、<code>__init__</code>、<code>_summarize</code>、<code>_format_money</code>。按报纸顺序排列它们。</p><details><summary>查看参考答案</summary><div><pre class="cmd">class ReportGenerator:
+    def __init__(...)
+    def generate(...)        # 公共入口：读者从这里开始
+    def _fetch_rows(...)     # 按 generate 中的调用顺序
+    def _summarize(...)
+    def _render(...)
+    def _format_money(...)   # _render 的细节，紧跟其后</pre><p>构造函数在最前（约定），公共方法在私有方法之前，私有方法按首次被调用的顺序排列，最底层的细节在最后。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>格式是给人看的</b>：今天的写法会影响以后每一个读者。一致性比任何具体规则都重要。</li><li><b>报纸隐喻</b>：文件顶部是高层概念与公共接口，越往下越是细节。名字（文件名、模块名）应当能告诉读者是否找对了地方。</li><li><b>垂直间距与靠近</b>：空行分隔不同概念；紧密相关的代码放在一起；局部变量在第一次使用处附近声明；调用者在被调用者之上，相关函数相邻。</li><li><b>水平格式</b>：行宽保持适中（Black 默认 88）；空格表达结构（<code>a*b + c*d</code> 中的空格暗示了优先级——但自动格式化工具会统一处理）；不要为了对齐而加空格，它会在改名后失效。</li><li><b>团队规则</b>：由工具执行格式（Black、Ruff format、isort），在 CI 与提交钩子中检查，代码评审就不必再讨论空格和引号。</li><li><b>文件大小</b>：大多数模块在数百行以内就足够；一个数千行的文件往往混合了多个概念，按概念拆成包。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 07</div><a class="big" href="l07.html">对象与数据结构：数据抽象与迪米特法则 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l06.js"></script>
+</body></html>

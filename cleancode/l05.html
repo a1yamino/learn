@@ -81,7 +81,7 @@ def shipping_fee(weight_kg, region, is_vip):
         fee *= REMOTE_MULTIPLIER
     return fee
 EOF
-python3 -c &quot;from shipping import shipping_fee as f; print(f(3, &#x27;BJ&#x27;, False), f(3, &#x27;XZ&#x27;, False), f(3, &#x27;XJ&#x27;, True))&quot;</pre><pre class="out">12 24 0</pre></div></div><div class="st"><span class="n">03</span><div><p>数一数：注释行从 15 行减少到 2 行，信息却没有丢失。</p><pre class="cmd">grep -c &quot;#&quot; shipping.py; python3 -c &quot;import shipping; help(shipping.shipping_fee)&quot; | sed -n 3,4p</pre><pre class="out">1
+python3 -c &quot;from shipping import shipping_fee as f; print(f(3, &#x27;BJ&#x27;, False), f(3, &#x27;XZ&#x27;, False), f(3, &#x27;XJ&#x27;, True))&quot;</pre><pre class="out">12 24 0</pre></div></div><div class="st"><span class="n">03</span><div><p>数一数：注释行从 12 行减少到 1 行（外加一个 docstring），信息却没有丢失。</p><pre class="cmd">grep -c &quot;#&quot; shipping.py; python3 -c &quot;import shipping; help(shipping.shipping_fee)&quot; | sed -n 3,4p</pre><pre class="out">1
 shipping_fee(weight_kg, region, is_vip)
     返回一个包裹的运费（元）。VIP 免运费。</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一条好注释</h3><p>下面的代码看起来像一个 bug，但其实是故意的：<pre class="cmd">def retry_delay(attempt):
     return min(2 ** attempt, 60) + random.uniform(0, 1)</pre>同事想删掉 <code>random.uniform(0, 1)</code>，因为“它让测试不稳定”。写一条注释防止这种误改，并给出让测试稳定的办法。</p><details><summary>查看参考答案</summary><div><pre class="cmd">def retry_delay(attempt, *, jitter=random.uniform):

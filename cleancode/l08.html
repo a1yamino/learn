@@ -1,0 +1,167 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 8 课 · 错误处理：异常、上下文与不返回 None</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 8 课</span><span class="sp"></span><a href="l07.html">← 第 7 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 8 课</div><h1>错误处理：异常、上下文与不返回 None</h1>
+<p>错误处理很重要，但它不应该淹没主逻辑。本课讲：用异常代替返回码；先写 try 结构（让 try 块像事务一样）；给异常提供足够的上下文；按调用者的需要定义异常类；特例模式（Special Case）消除分支；别返回 None、别传入 None；以及 Python 的具体做法——EAFP 与 LBYL、异常链（raise ... from）、上下文管理器、不要捕获过宽的异常。最后比较“异常”与“结果类型”两种风格。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">返回码 vs 异常</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这样处理错误对吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">EAFP、异常与结果类型</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">异常链</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>返回码 vs 异常</h2><div class="goal">同一个流程，两种写法下主逻辑的样子。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这样处理错误对吗？</h2><div class="goal">选择一段代码。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>EAFP、异常与结果类型</h2><div class="goal">Python 社区偏好 EAFP（先做再处理异常），但并非所有场景都适合异常。</div></div></div>
+<table class="tbl"><tr><th>风格</th><th>写法</th><th>适合</th></tr>
+<tr><td>LBYL（先检查）</td><td><code>if key in d: v = d[key]</code></td><td>检查很便宜，并且没有竞态</td></tr>
+<tr><td>EAFP（先做）</td><td><code>try: v = d[key] except KeyError: ...</code></td><td>Python 惯用；文件、网络等“检查后状态可能已变”的操作（避免 TOCTOU 竞态）</td></tr>
+<tr><td>结果类型</td><td><code>Ok(value) | Err(reason)</code>（Rust、Go 的多返回值）</td><td>失败是业务上常见、调用方必须处理的结果（如表单校验）</td></tr></table>
+<p><b>判断标准</b>：失败是“例外”（磁盘满、网络断）还是“正常的另一种结果”（密码错误、库存不足）？前者用异常，在边界统一处理；后者可以作为返回值的一部分，让类型系统提醒调用方处理。书中主张一律使用异常；在今天的多语言实践里，这两种风格各有位置。</p>
+<pre class="cmd" style="overflow-x:auto;white-space:pre"># 在边界统一处理：请求处理器是最外层
+def handle(request):
+    try:
+        return ok(place_order(parse(request)))
+    except ValidationError as e:
+        return bad_request(e.errors)
+    except OutOfStock as e:
+        return conflict(str(e))
+    # 其他异常不在这里捕获：交给框架记录并返回 500</pre>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>异常链</h2><div class="goal">Python 会同时显示原始异常与包装后的异常。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">把一个返回码与 None 混用的模块改为异常与特例对象。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>之前：返回码和 None。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
+STOCK = {&quot;pen&quot;: 3, &quot;ink&quot;: 0}
+COUPONS = {&quot;SAVE10&quot;: 0.1}
+
+def reserve(sku, qty):
+    if sku not in STOCK:
+        return -1
+    if STOCK[sku] &lt; qty:
+        return -2
+    STOCK[sku] -= qty
+    return 0
+
+def coupon(code):
+    return COUPONS.get(code)  # 可能是 None
+
+def checkout(sku, qty, price, code):
+    r = reserve(sku, qty)
+    if r == -1:
+        return &quot;unknown&quot;
+    if r == -2:
+        return &quot;out of stock&quot;
+    c = coupon(code)
+    return price * qty * (1 - c)
+EOF
+python3 -c &quot;
+from cart import checkout
+print(checkout(&#x27;pen&#x27;, 1, 10, &#x27;SAVE10&#x27;))
+print(checkout(&#x27;ink&#x27;, 1, 10, &#x27;SAVE10&#x27;))
+print(checkout(&#x27;pen&#x27;, 1, 10, None))&quot;</pre><pre class="out">9.0
+out of stock
+Traceback (most recent call last):
+  File &quot;&lt;string&gt;&quot;, line 5, in &lt;module&gt;
+    print(checkout(&#x27;pen&#x27;, 1, 10, None))
+          ~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File &quot;cart.py&quot;, line 22, in checkout
+    return price * qty * (1 - c)
+                          ~~^~~
+TypeError: unsupported operand type(s) for -: &#x27;int&#x27; and &#x27;NoneType&#x27;</pre></div></div><div class="st"><span class="n">02</span><div><p>没有优惠券时出现了 <code>TypeError</code>：None 被传到了算术里。之后：异常 + 特例对象。</p><pre class="cmd">cat &gt; cart.py &lt;&lt;&#x27;EOF&#x27;
+from dataclasses import dataclass
+
+STOCK = {&quot;pen&quot;: 3, &quot;ink&quot;: 0}
+
+class CheckoutError(Exception):
+    pass
+
+class UnknownProduct(CheckoutError):
+    pass
+
+class OutOfStock(CheckoutError):
+    pass
+
+@dataclass(frozen=True)
+class Coupon:
+    rate: float
+    def apply(self, amount):
+        return amount * (1 - self.rate)
+
+class NoCoupon:
+    def apply(self, amount):
+        return amount
+
+COUPONS = {&quot;SAVE10&quot;: Coupon(0.1)}
+
+def reserve(sku, qty):
+    if sku not in STOCK:
+        raise UnknownProduct(f&quot;没有商品 {sku!r}&quot;)
+    if STOCK[sku] &lt; qty:
+        raise OutOfStock(f&quot;{sku} 库存 {STOCK[sku]}，需要 {qty}&quot;)
+    STOCK[sku] -= qty
+
+def coupon_for(code):
+    return COUPONS.get(code, NoCoupon())
+
+def checkout(sku, qty, price, code=None):
+    reserve(sku, qty)
+    return coupon_for(code).apply(price * qty)
+EOF
+python3 -c &quot;
+from cart import *
+print(checkout(&#x27;pen&#x27;, 1, 10, &#x27;SAVE10&#x27;))
+print(checkout(&#x27;pen&#x27;, 1, 10))
+for args in [(&#x27;ink&#x27;, 1, 10), (&#x27;cap&#x27;, 1, 10)]:
+    try:
+        checkout(*args)
+    except CheckoutError as e:
+        print(type(e).__name__, &#x27;-&#x27;, e)&quot;</pre><pre class="out">9.0
+10
+OutOfStock - ink 库存 0，需要 1
+UnknownProduct - 没有商品 &#x27;cap&#x27;</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>修好这个“安全”的函数</h3><p><pre class="cmd">def load_settings(path):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data["db"]["url"], int(data["db"]["pool"])
+    except Exception:
+        return None</pre>指出问题并重写。要求：文件不存在时使用默认设置；JSON 错误或字段缺失时报错并说明原因。</p><details><summary>查看参考答案</summary><div><pre class="cmd">DEFAULT = Settings(db_url="sqlite:///app.db", pool_size=5)
+
+class SettingsError(Exception):
+    pass
+
+def load_settings(path) -> Settings:
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return DEFAULT
+    except json.JSONDecodeError as e:
+        raise SettingsError(f"{path} 不是合法的 JSON（第 {e.lineno} 行）") from e
+    try:
+        db = data["db"]
+        return Settings(db_url=db["url"], pool_size=int(db["pool"]))
+    except (KeyError, TypeError, ValueError) as e:
+        raise SettingsError(f"{path} 中 db 配置不完整或格式错误: {e!r}") from e</pre><ul><li>原函数用 <code>except Exception</code> 吞掉了所有错误（包括编程错误），并返回 <code>None</code>，调用方解包时才失败，远离原因。</li><li>新版本区分了三种情况：可恢复（文件不存在 → 默认值）、配置错误（带上下文的领域异常）、其他（向上传播）。返回值是一个类型明确的 <code>Settings</code>，从不为 None。</li></ul></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>异常代替返回码</b>：返回码迫使调用方在每次调用后立即检查，主逻辑被 <code>if err</code> 淹没。异常把正常路径与错误处理分开。</li><li><b>try 块像事务</b>：try 中的代码要么全部完成，要么让程序回到一致的状态。先写出异常的测试，再填充实现。资源用 <code>with</code> 管理，保证释放。</li><li><b>提供上下文</b>：异常消息应说明失败的操作和原因（哪个文件、哪个订单号、期望什么）。包装底层异常时用 <code>raise NewError(...) from e</code> 保留因果链。</li><li><b>按调用者的需要定义异常</b>：调用者通常只关心“能否恢复、如何恢复”。把第三方库抛出的多种异常包装成少数几个有意义的领域异常（第 9 课）。</li><li><b>别返回 None，也别传入 None</b>：返回 None 让每个调用者都要检查，漏掉一处就是 <code>AttributeError</code>。改为抛出异常、返回空集合，或使用特例对象（如 <code>GuestUser</code>、空的 <code>NoDiscount</code>）。用类型注解 <code>Optional</code> 标明真正可选的值。</li><li><b>不要吞掉异常</b>：<code>except Exception: pass</code> 会隐藏 bug。只捕获你能处理的异常类型，范围尽量小；不能处理就让它向上传播，在边界（请求处理器、任务入口）统一记录。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 09</div><a class="big" href="l09.html">边界：包装第三方代码 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l08.js"></script>
+</body></html>
