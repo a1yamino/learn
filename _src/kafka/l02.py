@@ -1,0 +1,24 @@
+TITLE='动手：命令行工具与第一个主题';DESC='本课在 Docker 中搭一个三节点的 KRaft 集群，用 Kafka 自带的命令行工具完成一遍完整流程：创建主题、修改配置、生产和消费消息、查看消费者组的进度与积压，以及停掉一个 Broker 后观察 Leader 切换。后面的课都会用到这些命令。';NEXT='日志存储：分区、段与索引';MIN=60
+SUM=['所有工具都在 <code>/opt/kafka/bin</code>，都通过 <code>--bootstrap-server</code> 连接任意一个 Broker，客户端从它获取整个集群的元数据后再直接连接各分区的 Leader。',
+'<code>kafka-topics.sh</code>：<code>--create</code>（分区数、副本因子、<code>--config</code>）、<code>--describe</code>、<code>--alter --partitions</code>（只能增加，且会改变 key 到分区的映射）、<code>--delete</code>。',
+'<code>kafka-configs.sh</code>：查看与动态修改主题、Broker、客户端配置，例如 <code>--entity-type topics --entity-name orders --alter --add-config retention.ms=86400000</code>，无需重启。',
+'<code>kafka-console-producer.sh</code> / <code>kafka-console-consumer.sh</code>：调试用的生产者和消费者，<code>--group</code> 指定消费者组，<code>--property print.key=true</code> 等显示元数据。',
+'<code>kafka-consumer-groups.sh --describe --group g</code> 显示每个分区的 <code>CURRENT-OFFSET</code>（组已提交的位置）、<code>LOG-END-OFFSET</code>（分区末尾）和 <code>LAG</code>（二者之差，即积压）。<code>--reset-offsets</code> 修改组的位置（第 8 课）。',
+'副本因子 3 的主题在一个 Broker 宕机后，受影响分区的 Leader 会自动切换到其他 Broker 上的同步副本，客户端自动重连；Broker 恢复后重新追上数据并回到 ISR。']
+def secs(prac,E):
+    return [
+('三节点集群','每个节点既是 Broker 也是控制器（组合模式，适合学习）。','<div id="p1"></div>'),
+('动手：读懂 describe 的输出','主题 orders：3 个分区、副本因子 3。点击事件，看 describe 结果如何变化。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:100px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('消费者组的 LAG','积压是最重要的消费指标。','<div id="p2"></div>'),
+('相关命令','常用参数。','<div id="t4"></div>'),
+('在你的电脑上练习','用 docker compose 启动三节点集群。把下面内容保存为 compose.yaml。',prac([
+ ('compose.yaml（k1 的配置，k2、k3 只需把 1 改成 2、3，端口改成 9093、9094）。','services:\n  k1:\n    image: apache/kafka:4.4.0\n    environment:\n      KAFKA_NODE_ID: 1\n      KAFKA_PROCESS_ROLES: broker,controller\n      KAFKA_LISTENERS: PLAINTEXT://:19092,CONTROLLER://:9093,EXTERNAL://:9092\n      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://k1:19092,EXTERNAL://localhost:9092\n      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT\n      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER\n      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT\n      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@k1:9093,2@k2:9093,3@k3:9093\n      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw\n    ports: ["9092:9092"]','（保存文件）'),
+ ('启动并进入 k1。','docker rm -f kafka; docker compose up -d\ndocker compose exec k1 bash\ncd /opt/kafka; B="--bootstrap-server k1:19092"','[+] Running 3/3 …'),
+ ('创建副本因子 3 的主题并查看。','bin/kafka-topics.sh $B --create --topic orders --partitions 3 --replication-factor 3\nbin/kafka-topics.sh $B --describe --topic orders','Created topic orders.\nTopic: orders\tPartition: 0\tLeader: 2\tReplicas: 2,3,1\tIsr: 2,3,1\n\tTopic: orders\tPartition: 1\tLeader: 3\tReplicas: 3,1,2\tIsr: 3,1,2\n\tTopic: orders\tPartition: 2\tLeader: 1\tReplicas: 1,2,3\tIsr: 1,2,3'),
+ ('生产 1000 条测试消息。','bin/kafka-producer-perf-test.sh --topic orders --num-records 1000 --record-size 100 --throughput -1 --producer-props bootstrap.servers=k1:19092','1000 records sent, … records/sec …'),
+ ('以组 g1 消费一部分，然后看积压。','bin/kafka-console-consumer.sh $B --topic orders --group g1 --max-messages 300 > /dev/null\nbin/kafka-consumer-groups.sh $B --describe --group g1','GROUP TOPIC  PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG …\ng1    orders 0         300            334            34\ng1    orders 1         0              329            329\ng1    orders 2         0              337            337'),
+ ('在宿主机停掉 k2，再看 describe。','docker compose stop k2\ndocker compose exec k1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server k1:19092 --describe --topic orders','\tTopic: orders\tPartition: 0\tLeader: 3\tReplicas: 2,3,1\tIsr: 3,1\n…'),
+ ('修改主题配置。','bin/kafka-configs.sh $B --entity-type topics --entity-name orders --alter --add-config retention.ms=86400000\nbin/kafka-configs.sh $B --entity-type topics --entity-name orders --describe','Completed updating config for topic orders.\nDynamic configs for topic orders are:\n  retention.ms=86400000 sensitive=false …')],
+ ('诊断一个消费者组','某天告警：组 <code>billing</code> 的 LAG 持续上升。下面是 describe 输出（节选）：分区 0–3 的 CONSUMER-ID 都是 <code>c-1</code>，分区 4–5 的 CONSUMER-ID 为 <code>-</code>；分区 0–3 的 LAG 约为 50，分区 4–5 的 LAG 为 12 万且在增长。说明可能的原因、你会运行哪些命令进一步确认，以及修复思路。',
+ '<ul><li>分区 4、5 没有分配到任何消费者（CONSUMER-ID 为 <code>-</code>），所以积压只增不减；分区 0–3 由 c-1 正常消费。</li><li>常见原因：组里本来有两个实例，c-2 已经退出或卡住，而组还没有把它的分区重新分配给 c-1——在新协议下这通常意味着分配正在进行或 c-1 订阅的主题列表不同；也可能是分区数刚从 4 扩到 6，而消费者使用固定的 <code>assign()</code> 手动分配，没有感知新分区。</li><li>确认：<code>kafka-consumer-groups.sh --describe --group billing --members --verbose</code> 看成员和各自分配的分区；<code>--state</code> 看组的状态；<code>kafka-topics.sh --describe</code> 看分区数是否刚变化；查应用日志里的再平衡和异常。</li><li>修复：恢复或扩容实例；手动分配的消费者改为 <code>subscribe()</code>；为消费者的存活和 LAG 设置告警。</li></ul>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
