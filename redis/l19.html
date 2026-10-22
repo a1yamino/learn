@@ -1,0 +1,57 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 19 课 · 热 key 与大 key</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 19 课</span><span class="sp"></span><a href="l18.html">← 第 18 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 19 课</div><h1>热 key 与大 key</h1>
+<p>Redis 的性能问题很多来自“个别键”：一个被集中访问的热 key 会让单个分片的 CPU 或网卡打满，一个几百 MB 的大 key 会在读取、删除、迁移时阻塞主线程。本课讲如何发现它们、它们分别造成什么问题，以及拆分、本地缓存、读副本、异步删除等处理方法。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">热 key 打满一个分片</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：处理热 key</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">大 key 的代价</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>热 key 打满一个分片</h2><div class="goal">加分片也没有用。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：处理热 key</h2><div class="goal">一个热 key 每秒 30 万次读，单个分片约能处理 10 万次。选择方案，看各分片的负载。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>大 key 的代价</h2><div class="goal">读、删、迁移都会阻塞。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">发现与处理。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">构造一个大 key 并观察。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写入一个有 100 万个字段的哈希（用 Lua 生成，约几秒）。</p><pre class="cmd">EVAL &quot;for i=1,1000000 do redis.call(&#x27;HSET&#x27;,KEYS[1],&#x27;f&#x27;..i,i) end return 1&quot; 1 big:h</pre><pre class="out">(integer) 1</pre></div></div><div class="st"><span class="n">02</span><div><p>查看内存。</p><pre class="cmd">MEMORY USAGE big:h</pre><pre class="out">(integer) 72388728</pre></div></div><div class="st"><span class="n">03</span><div><p>用 --bigkeys 扫描（在另一个终端）。</p><pre class="cmd">docker exec redis redis-cli --bigkeys</pre><pre class="out">…
+Biggest   hash found &quot;big:h&quot; has 1000000 fields
+…</pre></div></div><div class="st"><span class="n">04</span><div><p>HGETALL 会一次返回 200 万行，改用 HSCAN 分批。</p><pre class="cmd">HSCAN big:h 0 COUNT 100</pre><pre class="out">1) &quot;1024&quot;
+2) 1) &quot;f531&quot;
+   2) &quot;531&quot;
+   …</pre></div></div><div class="st"><span class="n">05</span><div><p>看慢日志，再用 UNLINK 删除。</p><pre class="cmd">SLOWLOG GET 2
+UNLINK big:h</pre><pre class="out">1) 1) (integer) 12
+   2) (integer) 1761104300
+   3) (integer) 1873211
+   4) 1) &quot;EVAL&quot;
+…
+(integer) 1</pre></div></div><div class="st"><span class="n">06</span><div><p>查看热 key（需要 LFU 策略）。</p><pre class="cmd">CONFIG SET maxmemory-policy allkeys-lfu
+\! docker exec redis redis-cli --hotkeys</pre><pre class="out">OK
+…
+hot key found with counter: 12	keyname: shop:product:1001:v1</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>处理一个直播间的热 key 和大 key</h3><p>某直播间同时 200 万人在线：① 直播间信息 <code>live:9527</code>（字符串，2 KB）每秒 50 万次读；② 在线观众集合 <code>live:9527:viewers</code>（SET，200 万成员）用来显示在线人数和随机展示 50 个头像；③ 直播结束后需要清理这些数据。现在 Cluster 有 8 个分片。给出改造方案。</p><details><summary>查看参考答案</summary><div><ol><li><b>直播间信息</b>：应用实例本地缓存 1–2 秒（变化时通过 Pub/Sub 广播失效），绝大多数读不到 Redis；回源时读 <code>live:9527:{n}</code> 中随机一份（n=0..7，分布在不同分片，写入时更新全部 8 份）。</li><li><b>在线观众</b>：在线人数不需要整个集合：用 HyperLogLog 估算或 <code>INCR/DECR</code> 计数器（按分片拆成 <code>live:9527:cnt:0..15</code> 后求和）；观众集合按 <code>uid % 64</code> 拆为 64 个 SET，每个约 3 万成员；随机头像从随机一个分片 <code>SRANDMEMBER k 50</code>。</li><li><b>清理</b>：对每个分片键执行 <code>UNLINK</code>，并开启 <code>lazyfree-lazy-user-del yes</code>、<code>lazyfree-lazy-expire yes</code>；也可以直接给这些键设 TTL，结束后自然过期。</li><li>上线前用 <code>--bigkeys</code>/<code>--memkeys</code> 和压测验证，监控各分片 CPU 是否均衡。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>热 key</b>：少数键承受了大部分访问（爆款商品、热门直播间、全局配置）。在 Cluster 中一个键只能在一个分片上，加机器也无法分担它的流量；单个分片可能 CPU 100%、网卡打满，进而影响同分片的其他键。</li><li>发现热 key：<code>redis-cli --hotkeys</code>（要求 LFU 淘汰策略，扫描全库）、<code>MONITOR</code> 抽样（开销大，只能短时间用）、客户端或代理层统计、云厂商的热 key 分析。</li><li>处理热 key：① 进程内本地缓存（短 TTL，如 1–5 秒）挡住绝大部分读；② 复制成 N 份 <code>k:0..k:N-1</code>，读时随机选一个，写时全部更新；③ 读写分离，从副本读；④ 热点写（如计数）在本地聚合后批量 INCRBY。</li><li><b>大 key</b>：单个字符串几 MB 以上，或集合类型有几十万、上百万个元素。问题：<code>HGETALL</code>、<code>SMEMBERS</code>、<code>LRANGE 0 -1</code> 一次返回大量数据，阻塞主线程并占满带宽；<code>DEL</code> 释放内存可能耗时数百毫秒；Cluster 迁移槽时 MIGRATE 阻塞；内存分布不均。</li><li>发现大 key：<code>redis-cli --bigkeys</code> 或 <code>--memkeys</code>（SCAN 遍历，可在副本上执行），<code>MEMORY USAGE key</code>，离线分析 RDB 文件。</li><li>处理大 key：按字段或 ID 哈希<b>拆分</b>为多个键；用 <code>HSCAN</code>/<code>SSCAN</code>/<code>ZRANGE … LIMIT</code> 分批读取；删除用 <code>UNLINK</code>（后台线程释放），并开启 <code>lazyfree-lazy-user-del</code>、<code>lazyfree-lazy-expire</code> 等；大值压缩或不放在 Redis 中（放对象存储，Redis 只存引用）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 20</div><a class="big" href="l20.html">分布式锁 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l19.js"></script>
+</body></html>
