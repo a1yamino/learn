@@ -38,7 +38,7 @@ OK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为�
 if v: return decode(v)
 v = db.load_product(id)       // 4 张表
 redis.set(key, encode(v), ex=3600 + rand(-360, 360))
-return v</pre></li><li>写路径（价格等变更）：价格属于有明确时效要求的字段，单独从数据库主库读取；详情缓存的删除与 CDC 是尽快失效机制，不能单独保证并发回填、删除失败或复制延迟时 5 秒内更新。其他详情字段在事务提交<b>之后</b> <code>redis.del(key)</code>，删除失败进入重试队列。</li><li>库存和价格不进这个长 TTL 缓存；如价格主库读取压力过大，需要另行设计并验证带版本水位的短期价格缓存，不能直接沿用 1 小时 TTL。</li><li>Redis 超时或不可用：捕获异常直接读数据库，同时用限流/熔断保护数据库（2 万 QPS × 25 ms 数据库扛不住，需要降级为只返回核心字段或本地缓存的旧值）。</li></ul></div></details></div>
+return v</pre></li><li>写路径（价格等变更）：价格属于有明确时效要求的字段，单独从数据库主库读取；详情缓存的删除与 CDC 是尽快失效机制，不能单独保证并发回填、删除失败或复制延迟时 5 秒内更新。其他详情字段在事务提交<b>之后</b> <code>redis.del(key)</code>，删除失败进入重试队列。</li><li>库存和价格不进这个长 TTL 缓存。价格单独用短 TTL 缓存：<code>shop:price:{id}</code>，<b>TTL 不超过 5 s</b>（例如 4 s），未命中时从<b>主库</b>读取并回填；这样即使删除失败或旧值被回填，过期后也会在 5 秒内自愈。价格变更后同样删除该 key，让多数请求更快看到新价。若要防止慢请求把旧价写回，可在值里带上价格版本号，回填时用 Lua 只在新版本更大时覆盖。热门商品的价格 key 2 万 QPS 下每 4 秒只回源一次（配合单飞/互斥回填），主库压力很小。</li><li>Redis 超时或不可用：捕获异常直接读数据库，同时用限流/熔断保护数据库（2 万 QPS × 25 ms 数据库扛不住，需要降级为只返回核心字段或本地缓存的旧值）。</li></ul></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
