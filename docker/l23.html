@@ -60,14 +60,7 @@ git push -u origin main</pre><pre class="out">（在 GitHub 的 Actions 页面�
 MediaType: application/vnd.oci.image.index.v1+json
 Digest:    sha256:…</pre></div></div><div class="st"><span class="n">05</span><div><p>打一个版本标签，触发发布。</p><pre class="cmd">git tag v1.0.0 &amp;&amp; git push --tags</pre><pre class="out">新增标签：1.0.0、1.0、sha-xxxxxxx</pre></div></div><div class="st"><span class="n">06</span><div><p>故意让测试失败，确认不会推送。</p><pre class="cmd"># 修改代码让一个测试失败
 git commit -am &quot;break&quot; &amp;&amp; git push</pre><pre class="out">test 步骤失败：1 failed
-build-push 步骤：skipped</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>加上扫描和按 digest 部署</h3><p>在 workflow 里：(1) 推送后对刚推送的镜像运行 Trivy，有可修复的 CRITICAL 时失败；(2) 增加一个 deploy 任务，只在 main 分支运行，拿到上一步输出的 digest，打印出要部署的完整引用。</p><details><summary>查看参考答案</summary><div><pre class="cmd">      - id: build
-        uses: docker/build-push-action@v6
-        if: github.event_name != 'pull_request'
-        with:
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+build-push 步骤：skipped</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>加上扫描和按 digest 部署</h3><p>在 workflow 里：(1) 推送后对刚推送的镜像运行 Trivy，有可修复的 CRITICAL 时失败；(2) 增加一个 deploy 任务，只在 main 分支运行，拿到上一步输出的 digest，打印出要部署的完整引用。</p><details><summary>查看参考答案</summary><div><pre class="cmd">      # …沿用上文正文 workflow 里的构建推送步骤（id: build，含 platforms/sbom/labels 与缓存），这里不再重复
       - uses: aquasecurity/trivy-action@0.28.0
         if: github.event_name != 'pull_request'
         with:
@@ -84,7 +77,7 @@ build-push 步骤：skipped</pre></div></div></div><div class="task2"><div class
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - run: echo "deploy ghcr.io/${{ github.repository }}@${{ needs.build.outputs.digest }}"</pre><pre class="out">deploy ghcr.io/alice/cicd@sha256:4b1e…</pre><p>把扫描步骤插到现有构建推送步骤之后，不要复制出第二个同名 id: build。使用多行 YAML 保留 cache-to 中的逗号；PR 事件跳过推送和远端扫描。<code>build-push-action</code> 的 <code>digest</code> 输出通过 job outputs 传给 deploy。真实部署时把这个引用交给 <code>docker compose</code>（用变量）、Kubernetes 或其他平台。<code>environment: production</code> 可以在 GitHub 设置里配置人工审批。</p></div></details></div>
+      - run: echo "deploy ghcr.io/${{ github.repository }}@${{ needs.build.outputs.digest }}"</pre><pre class="out">deploy ghcr.io/alice/cicd@sha256:4b1e…</pre><p>把扫描步骤插到现有构建推送步骤之后，不要复制出第二个同名 id: build。只给扫描步骤加 PR 条件：PR 事件仍然构建（正文的构建步骤在 PR 时不推送），但跳过对远端镜像的扫描。<code>build-push-action</code> 的 <code>digest</code> 输出通过 job outputs 传给 deploy。真实部署时把这个引用交给 <code>docker compose</code>（用变量）、Kubernetes 或其他平台。<code>environment: production</code> 可以在 GitHub 设置里配置人工审批。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
