@@ -116,11 +116,13 @@ OK</pre></div></div><div class="st"><span class="n">04</span><div><p>最终版�
         return 2
     if d > 30:
         return 3
-    return 0</pre></p><details><summary>查看参考答案</summary><div><pre class="cmd">MAX_LOANS_PER_MEMBER = 5
+    return 0</pre></p><details><summary>查看参考答案</summary><div><pre class="cmd">from enum import IntEnum
+
+MAX_LOANS_PER_MEMBER = 5
 MAX_LOAN_DAYS = 30
 AVAILABLE = "a"
 
-class LoanRefusal:  # 命名整数常量，保持旧返回码契约
+class LoanRefusal(IntEnum):  # 整数枚举：保留枚举语义，也保持旧返回码契约
     NONE = 0
     TOO_MANY_LOANS = 1
     BOOK_NOT_AVAILABLE = 2
@@ -135,7 +137,9 @@ def check_loan_request(member, book, requested_days):
         return LoanRefusal.BOOK_NOT_AVAILABLE
     if requested_days > MAX_LOAN_DAYS:
         return LoanRefusal.PERIOD_TOO_LONG
-    return LoanRefusal.NONE</pre><p>用整数常量为返回码命名，旧调用方的 <code>result == 2</code> 仍然成立；新调用方可写 <code>result == LoanRefusal.BOOK_NOT_AVAILABLE</code>。保留 <code>chk = check_loan_request</code> 可渐进迁移函数名。普通 Enum、字段改名和异常会改变契约，需单独迁移并验证，不能混入“只改名字”的练习。第 8 课再讨论异常。</p></div></details></div>
+    return LoanRefusal.NONE
+
+chk = check_loan_request  # 旧名字，迁移期保留</pre><p>用 <code>IntEnum</code> 为返回码命名，它的成员就是整数，旧调用方的 <code>result == 2</code> 仍然成立；新调用方可写 <code>result == LoanRefusal.BOOK_NOT_AVAILABLE</code>。保留 <code>chk = check_loan_request</code> 可渐进迁移函数名。普通 Enum（<code>Enum.X == 2</code> 为 False）、字段改名和异常会改变契约，需单独迁移并验证，不能混入“只改名字”的练习。第 8 课再讨论异常。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
