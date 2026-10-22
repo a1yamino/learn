@@ -113,13 +113,17 @@ return provider.auth.apiKey
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用内置目录创建 <code>Models</code>，统计模型，并观察凭据解析的优先级（使用内存凭据存储，不会碰到你的 auth.json）。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l04.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">除首次克隆外，以下命令均在 pi-mono 仓库根目录执行，完成一个代码块后仍留在根目录。用内置目录创建 <code>Models</code>，统计模型，并观察凭据解析的优先级（使用内存凭据和隔离的演示环境，不读取你的 GROQ_API_KEY 或 auth.json）。<code>checkAuth</code> 只检查配置是否存在，不向 Groq 请求、也不验证演示 key 是否有效。模型总数随首次构建生成的目录而变，以下数字是示例。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l04.ts &lt;&lt;&#x27;EOF&#x27;
 import { InMemoryCredentialStore } from &quot;@earendil-works/pi-ai&quot;;
 import { builtinModels } from &quot;@earendil-works/pi-ai/providers/all&quot;;
 
+// 本实验只使用演示值，不读取或改写真实 GROQ_API_KEY。
+const env: Record&lt;string, string&gt; = {};
 const store = new InMemoryCredentialStore();
-const models = builtinModels({ credentials: store });
+const models = builtinModels({ credentials: store, authContext: {
+  env: async (name) =&gt; env[name], fileExists: async () =&gt; false,
+} });
 const ps = models.getProviders();
 console.log(&quot;内置 provider 数:&quot;, ps.length, &quot;| 聊天模型总数:&quot;, models.getModels().length);
 const byApi = new Map&lt;string, number&gt;();
@@ -128,17 +132,17 @@ console.log(&quot;按 API 协议分组:&quot;, [...byApi].sort((a, b) =&gt; b[1]
 const g = models.getModels(&quot;groq&quot;)[0];
 console.log(&quot;一个模型:&quot;, JSON.stringify({ id: g.id, provider: g.provider, api: g.api, baseUrl: g.baseUrl, contextWindow: g.contextWindow, cost: g.cost }));
 console.log(&quot;没有任何凭据:&quot;, JSON.stringify(await models.checkAuth(&quot;groq&quot;)));
-process.env.GROQ_API_KEY = &quot;gsk-demo&quot;;
+env.GROQ_API_KEY = &quot;gsk-demo&quot;;
 console.log(&quot;设置 GROQ_API_KEY 后:&quot;, JSON.stringify(await models.checkAuth(&quot;groq&quot;)));
 await store.modify(&quot;groq&quot;, async () =&gt; ({ type: &quot;api_key&quot;, key: &quot;gsk-stored&quot; }));
 console.log(&quot;存入凭据后:&quot;, JSON.stringify(await models.checkAuth(&quot;groq&quot;)));
 EOF
-cd pi-mono/scratch &amp;&amp; node l04.ts</pre><pre class="out">内置 provider 数: 42 | 聊天模型总数: 1598
+node scratch/l04.ts</pre><pre class="out">内置 provider 数: 42 | 聊天模型总数: 1598
 按 API 协议分组: openai-completions=707  anthropic-messages=408  bedrock-converse-stream=193  openai-responses=125  azure-openai-responses=42  mistral-conversations=37  google-generative-ai=33  pi-messages=32  google-vertex=14  openai-codex-responses=7
 一个模型: {&quot;id&quot;:&quot;llama-3.1-8b-instant&quot;,&quot;provider&quot;:&quot;groq&quot;,&quot;api&quot;:&quot;openai-completions&quot;,&quot;baseUrl&quot;:&quot;https://api.groq.com/openai/v1&quot;,&quot;contextWindow&quot;:131072,&quot;cost&quot;:{&quot;input&quot;:0.05,&quot;output&quot;:0.08,&quot;cacheRead&quot;:0,&quot;cacheWrite&quot;:0}}
 没有任何凭据: undefined
 设置 GROQ_API_KEY 后: {&quot;source&quot;:&quot;GROQ_API_KEY&quot;,&quot;type&quot;:&quot;api_key&quot;}
-存入凭据后: {&quot;source&quot;:&quot;stored credential&quot;,&quot;type&quot;:&quot;api_key&quot;}</pre></div></div><div class="st"><span class="n">02</span><div><p>一个新的 OpenAI 兼容 provider 需要多少代码？看看几家：</p><pre class="cmd">cd pi-mono/packages/ai/src/providers &amp;&amp; wc -l groq.ts cerebras.ts deepseek.ts together.ts</pre><pre class="out">  15 groq.ts
+存入凭据后: {&quot;source&quot;:&quot;stored credential&quot;,&quot;type&quot;:&quot;api_key&quot;}</pre></div></div><div class="st"><span class="n">02</span><div><p>一个新的 OpenAI 兼容 provider 需要多少代码？看看几家：</p><pre class="cmd">wc -l packages/ai/src/providers/{groq,cerebras,deepseek,together}.ts</pre><pre class="out">  15 groq.ts
   15 cerebras.ts
   15 deepseek.ts
   15 together.ts
@@ -154,7 +158,7 @@ const myllm = createProvider({
   api: openAICompletionsApi(),
 });
 models.setProvider(myllm);
-process.env.MYLLM_API_KEY = "x";
+env.MYLLM_API_KEY = "x";
 console.log(await models.checkAuth("myllm"));
 // { source: &quot;MYLLM_API_KEY&quot;, type: &quot;api_key&quot; }</pre><p>对比 <code>groq.ts</code>：形状完全一样。真实使用时更简单的办法是在 <code>~/.pi/agent/models.json</code> 中声明（见 <code>docs/models.md</code>），无需写代码。模型对象的确切字段以 <code>types.ts</code> 中的 <code>Model</code> 类型为准；类型检查会提示缺少的字段。注意 <code>openAICompletionsApi</code> 来自子路径 <code>api/openai-completions.lazy</code>：协议实现按需懒加载，不用的协议（和它的 SDK）不会被导入。</p></div></details></div>
 </section>
