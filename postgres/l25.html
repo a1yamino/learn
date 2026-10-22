@@ -30,9 +30,11 @@
 <div class="prac"><div class="st"><span class="n">01</span><div><p>加列带默认值：只改目录，瞬间完成。</p><pre class="cmd">\timing on
 SET lock_timeout = &#x27;3s&#x27;;
 ALTER TABLE orders ADD COLUMN source text DEFAULT &#x27;web&#x27;;</pre><pre class="out">ALTER TABLE
-Time: 2.112 ms</pre></div></div><div class="st"><span class="n">02</span><div><p>修改列类型会重写表：注意 relfilenode 变了。</p><pre class="cmd">SELECT pg_relation_filenode(&#x27;orders&#x27;);
-ALTER TABLE orders ALTER COLUMN user_id TYPE bigint;
-SELECT pg_relation_filenode(&#x27;orders&#x27;);</pre><pre class="out"> pg_relation_filenode
+Time: 2.112 ms</pre></div></div><div class="st"><span class="n">02</span><div><p>用独立测试表观察 int → bigint 的重写：orders.user_id 从第 2 课起已是 bigint，不能拿它做类型变化演示。</p><pre class="cmd">CREATE TABLE rewrite_demo AS SELECT id::integer AS id FROM orders;
+SELECT pg_relation_filenode(&#x27;rewrite_demo&#x27;);
+ALTER TABLE rewrite_demo ALTER COLUMN id TYPE bigint;
+SELECT pg_relation_filenode(&#x27;rewrite_demo&#x27;);
+DROP TABLE rewrite_demo;</pre><pre class="out"> pg_relation_filenode
 ----------------------
                 16401
 ALTER TABLE
