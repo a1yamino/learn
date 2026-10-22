@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DDIA 第 22 课 · 不可靠的时钟、进程暂停与多数决</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">DDIA</a><span class="crumb">第 22 课</span><span class="sp"></span><a href="l21.html">← 第 21 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">DDIA · 第 22 课</div><h1>不可靠的时钟、进程暂停与多数决</h1>
+<p>第 9 章后半部分。除了网络，时间是分布式系统中的另一个不确定来源：每台机器的时钟都有误差，进程可能在任意时刻被暂停数秒而自己毫不知情。本课讲单调时钟与日历时钟的区别、时钟同步的精度、依赖同步时钟的危险（LWW 丢数据）与置信区间（Spanner 的 TrueTime），进程暂停对租约的影响，以及节点如何“由多数决定真相”：分布式锁、租约与 fencing 令牌，拜占庭故障，系统模型与正确性的定义，以及形式化方法与确定性仿真测试。约 70 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">租约与进程暂停</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：时钟偏差与 LWW</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">fencing 令牌</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">两种时钟</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>租约与进程暂停</h2><div class="goal">醒来时，租约已经属于别人了。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：时钟偏差与 LWW</h2><div class="goal">选择两个节点的时钟偏差，看后写入的值是否幸存。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>fencing 令牌</h2><div class="goal">存储服务拒绝过时的令牌。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>两种时钟</h2><div class="goal">在 Python 与 Linux 中查看。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">只需要 Python 3（Linux/macOS 上的 <code>chronyc</code> 可选）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>保存为 <code>clock.py</code>：时钟慢 3 ms 的节点，后写入的值被丢弃。</p><pre class="cmd"># 节点 B 的时钟比 A 慢 3 毫秒；LWW 按时间戳保留“最新”的写入
+real = 0.0
+skew = {&quot;A&quot;: 0.0, &quot;B&quot;: -0.003}
+def ts(node): return real + skew[node]
+store = {}
+def lww_write(node, k, v):
+    t = ts(node)
+    if k not in store or t &gt; store[k][1]: store[k] = (v, t)
+real = 1.000; lww_write(&quot;A&quot;, &quot;x&quot;, 1)        # 真实时间 1.000 s，A 写 x=1
+real = 1.002; lww_write(&quot;B&quot;, &quot;x&quot;, 2)        # 真实时间晚 2 ms，B 写 x=2
+print(&quot;最终 x =&quot;, store[&quot;x&quot;][0], &quot;（后发生的 x=2 被丢弃了）&quot;)</pre><pre class="out">最终 x = 1 （后发生的 x=2 被丢弃了）</pre></div></div><div class="st"><span class="n">02</span><div><p>保存为 <code>fence.py</code>：fencing 令牌阻止被暂停的旧锁持有者写入。</p><pre class="cmd">class Storage:
+    def __init__(self): self.max_token, self.data = 0, []
+    def write(self, token, value):
+        if token &lt; self.max_token:
+            return f&quot;拒绝 {value!r}：令牌 {token} &lt; 已见过的 {self.max_token}&quot;
+        self.max_token = token; self.data.append(value); return f&quot;接受 {value!r}（令牌 {token}）&quot;
+
+class LockService:
+    def __init__(self): self.token = 32
+    def acquire(self): self.token += 1; return self.token
+
+lock, disk = LockService(), Storage()
+t1 = lock.acquire()                       # 客户端 1 拿到租约，令牌 33
+# …客户端 1 发生 15 秒的 GC 停顿，租约过期…
+t2 = lock.acquire()                       # 客户端 2 拿到租约，令牌 34
+print(disk.write(t2, &quot;客户端2的数据&quot;))
+print(disk.write(t1, &quot;客户端1的数据&quot;))     # 客户端 1 醒来，以为自己仍持有锁</pre><pre class="out">接受 &#x27;客户端2的数据&#x27;（令牌 34）
+拒绝 &#x27;客户端1的数据&#x27;：令牌 33 &lt; 已见过的 34</pre></div></div><div class="st"><span class="n">03</span><div><p>测量时长要用单调时钟。</p><pre class="cmd">python3 -c &quot;import time; a=time.monotonic(); time.sleep(0.2); print(round(time.monotonic()-a, 2))&quot;</pre><pre class="out">0.2</pre></div></div><div class="st"><span class="n">04</span><div><p>查看本机与 NTP 服务器的偏差（Linux，若装有 chrony）。</p><pre class="cmd">chronyc tracking</pre><pre class="out">Reference ID    : …
+System time     : 0.000012345 seconds fast of NTP time
+Root dispersion : 0.000543 seconds
+…</pre></div></div><div class="st"><span class="n">05</span><div><p>在 Redis 中实现租约：SET NX PX 是带过期时间的锁，但它本身不提供 fencing 令牌，可以用 INCR 生成一个。</p><pre class="cmd">docker exec rd redis-cli SET lock:job worker1 NX PX 10000
+docker exec rd redis-cli INCR lock:job:token</pre><pre class="out">OK
+(integer) 1</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>审查一个基于 Redis 的分布式锁</h3><p>代码：<pre style="overflow-x:auto">if redis.set("lock:report", me, nx=True, px=30000):
+    data = build_report()          # 可能需要 10–60 秒
+    s3.put("report.csv", data)     # 覆盖写
+    redis.delete("lock:report")</pre>请指出至少三个问题并给出修复。</p><details><summary>查看参考答案</summary><div><ol><li><b>租约过期仍在执行</b>：<code>build_report</code> 超过 30 秒（或 GC 停顿）时锁已过期，另一个实例拿到锁，两者同时写 S3，旧实例的结果可能覆盖新实例的。修复：使用 fencing 令牌——获取锁时 <code>INCR</code> 得到递增令牌，写入时把令牌写进对象元数据/路径，由存储端（或写入前的条件检查）拒绝更小的令牌；S3 可以用条件写入（If-Match ETag / If-None-Match）实现比较并设置。</li><li><b>误删别人的锁</b>：<code>delete</code> 时锁可能已过期并被别人持有。修复：用 Lua 脚本检查值等于 <code>me</code> 再删除。</li><li><b>单个 Redis 实例</b>：Redis 主从异步复制，主节点故障切换后锁可能丢失，两个客户端同时持有锁。若要求正确性（而不只是效率），应使用基于共识的协调服务（etcd、ZooKeeper），它们提供会话租约和单调递增的版本号（可作 fencing 令牌）。</li><li><b>续租</b>：长任务应在后台续租（看门狗），并在续租失败时主动停止工作；但续租不能代替 fencing——进程暂停时看门狗也一起暂停了。</li><li>如果锁只是为了避免重复劳动（效率），偶尔两人同时执行可以接受，单 Redis 锁即可；如果是为了正确性，必须有 fencing。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>两种时钟</b>：<b>日历时钟</b>（<code>clock_gettime(CLOCK_REALTIME)</code>、<code>time.time()</code>）返回自 1970 年起的时间，会被 NTP 调整，可能<b>向后跳</b>，不适合测量时长；<b>单调时钟</b>（<code>CLOCK_MONOTONIC</code>、<code>time.monotonic()</code>）保证只增不减，适合测量超时和耗时，但其绝对值没有意义，不能跨机器比较。</li><li><b>时钟同步的精度</b>：石英钟漂移约 200 ppm（每天 17 秒）；NTP 同步精度受网络延迟限制，通常是几毫秒到几十毫秒；时钟可能因与 NTP 相差太大而被拒绝同步或强行重置；闰秒；虚拟机暂停后时钟突然跳变；用户设备的时钟根本不可信。使用 GPS 与原子钟、PTP 协议可以达到微秒级，云服务商也提供高精度时钟服务。</li><li><b>依赖同步时钟的危险</b>：多主或无主复制中用时间戳实现 LWW（第 13、14 课）时，时钟慢的节点写入的值会被时钟快的节点之前写入的值覆盖——<b>后发生的写入被静默丢弃</b>。时钟读数应该看作一个<b>置信区间</b>：[最早, 最晚]。Spanner 的 TrueTime API 直接返回这个区间，提交时<b>等待</b>区间的宽度，保证提交时间戳反映真实的先后顺序。</li><li><b>进程暂停</b>：GC 停顿、虚拟机被挂起或迁移、笔记本合盖、操作系统换页、SIGSTOP、同步磁盘 I/O……一个线程可能在任意两行代码之间被暂停几秒甚至几分钟，醒来后完全不知道。经典错误：持有租约的节点检查“租约还剩 10 秒”，然后发生 15 秒的停顿，醒来后在租约已过期的情况下继续执行写入——此时另一个节点已经拿到了租约。</li><li><b>多数决与 fencing 令牌</b>：节点不能相信自己对情况的判断（“我是主节点”“我持有锁”），因为它可能被暂停、被网络隔离。决定由<b>法定多数</b>（quorum）做出。分布式锁每次授予时附带一个单调递增的<b>fencing 令牌</b>，受保护的存储服务记录见过的最大令牌，拒绝更小令牌的写入——这样，醒来的旧持有者也无法造成破坏。<b>拜占庭故障</b>是指节点可能撒谎或发送任意错误的消息；在一个组织内部的数据中心通常不考虑，但区块链与某些航天系统需要。</li><li><b>系统模型与正确性</b>：时序模型分为同步、<b>部分同步</b>（大多数时候有界，偶尔无界，最贴近现实）、异步；节点故障模型分为崩溃—停止、<b>崩溃—恢复</b>（最常用）、拜占庭。算法的性质分为<b>安全性</b>（坏事永远不会发生，如“不会有两个主节点”）与<b>活性</b>（好事最终会发生，如“请求最终得到响应”）。<b>形式化方法</b>（TLA+ 模型检查）、<b>故障注入</b>（Jepsen）和<b>确定性仿真测试</b>（FoundationDB、TigerBeetle：把网络、时钟、磁盘都换成可重放的模拟，在一台机器上探索海量故障组合）是验证这些算法的手段。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 23</div><a class="big" href="l23.html">线性一致性 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l22.js"></script>
+</body></html>
