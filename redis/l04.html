@@ -54,12 +54,12 @@ OBJECT ENCODING s</pre><pre class="out">(integer) 3
 &quot;intset&quot;
 (integer) 1
 &quot;listpack&quot;</pre></div></div><div class="st"><span class="n">06</span><div><p>查看阈值配置。</p><pre class="cmd">CONFIG GET *max-listpack*</pre><pre class="out">1) &quot;hash-max-listpack-entries&quot;
-2) &quot;128&quot;
+2) &quot;512&quot;
 3) &quot;hash-max-listpack-value&quot;
 4) &quot;64&quot;
 5) &quot;zset-max-listpack-entries&quot;
 6) &quot;128&quot;
- …</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用小 Hash 存 1000 万个用户的积分</h3><p>需要存 1000 万个 user_id → 积分（整数）的映射。方案 A：每个用户一个 String 键 <code>score:{uid}</code>；方案 B：按 uid 分桶 <code>score:{uid / 100}</code>，每个桶一个 Hash，字段为 <code>uid % 100</code>。估算两者的内存差异并解释原因，说明方案 B 的代价。</p><details><summary>查看参考答案</summary><div><p>方案 A：每个键都是全局字典中的一个条目（dictEntry 约 24 字节 + 键的 SDS 约 20 字节 + redisObject 16 字节 + 分配器对齐），值是 int 编码。实测大约每个键 60–70 字节，1000 万个约 650 MB。</p><p>方案 B：10 万个 Hash，每个 100 个字段，低于 128 的阈值，都是 listpack：每个字段只需几个字节（字段名 “37” 和值 “1520” 紧凑存放），每个桶约 600–800 字节。总计约 70–80 MB，节省近 90%。</p><pre class="cmd">HSET score:123456 78 1520      # uid = 12345678
+ …</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用小 Hash 存 1000 万个用户的积分</h3><p>需要存 1000 万个 user_id → 积分（整数）的映射。方案 A：每个用户一个 String 键 <code>score:{uid}</code>；方案 B：按 uid 分桶 <code>score:{uid / 100}</code>，每个桶一个 Hash，字段为 <code>uid % 100</code>。估算两者的内存差异并解释原因，说明方案 B 的代价。</p><details><summary>查看参考答案</summary><div><p>方案 A：每个键都是全局字典中的一个条目（dictEntry 约 24 字节 + 键的 SDS 约 20 字节 + redisObject 16 字节 + 分配器对齐），值是 int 编码。实测大约每个键 60–70 字节，1000 万个约 650 MB。</p><p>方案 B：10 万个 Hash，每个 100 个字段，低于 Hash 默认 512 的阈值，都是 listpack：每个字段只需几个字节（字段名 “37” 和值 “1520” 紧凑存放），每个桶约 600–800 字节。总计约 70–80 MB，节省近 90%。</p><pre class="cmd">HSET score:123456 78 1520      # uid = 12345678
 HINCRBY score:123456 78 10</pre><p>代价：桶内查找是 O(N)，但 N ≤ 100，实际只有几百纳秒；不能对单个用户设置过期时间（7.4+ 的 HEXPIRE 可以，但带过期的字段会使用额外的编码和内存）；一定要保证每个桶的字段数不超过阈值，否则会整体转为 hashtable，节省就没了。可以用 <code>MEMORY USAGE</code> 抽样验证。</p></div></details></div>
 </section>
 
@@ -68,7 +68,7 @@ HINCRBY score:123456 78 10</pre><p>代价：桶内查找是 O(N)，但 N ≤ 100
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li>每个值是一个 <b>redisObject</b>：类型（type）、编码（encoding）、LRU/LFU 信息、引用计数和指向数据的指针，约 16 字节。<code>OBJECT ENCODING key</code> 查看编码。</li><li>String 有三种编码：<code>int</code>（可表示为 64 位整数的值，直接存在指针位置）；<code>embstr</code>（≤ 44 字节，对象头和字符串一次分配、连续存放）；<code>raw</code>（更长，分开分配）。字符串本身用 <b>SDS</b>：记录长度和剩余容量，O(1) 取长度、二进制安全、追加时预分配空间。</li><li><b>listpack</b>（Redis 7 起取代 ziplist）：一整块连续内存，元素依次紧凑存放，每个元素记录自身长度以便双向遍历。没有指针开销，缓存友好；但查找是 O(N)，插入删除要移动内存。适合元素少且小的 Hash、ZSet、Set 和 List 节点。</li><li><b>intset</b>：只含整数的小集合，按大小有序存放，二分查找，按最大值选择 16/32/64 位宽度。</li><li><b>quicklist</b>：List 的实现，是由多个 listpack 节点组成的双向链表，兼顾两端操作 O(1) 和内存紧凑。<code>list-max-listpack-size -2</code> 表示每个节点最大 8 KB。</li><li>转换阈值（默认）：Hash/ZSet 元素数 ≤ 128 且每个值 ≤ 64 字节用 listpack；Set 全为整数且 ≤ 512 用 intset，否则 ≤ 128 个小元素用 listpack；超出就转为 hashtable / skiplist，而且<b>不会再转回去</b>。把一个大对象拆成多个小 Hash，可以大幅节省内存。</li></ol></section>
+<ol class="sum"><li>每个值是一个 <b>redisObject</b>：类型（type）、编码（encoding）、LRU/LFU 信息、引用计数和指向数据的指针，约 16 字节。<code>OBJECT ENCODING key</code> 查看编码。</li><li>String 有三种编码：<code>int</code>（可表示为 64 位整数的值，直接存在指针位置）；<code>embstr</code>（≤ 44 字节，对象头和字符串一次分配、连续存放）；<code>raw</code>（更长，分开分配）。字符串本身用 <b>SDS</b>：记录长度和剩余容量，O(1) 取长度、二进制安全、追加时预分配空间。</li><li><b>listpack</b>（Redis 7 起取代 ziplist）：一整块连续内存，元素依次紧凑存放，每个元素记录自身长度以便双向遍历。没有指针开销，缓存友好；但查找是 O(N)，插入删除要移动内存。适合元素少且小的 Hash、ZSet、Set 和 List 节点。</li><li><b>intset</b>：只含整数的小集合，按大小有序存放，二分查找，按最大值选择 16/32/64 位宽度。</li><li><b>quicklist</b>：较长 List 的实现，是由多个 listpack 节点组成的双向链表；Redis 7.2+ 的短列表可以直接使用 listpack，兼顾两端操作 O(1) 和内存紧凑。<code>list-max-listpack-size -2</code> 表示每个节点最大 8 KB。</li><li>转换阈值（默认）：Hash 字段数 ≤ 512、ZSet 成员数 ≤ 128，且字段名/成员和值均不超过 64 字节时用 listpack；Set 全为整数且 ≤ 512 用 intset，否则 ≤ 128 个小元素用 listpack；超出就转为 hashtable / skiplist，而且<b>不会再转回去</b>。把一个大对象拆成多个小 Hash，可以大幅节省内存。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 05</div><a class="big" href="l05.html">哈希表与渐进式 rehash、有序集合与跳表 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
