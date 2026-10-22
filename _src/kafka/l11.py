@@ -1,0 +1,23 @@
+TITLE='事务与精确一次';DESC='“读一条消息、处理、写出结果、提交偏移量”这四步如果不能原子完成，崩溃后就会重复或丢失。Kafka 事务让一个生产者对多个分区的写入和消费偏移量的提交要么全部可见、要么全部不可见。本课讲 transactional.id 与僵尸隔离、事务协调器的两阶段提交、控制标记与 LSO、read_committed 的读取方式，以及精确一次的适用边界。';NEXT='保留策略与日志压缩';MIN=70
+SUM=['事务性生产者配置 <code>transactional.id</code>（每个逻辑实例固定、唯一，例如 <code>order-enricher-3</code>）。流程：<code>initTransactions()</code> → 循环 { <code>beginTransaction()</code> → <code>send()</code>… → <code>sendOffsetsToTransaction(offsets, consumer.groupMetadata())</code> → <code>commitTransaction()</code> }，出错时 <code>abortTransaction()</code>。',
+'<b>事务协调器</b>是某个 Broker（由 transactional.id 哈希到 <code>__transaction_state</code> 的分区决定）。生产者第一次向某分区写入前，先在协调器登记该分区；提交时协调器写入 PREPARE_COMMIT，再向每个涉及的分区写入<b>提交标记</b>（控制记录），最后写入 COMPLETE_COMMIT。偏移量提交也是写入 <code>__consumer_offsets</code> 的事务性消息。',
+'<b>僵尸隔离</b>：<code>initTransactions()</code> 会让该 transactional.id 的生产者 epoch 加 1，并中止它未完成的事务。旧实例（例如网络分区后仍在运行的“僵尸”）用旧 epoch 写入会被拒绝（ProducerFenced）。Kafka 4.0 起的事务协议 v2（KIP-890）在每个事务都提升 epoch，并由 Broker 校验，堵住了更多的边界情况。',
+'消费者 <code>isolation.level=read_committed</code> 只返回已提交事务的消息，跳过中止的；它最多读到 <b>LSO</b>（last stable offset，最早的未完成事务之前的位置）。所以一个长时间未完成的事务会阻塞 read_committed 消费者；<code>transaction.timeout.ms</code>（默认 60 秒）后协调器主动中止。默认的 <code>read_uncommitted</code> 能看到所有消息（包括后来被中止的）。',
+'<b>精确一次</b>（EOS）的范围是 “从 Kafka 读 → 处理 → 写回 Kafka”：输入偏移量和输出消息在同一事务中提交。Kafka Streams 设置 <code>processing.guarantee=exactly_once_v2</code> 即可自动完成。处理中的<b>外部副作用</b>（调用 HTTP 接口、写数据库、发邮件）不在事务内，仍需要幂等或 Outbox 等手段。',
+'代价：每个事务额外几次请求和标记写入，事务越小开销越明显，一般每 100 ms–1 s 或每几千条提交一次；读端延迟增加到一个事务周期。不需要跨分区原子性、只需要不重复写入时，幂等生产者就够了。']
+def secs(prac,E):
+    return [
+('一次事务：读—处理—写','输入 orders，输出 enriched，偏移量与输出一起提交。','<div id="p1"></div>'),
+('动手：read_committed 与 LSO','一个分区中交错着两个事务的消息。选择事件，看两种隔离级别的消费者能读到什么。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('僵尸隔离','网络分区后，两个实例使用同一个 transactional.id。','<div id="p2"></div>'),
+('相关命令','观察事务。','<div id="t4"></div>'),
+('在你的电脑上练习','单节点容器（单节点时需要 transaction.state.log.replication.factor=1，apache/kafka 镜像的默认配置已设好）。',prac([
+ ('创建输出主题。','bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic tx-out --partitions 1','Created topic tx-out.'),
+ ('用 Python 写一个中止的事务和一个提交的事务（宿主机，pip install confluent-kafka）。','python3 - <<\'X\'\nfrom confluent_kafka import Producer\np=Producer({\'bootstrap.servers\':\'localhost:9092\',\'transactional.id\':\'demo-1\'})\np.init_transactions()\np.begin_transaction(); p.produce(\'tx-out\',b\'aborted-1\'); p.abort_transaction()\np.begin_transaction(); p.produce(\'tx-out\',b\'committed-1\'); p.commit_transaction()\nX','（无输出）'),
+ ('read_uncommitted（默认）看到两条。','bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic tx-out --from-beginning --timeout-ms 5000','aborted-1\ncommitted-1'),
+ ('read_committed 只看到提交的。','bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic tx-out --from-beginning --isolation-level read_committed --timeout-ms 5000','committed-1'),
+ ('偏移量包含控制标记：两条消息占用了 4 个偏移量。','bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic tx-out\nbin/kafka-dump-log.sh --files /tmp/kraft-combined-logs/tx-out-0/00000000000000000000.log | grep -o "isControl: [a-z]*\\|endTxnMarker: [A-Z]*"','tx-out:0:4\nisControl: false\nisControl: true\nendTxnMarker: ABORT\nisControl: false\nisControl: true\nendTxnMarker: COMMIT'),
+ ('查看事务状态。','bin/kafka-transactions.sh --bootstrap-server localhost:9092 list\nbin/kafka-transactions.sh --bootstrap-server localhost:9092 describe --transactional-id demo-1','TransactionalId Coordinator ProducerId TransactionState\ndemo-1          1           2000       CompleteCommit\n…')],
+ ('判断哪些流程能做到精确一次','对下面四个流程，判断仅用 Kafka 事务能否做到精确一次，不能的话怎么办：① 从 <code>clicks</code> 读取，按用户计数，结果写入 <code>click-counts</code>；② 从 <code>orders</code> 读取，调用第三方支付接口扣款；③ 从 <code>orders</code> 读取，写入 Elasticsearch 索引；④ 订单服务在 MySQL 中创建订单，同时向 <code>orders</code> 发送事件。',
+ '<ol><li><b>能</b>。Kafka → Kafka，使用 Kafka Streams <code>exactly_once_v2</code>（状态存储的变更日志也在同一事务中），或手写事务：输出与输入偏移量一起提交。下游消费者使用 <code>read_committed</code>。</li><li><b>不能</b>。扣款是外部副作用，事务中止后无法撤销。用支付接口的幂等键（如订单号）保证重复调用只扣一次，并以至少一次语义消费。</li><li><b>不能</b>直接做到，但可以“效果上”精确一次：用事件中的唯一 ID 作为文档 ID，写入是覆盖（upsert），重复写入结果相同；按至少一次消费即可。Kafka Connect 的 Elasticsearch Sink 就是这样做的。</li><li><b>不能</b>，因为 MySQL 事务和 Kafka 事务不是同一个。使用 Outbox 模式：在 MySQL 同一事务中写入 outbox 表，再由 Debezium 等 CDC 发送到 Kafka（第 21 课）；消费者按事件 ID 幂等。</li></ol>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
