@@ -62,7 +62,7 @@ g.load([&#x27;a,1&#x27;, &#x27;b,2&#x27;])
 try:
     print(g.render())   # 忘了 summarize()
 except AttributeError as e:
-    print(&#x27;AttributeError:&#x27;, e)&quot;</pre><pre class="out">AttributeError: &#x27;ReportGenerator&#x27; object has no attribute &#x27;total&#x27;</pre></div></div><div class="st"><span class="n">02</span><div><p>之后：行为移到数据旁边；数据流强制顺序。</p><pre class="cmd">cat &gt; gen.py &lt;&lt;&#x27;EOF&#x27;
+    print(&#x27;AttributeError:&#x27;, e)&quot;</pre><pre class="out">AttributeError: &#x27;ReportGenerator&#x27; object has no attribute &#x27;total&#x27;</pre></div></div><div class="st"><span class="n">02</span><div><p>之后：行为移到数据旁边；数据流强制顺序。汇总仍读取每行第二列，保留原来忽略额外列的行为；新增严格格式校验应作为单独的行为变更。</p><pre class="cmd">cat &gt; gen.py &lt;&lt;&#x27;EOF&#x27;
 from dataclasses import dataclass
 
 FREE_SHIPPING_MIN_YEARS = 3
@@ -82,7 +82,7 @@ def parse(raw):
     return [line.split(&quot;,&quot;) for line in raw]
 
 def summarize(rows):
-    return sum(int(amount) for _, amount in rows)
+    return sum(int(row[1]) for row in rows)
 
 def render(total):
     return f&quot;total={total}&quot;
