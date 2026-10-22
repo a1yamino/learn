@@ -1,0 +1,23 @@
+TITLE='错误处理：重试主题与死信队列';DESC='消费者处理一条消息失败时，只有几种选择：卡住重试、跳过、或者把它挪到别处稍后处理。错误的选择会让一条坏消息堵住整个分区，或者悄悄丢掉数据。本课区分可重试与不可重试错误，讲阻塞重试、非阻塞的重试主题链、死信队列（DLQ）的设计，以及 Kafka Connect 与 Streams 中的内置错误处理和反序列化失败的毒丸消息。';NEXT='综合项目：一个订单事件平台';MIN=60
+SUM=['先分类：<b>可重试</b>（下游超时、限流、数据库锁冲突）与<b>不可重试</b>（无法反序列化的毒丸消息、字段校验失败、业务规则拒绝）。不可重试的错误重试多少次都一样，应该直接进入死信队列。',
+'<b>阻塞重试</b>：在消费者里原地重试（带退避），保持了分区内顺序，但会堵住这个分区的后续消息；重试总时长必须小于 <code>max.poll.interval.ms</code>，否则消费者被踢出组，引发再平衡和重复处理（第 7 课）。适合短暂故障和必须有序的场景。',
+'<b>非阻塞重试</b>：失败的消息写入 <code>orders-retry-1m</code>、<code>orders-retry-10m</code> 等主题，提交原位置继续处理后面的消息；重试消费者读到消息后，等到“失败时间 + 延迟”再处理，仍失败就送往下一级，最后送入 <code>orders-dlt</code>。代价：同一 key 的消息可能乱序。',
+'死信消息要带上下文 header：原主题、分区、位移、异常类、异常信息、重试次数、首次失败时间。DLQ 需要有人看：监控其消息量并告警，提供查看与<b>重新投递</b>的工具；修复后把消息写回原主题。',
+'<b>Kafka Connect</b>：<code>errors.tolerance=all</code>、<code>errors.deadletterqueue.topic.name</code>、<code>errors.deadletterqueue.context.headers.enable=true</code>、<code>errors.retry.timeout.ms</code>。<b>Kafka Streams</b>：<code>deserialization.exception.handler</code>（如 <code>LogAndContinueExceptionHandler</code>）、<code>processing.exception.handler</code>、<code>production.exception.handler</code>；新版本内置的处理器支持把失败记录发到死信主题。',
+'Java 消费者在 <code>poll()</code> 时反序列化失败会抛出 <code>RecordDeserializationException</code>，它带有分区与位移：可以记录、把原始字节发往 DLQ，然后 <code>seek(offset + 1)</code> 跳过。更稳妥的做法是用 <code>ByteArrayDeserializer</code> 接收，在自己的代码里反序列化。']
+def secs(prac,E):
+    return [
+('一条坏消息堵住分区','阻塞重试与毒丸消息。','<div id="p1"></div>'),
+('重试主题链','非阻塞重试与死信队列。','<div id="p2"></div>'),
+('动手：这条消息去哪','选择失败类型，查看推荐的处理路径。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
+('相关配置与命令','Connect、Streams 与 DLQ 操作。','<div id="t4"></div>'),
+('在你的电脑上练习','在单节点 kafka 容器中（<code>docker exec -it kafka bash; cd /opt/kafka</code>）。用 Connect 的文件连接器演示 DLQ。',prac([
+ ('创建主题，写入一条好的和一条坏的 JSON。','for t in payments payments-dlt; do bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic $t; done\nprintf \'%s\\n\' \'{"id":1,"amt":10}\' \'not-json{\' \'{"id":2,"amt":20}\' | bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic payments','Created topic payments.\nCreated topic payments-dlt.'),
+ ('写一个带 DLQ 的 Sink 连接器配置。','cat > /tmp/sink.properties <<\'X\'\nname=pay-sink\nconnector.class=org.apache.kafka.connect.file.FileStreamSinkConnector\ntopics=payments\nfile=/tmp/payments.out\nvalue.converter=org.apache.kafka.connect.json.JsonConverter\nvalue.converter.schemas.enable=false\nerrors.tolerance=all\nerrors.deadletterqueue.topic.name=payments-dlt\nerrors.deadletterqueue.topic.replication.factor=1\nerrors.deadletterqueue.context.headers.enable=true\nerrors.log.enable=true\nX',''),
+ ('以单机模式运行（Ctrl-C 停止）。','echo "plugin.path=libs/connect-file-4.4.0.jar" >> config/connect-standalone.properties\nbin/connect-standalone.sh config/connect-standalone.properties /tmp/sink.properties','… ERROR Error encountered in task pay-sink-0. Executing stage \'VALUE_CONVERTER\' … (org.apache.kafka.connect.runtime.errors.LogReporter)'),
+ ('好消息进入文件。','cat /tmp/payments.out','{id=1, amt=10}\n{id=2, amt=20}'),
+ ('坏消息进入 DLQ，header 中有原因。','bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic payments-dlt --from-beginning --property print.headers=true --timeout-ms 5000','__connect.errors.topic:payments,__connect.errors.partition:0,__connect.errors.offset:1,…,__connect.errors.exception.class.name:org.apache.kafka.connect.errors.DataException,…\tnot-json{'),
+ ('修复后重新投递：读出 value 写回原主题。','bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic payments-dlt --from-beginning --timeout-ms 5000 | sed \'s/not-json{/{"id":3,"amt":30}/\' | bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic payments','')],
+ ('为支付回调消费者设计错误处理','消费者读 <code>payments</code>（key = 订单号），调用账务服务记账。观察到：账务服务偶尔超时（几秒）、每周维护停机 30 分钟、偶有上游发来缺字段的消息。同一订单的支付事件必须按顺序处理。请设计重试与 DLQ 策略，并说明 <code>max.poll.interval.ms</code> 等配置。',
+ '<ol><li><b>分类</b>：缺字段/反序列化失败 → 不可重试，立即进 <code>payments-dlt</code>（带原主题、分区、位移、异常 header），继续处理下一条。</li><li><b>短暂超时</b>：阻塞重试，指数退避 200ms→5s，最多约 30 秒；<code>max.poll.records</code> 调小（如 50），确保 <code>max.poll.records × 单条最坏耗时 + 重试时间 &lt; max.poll.interval.ms</code>（如 5 分钟）。</li><li><b>维护停机 30 分钟</b>：因为要求按订单有序，不适合非阻塞重试主题（会乱序）。应在检测到下游持续不可用时 <code>consumer.pause(assignment)</code>，保持 poll 心跳但不取数据，定期探测，恢复后 <code>resume</code>；消息安全地留在 Kafka 中。</li><li>若必须用重试主题：失败消息进重试主题时，同时记录“该订单有待重试消息”，后续同一订单的消息也直接排到重试队列，以保持顺序（代价是复杂度）。</li><li>DLQ 监控消息数并告警，提供重放工具，修复后写回 <code>payments</code>；记账接口按事件 ID 幂等，重放与重复都安全。</li></ol>'))),
+('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
