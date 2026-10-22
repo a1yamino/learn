@@ -1,0 +1,41 @@
+from common import *
+TITLE='pi 是什么：极简 agent harness 与 monorepo 地图';MIN=45;NEXT='一次对话的生命周期：从输入到回复'
+DESC='pi 是 Mario Zechner（badlogic）开源的编码 agent。它的定位是“极简、可扩展的 agent harness”：只提供构建编码 agent 所必需的内核——统一的模型接口、agent 循环、少量强大的工具、会话与上下文管理——其余能力（子 agent、计划模式、沙箱……）都交给扩展。正因为小，它是学习“编码 agent 是怎样构建的”最好的起点。本课介绍整门课的方法（固定提交、读真实代码、用 faux 模型离线练习），画出 monorepo 的包结构与依赖方向，并找到 CLI 的入口。'
+SUM=['<b>pi 的定位</b>：一个最小但完整的编码 agent 内核。README 明言它刻意不内置子 agent 和计划模式，鼓励用扩展、技能、提示模板与包来定制。这让它成为理解编码 agent 本质的理想样本；<a href="../codex/index.html">Codex 课程</a>会在同样的骨架上看一个更“全功能”的实现。',
+'<b>三层核心包</b>：<code>pi-ai</code>（统一的 LLM API：消息、流式事件、provider）→ <code>pi-agent-core</code>（agent 循环与工具执行，与具体应用无关）→ <code>pi-coding-agent</code>（编码工具、会话、压缩、扩展、TUI 与 CLI）。依赖只朝一个方向。',
+'<b>周边包</b>：<code>pi-tui</code>（差分渲染的终端 UI 库）、<code>pi-mcp</code>（独立的 MCP 客户端）、<code>pi-codemode</code>（只能调用注入工具的沙箱 JS 执行）、<code>pi-durable</code>/<code>pi-env</code>/<code>chord</code>（持久化运行时与远程执行环境，本课程只简单提及）。',
+'<b>入口</b>：<code>packages/coding-agent/src/cli.ts</code> 调用 <code>main()</code>；<code>main.ts</code> 解析参数、决定运行模式（interactive / print / json / rpc），通过 SDK 创建 agent 会话，然后把会话交给对应模式。“The SDK does the heavy lifting”——CLI 只是 SDK 的一个使用者。',
+'<b>学习方法</b>：本课程所有代码摘录都链接到固定提交 <code>db77405</code> 的源码行；练习使用仓库自带的 <b>faux provider</b>（脚本化的假模型），无需 API key、无需联网即可驱动真实的 agent 循环。',
+'<b>源码约定值得一读</b>：仓库根目录的 <code>AGENTS.md</code> 是写给编码 agent 的开发规则（也约束了人类贡献者）：只用可擦除的 TypeScript 语法（Node 可直接运行 .ts）、测试用 faux provider、不在代码中写死按键……这些约定在后面的课里会反复出现。']
+S1=('三层结构','从用户的一次按键到模型 API，请求穿过三层包。')
+A1=[('pi-ai','最底层：把几十家模型提供方统一成一种消息格式和一种流式事件。',[('ai','pi-ai','ok',0,120,180)]),
+('pi-agent-core','中间层：agent 循环。调用模型、执行工具、把结果放回上下文，直到模型不再调用工具。',[('ai','pi-ai','',0,120,180),('ag','pi-agent-core','ok',0,60,180)]),
+('pi-coding-agent','最上层：编码工具（read/edit/bash…）、会话文件、压缩、扩展、CLI 与 TUI。',[('ai','pi-ai','',0,120,180),('ag','pi-agent-core','',0,60,180),('ca','pi-coding-agent','ok',0,0,180)]),
+('周边','TUI、MCP、codemode 是独立的库，由 coding-agent 组合进来。',[('ai','pi-ai','',0,120,180),('ag','pi-agent-core','',0,60,180),('ca','pi-coding-agent','ok',0,0,180),('tui','pi-tui','sig',220,0,130),('mcp','pi-mcp','sig',220,60,130),('cm','pi-codemode','sig',220,120,130)]),
+('依赖方向','箭头只向下：底层不知道上层的存在，所以 pi-ai 和 pi-agent-core 可以单独用于别的应用。',[('ca','coding-agent ↓','ok',0,0,180),('ag','agent-core ↓','ok',0,60,180),('ai','pi-ai','ok',0,120,180)])]
+S2=('动手：这段功能在哪个包？','选择一项功能，看它住在哪里、为什么。')
+CHI=[('把 Anthropic 的 SSE 流转换成统一事件','packages/ai/src/api/anthropic-messages.ts\n\n属于 pi-ai：只关心“怎样和某家 API 对话”，\n不知道什么是工具执行、会话或终端。','ok','<b>pi-ai</b>。第 3–5 课。'),
+('模型调用了工具后，执行它并把结果送回模型','packages/agent/src/agent-loop.ts\n  runLoop() → executeToolCalls()\n\n属于 pi-agent-core：通用的 agent 循环，\n工具只是一个接口（AgentTool），不关心是不是编码工具。','ok','<b>pi-agent-core</b>。第 6–8 课。'),
+('edit 工具：在文件中做精确的字符串替换','packages/coding-agent/src/core/tools/edit.ts\n\n属于 coding-agent：具体的编码能力。','ok','<b>pi-coding-agent</b>。第 10 课。'),
+('把会话保存成 JSONL 并支持分支','packages/coding-agent/src/core/session-manager.ts','ok','<b>pi-coding-agent</b>。第 13 课。'),
+('终端里只重绘发生变化的行','packages/tui/src/  （差分渲染）\n\npi-tui 不依赖任何 pi 包，可以单独用来写终端程序。','ok','<b>pi-tui</b>。第 17 课。'),
+('沙箱：限制 bash 能访问的文件','pi 核心中没有。\n\n仓库提供了示例扩展：\npackages/coding-agent/examples/extensions/sandbox\n\n“沙箱”是 Codex 的核心能力之一（Codex 第 11–12 课）。','sig','<b>不在核心里</b>——这是 pi 的设计选择（第 19 课）。')]
+CHH='选择一项功能。'
+S3=('入口：CLI 只是 SDK 的一个使用者','从 <code>pi</code> 命令到运行模式。','''<p>可执行文件只有几行：</p>'''+X('packages/coding-agent/src/cli.ts',[(1,6)])+'''<p><code>main.ts</code> 开头的注释点明了架构：CLI 负责把参数翻译成 SDK 的选项，真正的工作在 SDK（<code>createAgentSession</code>）里完成。</p>'''+X('packages/coding-agent/src/main.ts',[(1,6)])+'''<p>运行模式由参数和终端状态共同决定：管道输入或输出不是 TTY 时自动进入 print 模式——这让 <code>pi -p "..." | jq</code> 这样的脚本用法自然成立。</p>'''+X('packages/coding-agent/src/main.ts',[(112,123)])+'''<p>最后，同一个 <code>runtime</code> 被交给三种模式之一。三种模式共享同一套会话与 agent 机制（第 18 课）。</p>'''+X('packages/coding-agent/src/main.ts',[(949,952),(990,996)])+NOTE('<b>与 Codex 对照</b>：Codex 也把“核心”与“界面”分开——Rust 的 <code>codex-core</code> 不依赖 TUI，<code>codex exec</code>、TUI、app-server 都是它的前端。见 '+codex(1,'Codex 全景')+'。'))
+S4=('仓库地图','几条命令看清规模与依赖。')
+TERM=[['ls packages','agent  ai  chord  codemode  coding-agent  durable  env  evals  mcp  telemetry  tui','11 个包。'],
+['node -p "require(\'./package.json\').scripts.build"','cd packages/telemetry && npm run build && cd ../chord && npm run build && cd ../tui && npm run build && … && cd ../ai && npm run build && … && cd ../agent && npm run build && cd ../coding-agent && npm run build','根 package.json 的 build 脚本按依赖顺序构建：先底层库，最后 coding-agent。'],
+['node packages/coding-agent/dist/cli.js --help | head -4','pi - AI coding assistant with read, bash, edit, write tools\n\nUsage:\n  pi [options] [--] [@files...] [messages...]','默认工具只有四个：read、bash、edit、write。']]
+S5=('在你的电脑上练习','准备整门课的练习环境：Node.js 22.19 以上、git。所有练习都在仓库根目录下的 <code>scratch/</code> 目录中进行，使用 faux 模型，不需要 API key。')
+PRAC=[('克隆仓库并固定到本课程使用的提交。','git clone https://github.com/badlogic/pi-mono.git\ncd pi-mono\ngit checkout db774055e3ecae05ab6eae8656454cde98e36780','HEAD is now at db77405 …'),
+('安装依赖并构建（约 1 分钟）。<code>--ignore-scripts</code> 跳过依赖的安装脚本，pi 的正常构建并不需要它们。','npm ci --ignore-scripts\nnpm run build','…\nBuilt packages/coding-agent/dist/bundle (82 files, 8.8 MiB)'),
+('每个包有多少行 TypeScript 源码？','cd pi-mono && for p in ai agent coding-agent tui mcp codemode; do printf "%-14s %6s\\n" $p $(cat $(find packages/$p/src -name "*.ts") | wc -l); done',None),
+('包之间的依赖（只看 pi 自己的包）。','cd pi-mono && for p in ai agent coding-agent tui; do node -e "const j=require(\'./packages/$p/package.json\'); console.log(j.name.padEnd(32), Object.keys(j.dependencies||{}).filter(d=>d.startsWith(\'@earendil\')).join(\' \') || \'-\')"; done',None),
+('第一个程序：用 faux 模型驱动真实的 Agent。模型被“脚本化”：第一次回复调用 <code>add</code> 工具，第二次给出答案。','mkdir -p pi-mono/scratch && cat > pi-mono/scratch/hello.ts <<\'EOF\'\nimport { Type } from "@earendil-works/pi-ai";\nimport { fauxAssistantMessage, fauxText, fauxToolCall, registerFauxProvider, streamSimple } from "@earendil-works/pi-ai/compat";\nimport { Agent } from "@earendil-works/pi-agent-core";\n\nconst faux = registerFauxProvider();\nfaux.setResponses([\n  fauxAssistantMessage([fauxText("我来算一下。"), fauxToolCall("add", { a: 2, b: 3 })], { stopReason: "toolUse" }),\n  fauxAssistantMessage("结果是 5。"),\n]);\n\nconst add = {\n  name: "add", label: "add", description: "两数相加",\n  parameters: Type.Object({ a: Type.Number(), b: Type.Number() }),\n  execute: async (_id: string, p: { a: number; b: number }) =>\n    ({ content: [{ type: "text" as const, text: String(p.a + p.b) }], details: {} }),\n};\n\nconst agent = new Agent({\n  streamFn: streamSimple,\n  initialState: { systemPrompt: "你是助手", model: faux.getModel(), thinkingLevel: "off", tools: [add] },\n});\nagent.subscribe((e) => { if (e.type !== "message_update") console.log("事件", e.type); });\nawait agent.prompt("2+3=?");\nfor (const m of agent.state.messages) console.log(m.role.padEnd(10), JSON.stringify(m.content).slice(0, 70));\nEOF\ncd pi-mono/scratch && node hello.ts',None)]
+CHAL=('读入口','在 <code>packages/coding-agent/src/main.ts</code> 中找到：① <code>--offline</code> 标志在哪里被处理、它影响了什么；② 从标准输入读取内容时（<code>echo "..." | pi</code>），交互模式会变成什么模式。给出行号。',
+'<ol><li>约第 579 行：<code>const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE)</code>。之后它决定是否在启动时刷新模型目录（例如第 940 行附近，RPC 模式下 <code>if (!offlineMode && appMode === "rpc")</code> 才会后台刷新），避免离线环境中等待网络。</li><li>约第 896–900 行：读到标准输入内容且原本是 interactive 时，<code>appMode = "print"</code>。（另外 <code>resolveAppMode</code> 在 stdin 不是 TTY 时本来就会返回 print。）</li></ol><p>读源码的技巧：先用 <code>grep -n</code> 找标识符，再读周围 30 行；不要只看搜索片段就下结论（这也是仓库 AGENTS.md 的要求）。</p>')
+QUIZ=[['pi 核心的三层包从底到顶是？',['pi-ai → pi-agent-core → pi-coding-agent','pi-tui → pi-ai → pi-mcp','coding-agent → agent → ai'],0,''],
+['pi-agent-core 是否依赖 pi-coding-agent？',['否，依赖只向下','是','互相依赖'],0,''],
+['main.ts 中，stdout 不是 TTY 时进入什么模式？',['print','interactive','rpc'],0,''],
+['本课程的练习如何避免使用 API key？',['使用仓库自带的 faux provider','使用免费 API','不运行代码'],0,''],
+['pi 核心是否内置计划模式和子 agent？',['否，刻意交给扩展','是','只有计划模式'],0,'']]

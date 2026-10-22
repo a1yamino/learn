@@ -1,0 +1,41 @@
+TITLE='重构手法：提取、内联、移动与以多态取代条件';MIN=55;NEXT='遗留代码：特征测试与接缝'
+DESC='重构是在不改变外部行为的前提下改善代码的内部结构，每一步都很小、可以随时停下、测试始终是绿的。本课练习最常用的手法：提取函数 / 内联函数、提取变量 / 内联变量、改名、引入参数对象、移动函数、拆分阶段、以卫语句取代嵌套条件、以多态取代条件、以查表取代条件。重点是“小步”：每一步之后都运行测试并提交。'
+SUM=['<b>重构的定义</b>：不改变可观察行为，只改结构。功能修改和重构要分开做（“两顶帽子”）：戴着重构的帽子时不加功能，反之亦然。',
+'<b>小步</b>：每一步只做一个机械的变换，运行测试，必要时提交。出错时只需回退最后一小步。现代编辑器的自动重构（改名、提取、内联、移动）比手工更安全。',
+'<b>提取与内联是一对</b>：提取函数给一段代码一个名字；当名字并没有比代码本身更清楚，或者想重新组织一组函数时，先内联再重新提取。',
+'<b>以卫语句取代嵌套条件</b>：先处理特殊情况并立即返回，主逻辑不必缩进在多层 if 中。',
+'<b>以多态 / 查表取代条件</b>：按类型的条件分支在多处出现时，用多态（每种类型一个类）；只是映射数据时，用一个 dict 更简单。',
+'<b>拆分阶段</b>：一段代码同时做两件按顺序发生的事（解析然后计算），把它拆成两个阶段，中间用一个数据结构连接。']
+S1=('一次重构的节奏','每一步都很小，测试一直是绿的。')
+A1=[('起点','测试绿。一个 30 行的函数，三层嵌套。',[('t','测试 ✓','ok',0,0,120),('c','pay_amount()  三层嵌套','bad',160,0,240)]),
+('卫语句','把“已离职”“已退休”的特殊情况提前返回。测试 ✓，提交。',[('t','测试 ✓','ok',0,0,120),('c','pay_amount()  一层','sig',160,0,240),('g','git commit','',160,60,140)]),
+('提取函数','把计算普通工资的部分提取为 normal_pay()。测试 ✓，提交。',[('t','测试 ✓','ok',0,0,120),('c','pay_amount()','ok',160,0,240),('n','normal_pay()','ok',160,60,240)]),
+('出错了？','某一步测试变红：回退这一小步（git checkout .），换一种做法。',[('t','测试 ✗','bad',0,0,120),('r','git checkout .','sig',160,0,240),('t2','测试 ✓','ok',160,60,120)])]
+S2=('动手：之前 / 之后','选择一种手法，看重构前后的代码。')
+CHI=[('卫语句','# 之前\ndef pay_amount(e):\n    if e.is_separated:\n        result = 0\n    else:\n        if e.is_retired:\n            result = e.pension\n        else:\n            result = normal_pay(e)\n    return result\n\n# 之后\ndef pay_amount(e):\n    if e.is_separated:\n        return 0\n    if e.is_retired:\n        return e.pension\n    return normal_pay(e)','ok','特殊情况提前返回，正常路径不再缩进。'),
+('提取变量','# 之前\nreturn order.qty * order.price - max(0, order.qty - 500) * order.price * 0.05 + min(order.qty * order.price * 0.1, 100)\n\n# 之后\nbase_price = order.qty * order.price\nquantity_discount = max(0, order.qty - 500) * order.price * 0.05\nshipping = min(base_price * 0.1, 100)\nreturn base_price - quantity_discount + shipping','ok','给表达式的各个部分命名。'),
+('查表','# 之前\nif country == "CN": rate = 0.13\nelif country == "JP": rate = 0.10\nelif country == "DE": rate = 0.19\n\n# 之后\nVAT_RATES = {"CN": 0.13, "JP": 0.10, "DE": 0.19}\nrate = VAT_RATES[country]','ok','条件只是在映射数据时，dict 最简单；数据还可以从配置加载。'),
+('多态','# 之前（在 speed()、plumage()、cry() 中都有）\nif bird.kind == "european": ...\nelif bird.kind == "african": ...\nelif bird.kind == "norwegian_blue": ...\n\n# 之后\nclass European(Bird):\n    def speed(self): return 35\nclass African(Bird):\n    def speed(self): return 40 - 2 * self.coconuts','ok','同样的类型分支在多个函数中重复时，每种类型一个类，行为放在一起。'),
+('拆分阶段','# 之前：一个函数既解析字符串又计算价格\ndef price_order(text, products): ...\n\n# 之后\ndef price_order(text, products):\n    order = parse_order(text)          # 阶段 1：解析\n    return price(order, products)      # 阶段 2：计算','ok','两个阶段通过一个数据结构（order）连接，各自可以独立修改与测试。'),
+('内联','# 之前\ndef more_than_five_late(d):\n    return d.late_deliveries > 5\ndef rating(d):\n    return 2 if more_than_five_late(d) else 1\n\n# 之后\ndef rating(d):\n    return 2 if d.late_deliveries > 5 else 1','sig','函数名并没有比函数体更清楚，而且只用一次：内联。')]
+CHH='选择一种手法。'
+S3=('“两顶帽子”与提交节奏','重构与功能开发交替进行，但不同时进行。','''<table class="tbl"><tr><th>时刻</th><th>帽子</th><th>做法</th></tr>
+<tr><td>准备添加功能，发现结构不便</td><td>重构</td><td>先让修改变得容易（“make the change easy, then make the easy change”——Kent Beck）</td></tr>
+<tr><td>结构合适了</td><td>功能</td><td>写失败的测试，实现</td></tr>
+<tr><td>功能完成，代码有点乱</td><td>重构</td><td>测试保护下清理</td></tr></table>
+<p><b>提交建议</b>：重构的提交与功能的提交分开。评审者看到“仅重构”的提交时，只需确认行为未变；看到功能提交时，diff 很小、很专注。</p>
+<p><b>编辑器的自动重构</b>：PyCharm 与 VS Code（Pylance / Rope）支持改名、提取方法 / 变量、内联、移动、修改签名。它们基于语法树而非文本，能同时更新所有引用。动态语言中自动重构并不总是 100% 安全（如 <code>getattr</code> 动态访问），所以测试仍然必要。</p>''')
+S4=('小步提交','一次重构的 git 历史。')
+TERM=[['git log --oneline -6','a91c3e2 重构：以多态取代 bird.kind 条件\n7d2f0b1 重构：提取 Bird 基类\n41c8e9a 重构：把 speed() 移到 Bird\nc03f5d7 重构：以卫语句取代嵌套条件\n9b1e2aa 测试：补充 plumage() 的特征测试\n0f3d6c4 功能：新增 norwegian_blue 鸟类','每个提交只做一件事，可以单独回退。'],
+['git diff --stat c03f5d7~1 c03f5d7','birds.py | 14 +++++---------\n 1 file changed, 5 insertions(+), 9 deletions(-)','每一步的 diff 都很小。']]
+S5=('在你的电脑上练习','对一个有多处类型分支的模块应用“以多态取代条件”，每一步运行测试。')
+PRAC=[('之前：同样的类型分支出现在两个函数中。先写测试。','cat > birds.py <<\'EOF\'\ndef plumage(bird):\n    if bird["kind"] == "european":\n        return "average"\n    elif bird["kind"] == "african":\n        return "tired" if bird["coconuts"] > 2 else "average"\n    elif bird["kind"] == "norwegian_blue":\n        return "scorched" if bird["voltage"] > 100 else "beautiful"\n    return "unknown"\n\ndef speed(bird):\n    if bird["kind"] == "european":\n        return 35\n    elif bird["kind"] == "african":\n        return 40 - 2 * bird["coconuts"]\n    elif bird["kind"] == "norwegian_blue":\n        return 0 if bird["nailed"] else 10 + bird["voltage"] / 10\n    return None\nEOF\ncat > test_birds.py <<\'EOF\'\nimport unittest\nfrom birds import plumage, speed\nB = [dict(kind="european"), dict(kind="african", coconuts=3),\n     dict(kind="norwegian_blue", voltage=200, nailed=False), dict(kind="norwegian_blue", voltage=50, nailed=True)]\nclass T(unittest.TestCase):\n    def test_plumage(self):\n        self.assertEqual([plumage(b) for b in B], ["average", "tired", "scorched", "beautiful"])\n    def test_speed(self):\n        self.assertEqual([speed(b) for b in B], [35, 34, 30.0, 0])\nunittest.main(argv=["x"], exit=False, verbosity=0)\nEOF\npython3 test_birds.py 2>&1 | tail -n 1',None),
+('第 1 步：创建类层次与工厂，旧函数委托给对象。测试仍然通过。','cat > birds.py <<\'EOF\'\nclass Bird:\n    def __init__(self, data):\n        self._data = data\n    @property\n    def plumage(self):\n        return "unknown"\n    @property\n    def speed(self):\n        return None\n\nclass European(Bird):\n    @property\n    def plumage(self):\n        return "average"\n    @property\n    def speed(self):\n        return 35\n\nclass African(Bird):\n    @property\n    def plumage(self):\n        return "tired" if self._data["coconuts"] > 2 else "average"\n    @property\n    def speed(self):\n        return 40 - 2 * self._data["coconuts"]\n\nclass NorwegianBlue(Bird):\n    @property\n    def plumage(self):\n        return "scorched" if self._data["voltage"] > 100 else "beautiful"\n    @property\n    def speed(self):\n        return 0 if self._data["nailed"] else 10 + self._data["voltage"] / 10\n\nBIRD_TYPES = {"european": European, "african": African, "norwegian_blue": NorwegianBlue}\n\ndef create_bird(data):\n    return BIRD_TYPES.get(data["kind"], Bird)(data)\n\ndef plumage(data):\n    return create_bird(data).plumage\n\ndef speed(data):\n    return create_bird(data).speed\nEOF\npython3 test_birds.py 2>&1 | tail -n 1',None),
+('“一个 switch 原则”：类型选择只剩工厂里的一处（这里是查表）。新增一种鸟只需一个类和一行注册。','grep -c "kind" birds.py; python3 -c "from birds import create_bird; b = create_bird({\'kind\': \'african\', \'coconuts\': 1}); print(type(b).__name__, b.plumage, b.speed)"',None)]
+CHAL=('设计重构步骤','下面的函数既解析又计算，并且对类型有条件分支。写出一个由小步组成的重构计划（每一步都能保持测试通过）：<pre class="cmd">def price(order_text, products):\n    # 格式："SKU-数量"，如 "kettle-3"\n    sku, qty = order_text.split("-")\n    qty = int(qty)\n    p = products[sku]\n    base = p["base_price"] * qty\n    if p["category"] == "food":\n        discount = 0\n    elif p["category"] == "electronics":\n        discount = max(qty - p["discount_threshold"], 0) * p["base_price"] * 0.1\n    else:\n        discount = max(qty - p["discount_threshold"], 0) * p["base_price"] * p["discount_rate"]\n    return base - discount</pre>',
+'<ol><li>写特征测试，覆盖三种品类与阈值两侧。</li><li><b>拆分阶段</b>：提取 <code>parse_order(text) -> OrderLine(sku, qty)</code>，<code>price</code> 先调用它。测试，提交。</li><li><b>提取函数</b>：<code>discount_for(product, qty)</code>，把条件链移进去。测试，提交。</li><li><b>以卫语句取代条件</b>：<code>if category == "food": return 0</code> 提前返回。测试，提交。</li><li>如果品类会继续增加，或别处也有按品类的分支：<b>以多态 / 查表取代条件</b>——<code>DISCOUNT_RATES = {"electronics": 0.1}</code>，其他品类使用产品自身的 <code>discount_rate</code>。测试，提交。</li><li>最后<b>改名</b>：<code>price</code> → <code>price_order</code>，<code>p</code> → <code>product</code>。</li></ol><p>每一步都是机械的、可单独回退的。重构计划的好坏不在于终点，而在于每一步之间测试是否始终是绿的。</p>')
+QUIZ=[['重构的定义是？',['不改变外部行为地改善内部结构','添加功能','修复 bug'],0,''],
+['“两顶帽子”指？',['重构与加功能不同时进行','两个人结对','两种测试'],0,''],
+['以卫语句取代嵌套条件的效果？',['特殊情况先返回，主逻辑不缩进','代码更长','更快'],0,''],
+['条件只是在把值映射为另一个值时？',['用 dict 查表','用多态类层次','用异常'],0,''],
+['重构中某一步测试变红，最好的做法？',['回退这一小步，换一种做法','继续改直到通过','删除测试'],0,'']]

@@ -1,0 +1,77 @@
+TITLE='综合项目：一步步重构一个混乱的订单模块';MIN=90;NEXT=None
+DESC='把整门课的手法用在一个真实感很强的模块上：一个 60 行的 <code>process_order</code> 函数，混合了解析、校验、库存、定价、折扣、持久化与通知，使用 dict 和魔法数，返回码与 None 混用，直接依赖全局状态与当前时间。你将按遗留代码的修改算法推进：先建立特征测试与快照，再按坏味道逐个重构，最后在整洁的结构上加入一个新需求，并对比前后的度量。'
+SUM=['<b>先安全网，后重构</b>：特征测试固定当前行为（包括可疑的行为），参数接缝让依赖可替换（第 18 课）。',
+'<b>按坏味道推进</b>：神秘的名字 → 改名；魔法数 → 常量与枚举；基本类型偏执 → <code>Money</code>、<code>OrderLine</code>；过长函数 → 拆分阶段（解析 / 定价 / 执行）；返回码 → 异常；隐藏依赖 → 注入（第 2–17 课）。',
+'<b>每一步测试都是绿的</b>，并作为单独的提交。',
+'<b>结构服务于变化</b>：最后添加的新需求（新的折扣规则）只需要新增一个类和一行注册，证明了重构的价值（开闭原则）。',
+'<b>度量只是参考</b>：函数长度、复杂度、参数个数都下降了，但真正的检验是：下一个读者需要多长时间理解它，下一个需求需要改动多少地方。',
+'<b>课程回顾</b>：整洁代码的目标始终是降低理解与修改的成本。原则之间会冲突，判断依据是“什么会变化、谁会阅读”。']
+S1=('重构路线图','从一个函数到一组清晰的部件。')
+A1=[('起点','process_order(data, flag)：60 行，7 种职责，返回码、None 与 dict 混用。',[('p','process_order()  60 行','bad',0,60,240)]),
+('安全网','特征测试 + 参数接缝（today、stock、mailer）。',[('p','process_order()','sig',0,60,240),('t','特征测试 ✓','ok',280,60,160)]),
+('拆分阶段','解析 → 定价 → 执行。中间用 OrderRequest 与 Quote 连接。',[('a','parse_request()','ok',0,0,200),('b','quote()','ok',0,60,200),('c','place()','ok',0,120,200),('t','特征测试 ✓','ok',280,60,160)]),
+('领域对象','Money、OrderLine、Discount 策略、领域异常。',[('a','parse_request()','ok',0,0,200),('b','quote()','ok',0,60,200),('c','place()','ok',0,120,200),('m','Money / OrderLine','ok',240,0,200),('d','Discount 策略','ok',240,60,200),('e','OrderError','ok',240,120,200)]),
+('新需求','“满 300 减 30”：新增一个 Discount 类并注册，不修改已有代码。',[('d','Discount 策略','ok',0,60,200),('n','ThresholdDiscount 新','sig',240,60,220)])]
+S2=('动手：每一步做了什么','选择一个重构步骤，查看它针对的坏味道与 diff 摘要。')
+CHI=[('1 接缝','- def process_order(data, flag):\n+ def process_order(data, flag, *, today=None, stock=None, mailer=None):\n+     today = today or date.today()\n+     stock = STOCK if stock is None else stock\n+     mailer = mailer or Mailer()','sig','坏味道：隐藏依赖。手法：参数接缝（第 18 课）。行为不变。'),
+('2 常量与枚举','- if d["type"] == 2 and t > 200:\n-     t = t * 0.95\n+ if customer_type is CustomerType.VIP and subtotal > VIP_DISCOUNT_MIN:\n+     subtotal = subtotal * VIP_DISCOUNT_RATE','sig','坏味道：魔法数、神秘的名字（第 2、15 课）。'),
+('3 值对象','+ @dataclass(frozen=True)\n+ class OrderLine:\n+     sku: str\n+     quantity: int\n+     unit_price: Money','sig','坏味道：基本类型偏执、数据泥团（第 7、15 课）。'),
+('4 拆分阶段','+ def process_order(...):\n+     request = parse_request(data)\n+     quote = price(request, catalog, discounts)\n+     return place(quote, stock, orders, mailer)','ok','坏味道：过长函数、混合抽象层级（第 3、17 课）。'),
+('5 异常','- return -2      # 库存不足\n+ raise OutOfStock(sku, requested=qty, available=stock[sku])','ok','坏味道：返回码（第 8 课）。调用方在边界统一处理。'),
+('6 策略','+ DISCOUNTS = [VipDiscount(), CouponDiscount(coupons)]\n+ def best_discount(quote): return max(d.amount(quote) for d in DISCOUNTS)','ok','坏味道：重复的条件分支。手法：以多态取代条件（第 12、17 课）。'),
+('7 新需求','+ class ThresholdDiscount:\n+     def amount(self, quote): ...\n+ DISCOUNTS.append(ThresholdDiscount(Money.of(300), Money.of(30)))','ok','新需求只增加代码，不修改已有代码。')]
+CHH='选择一个步骤。'
+S3=('起点代码','先读一遍，列出你闻到的坏味道。练习中会逐步重构它。','''<pre class="cmd" style="overflow-x:auto;white-space:pre">STOCK = {"pen": 20, "ink": 2, "pad": 0}
+PRICES = {"pen": 12.5, "ink": 30.0, "pad": 8.0}
+COUPONS = {"SAVE10": 10}
+SENT = []
+
+def process_order(d, flag):
+    # 检查
+    if not d.get("items"):
+        return None
+    t = 0
+    for i in d["items"]:
+        s, q = i.split(":")
+        q = int(q)
+        if s not in PRICES:
+            return -1
+        if STOCK[s] < q:
+            return -2
+        t += PRICES[s] * q
+    # 折扣
+    if d.get("type") == 2 and t > 200:
+        t = t * 0.95
+    c = d.get("coupon")
+    if c:
+        if c in COUPONS:
+            t = t - COUPONS[c]
+    if t < 0:
+        t = 0
+    # 扣库存
+    for i in d["items"]:
+        s, q = i.split(":")
+        STOCK[s] -= int(q)
+    # 通知
+    if flag:
+        SENT.append((d["email"], "订单金额 %.2f" % t))
+    return round(t, 2)</pre>
+<p>坏味道清单（与课程对应）：神秘的名字（<code>d</code>、<code>t</code>、<code>s</code>、<code>q</code>、<code>flag</code>）；魔法数（<code>2</code>、<code>200</code>、<code>0.95</code>）；基本类型偏执（str 解析、float 金额）；返回码与 None 混用；标识参数；全局可变数据；重复的解析逻辑；混合抽象层级；段落注释；隐藏的副作用（扣库存、发通知）。</p>''')
+S4=('前后对比','用前几课写的小工具测量。')
+TERM=[['python3 longest.py order_before.py order_after.py','order_before.py  函数  1 个，最长 30 行（process_order）\norder_after.py   函数 13 个，最长  9 行（price）','一个 30 行的函数变成 13 个小函数，最长的不超过 10 行。函数多了，但每一个都有清楚的名字与职责。'],
+['grep -c "return -\\|return None" order_before.py order_after.py','order_before.py:3\norder_after.py:0','返回码与 None 消失，换成了领域异常。'],
+['python3 -m unittest -q','Ran 8 tests in 0.001s\n\nOK','包括最初的特征测试：整个过程中行为保持不变（除了有意的新需求）。']]
+S5=('在你的电脑上练习','完整走一遍。所有命令都只需要 Python 3.10+。')
+PRAC=[('起点代码（与上面相同）。','cat > order.py <<\'EOF\'\nSTOCK = {"pen": 20, "ink": 2, "pad": 0}\nPRICES = {"pen": 12.5, "ink": 30.0, "pad": 8.0}\nCOUPONS = {"SAVE10": 10}\nSENT = []\n\ndef process_order(d, flag):\n    # 检查\n    if not d.get("items"):\n        return None\n    t = 0\n    for i in d["items"]:\n        s, q = i.split(":")\n        q = int(q)\n        if s not in PRICES:\n            return -1\n        if STOCK[s] < q:\n            return -2\n        t += PRICES[s] * q\n    # 折扣\n    if d.get("type") == 2 and t > 200:\n        t = t * 0.95\n    c = d.get("coupon")\n    if c:\n        if c in COUPONS:\n            t = t - COUPONS[c]\n    if t < 0:\n        t = 0\n    # 扣库存\n    for i in d["items"]:\n        s, q = i.split(":")\n        STOCK[s] -= int(q)\n    # 通知\n    if flag:\n        SENT.append((d["email"], "订单金额 %.2f" % t))\n    return round(t, 2)\nEOF\ncp order.py order_before.py',''),
+('安全网：特征测试。每个测试前重置全局状态（遗留代码的现实）。','cat > test_characterization.py <<\'EOF\'\nimport importlib, unittest\nimport order\n\nclass Characterization(unittest.TestCase):\n    def setUp(self):\n        importlib.reload(order)\n\n    def run_order(self, **d):\n        d.setdefault("email", "a@x.com")\n        return order.process_order(d, True)\n\n    def test_simple(self):\n        self.assertEqual(self.run_order(items=["pen:2"]), 25.0)\n\n    def test_vip_discount_above_200(self):\n        self.assertEqual(self.run_order(items=["pen:12", "ink:2"], type=2), 199.5)\n\n    def test_coupon(self):\n        self.assertEqual(self.run_order(items=["pen:1"], coupon="SAVE10"), 2.5)\n\n    def test_coupon_never_negative(self):\n        self.assertEqual(self.run_order(items=["pad:0"], coupon="SAVE10"), 0)\n\n    def test_unknown_sku_currently_returns_minus_1(self):\n        self.assertEqual(self.run_order(items=["cap:1"]), -1)\n\n    def test_out_of_stock_currently_returns_minus_2(self):\n        self.assertEqual(self.run_order(items=["ink:3"]), -2)\n\n    def test_empty_currently_returns_none(self):\n        self.assertIsNone(self.run_order(items=[]))\n\n    def test_stock_is_reduced_and_email_sent(self):\n        self.run_order(items=["ink:2"])\n        self.assertEqual(order.STOCK["ink"], 0)\n        self.assertEqual(order.SENT, [("a@x.com", "订单金额 60.00")])\n\nunittest.main(argv=["x"], exit=False, verbosity=1)\nEOF\npython3 test_characterization.py 2>&1 | tail -n 3',None),
+('重构后的结构：领域对象、拆分阶段、异常、策略、注入。（实际中你应分成 6–8 个小提交，每次运行测试。）','cat > order_after.py <<\'EOF\'\nfrom dataclasses import dataclass\nfrom decimal import Decimal, ROUND_HALF_UP\nfrom enum import Enum\nfrom typing import Protocol\n\n\n@dataclass(frozen=True, order=True)\nclass Money:\n    amount: Decimal\n\n    @classmethod\n    def of(cls, value):\n        return cls(Decimal(str(value)).quantize(Decimal("0.01"), ROUND_HALF_UP))\n\n    def __add__(self, other): return Money.of(self.amount + other.amount)\n    def __sub__(self, other): return Money.of(max(self.amount - other.amount, Decimal(0)))\n    def times(self, factor): return Money.of(self.amount * Decimal(str(factor)))\n\nZERO = Money.of(0)\n\n\nclass OrderError(Exception): pass\nclass EmptyOrder(OrderError): pass\nclass UnknownProduct(OrderError): pass\nclass OutOfStock(OrderError): pass\n\n\nclass CustomerType(Enum):\n    REGULAR = 1\n    VIP = 2\n\n\n@dataclass(frozen=True)\nclass OrderLine:\n    sku: str\n    quantity: int\n\n\n@dataclass(frozen=True)\nclass OrderRequest:\n    lines: tuple\n    email: str\n    customer_type: CustomerType = CustomerType.REGULAR\n    coupon: str | None = None\n\n\n@dataclass(frozen=True)\nclass Quote:\n    request: OrderRequest\n    subtotal: Money\n    discount: Money\n\n    @property\n    def total(self):\n        return self.subtotal - self.discount\n\n\nclass Discount(Protocol):\n    def amount(self, request: OrderRequest, subtotal: Money) -> Money: ...\n\n\nVIP_DISCOUNT_MIN = Money.of(200)\nVIP_DISCOUNT_RATE = Decimal("0.05")\n\nclass VipDiscount:\n    def amount(self, request, subtotal):\n        if request.customer_type is CustomerType.VIP and subtotal > VIP_DISCOUNT_MIN:\n            return subtotal.times(VIP_DISCOUNT_RATE)\n        return ZERO\n\n\nclass CouponDiscount:\n    def __init__(self, coupons):\n        self._coupons = coupons\n\n    def amount(self, request, subtotal):\n        return self._coupons.get(request.coupon, ZERO)\n\n\ndef parse_request(data):\n    lines = tuple(OrderLine(sku, int(qty)) for sku, qty in (i.split(":") for i in data.get("items", [])))\n    if not lines:\n        raise EmptyOrder()\n    return OrderRequest(lines, data["email"], CustomerType(data.get("type", 1)), data.get("coupon"))\n\n\ndef price(request, catalog, discounts):\n    subtotal = ZERO\n    for line in request.lines:\n        if line.sku not in catalog:\n            raise UnknownProduct(line.sku)\n        subtotal = subtotal + catalog[line.sku].times(line.quantity)\n    after_vip = subtotal - VipDiscount().amount(request, subtotal)\n    discount = (subtotal - after_vip) + sum((d.amount(request, after_vip) for d in discounts), ZERO)\n    return Quote(request, subtotal, discount)\n\n\ndef place(quote, stock, notify):\n    for line in quote.request.lines:\n        if stock[line.sku] < line.quantity:\n            raise OutOfStock(f"{line.sku}: 需要 {line.quantity}，库存 {stock[line.sku]}")\n    for line in quote.request.lines:\n        stock[line.sku] -= line.quantity\n    notify(quote.request.email, f"订单金额 {quote.total.amount:.2f}")\n    return quote.total\n\n\ndef process_order(data, *, catalog, stock, discounts, notify):\n    request = parse_request(data)\n    quote = price(request, catalog, discounts)\n    return place(quote, stock, notify)\nEOF\npython3 -c "import ast; ast.parse(open(\'order_after.py\').read()); print(\'ok\')"',None),
+('把特征测试改写为针对新接口的测试：同样的场景、同样的金额；返回码变成异常。','cat > test_order.py <<\'EOF\'\nimport unittest\nfrom decimal import Decimal\nfrom order_after import *\n\nclass OrderTest(unittest.TestCase):\n    def setUp(self):\n        self.catalog = {"pen": Money.of(12.5), "ink": Money.of(30), "pad": Money.of(8)}\n        self.stock = {"pen": 20, "ink": 2, "pad": 0}\n        self.sent = []\n        self.discounts = [CouponDiscount({"SAVE10": Money.of(10)})]\n\n    def order(self, **data):\n        data.setdefault("email", "a@x.com")\n        return process_order(data, catalog=self.catalog, stock=self.stock,\n                             discounts=self.discounts, notify=lambda to, text: self.sent.append((to, text)))\n\n    def test_simple(self):\n        self.assertEqual(self.order(items=["pen:2"]), Money.of(25))\n\n    def test_vip_discount_above_200(self):\n        self.assertEqual(self.order(items=["pen:12", "ink:2"], type=2), Money.of(199.5))\n\n    def test_coupon(self):\n        self.assertEqual(self.order(items=["pen:1"], coupon="SAVE10"), Money.of(2.5))\n\n    def test_coupon_never_negative(self):\n        self.assertEqual(self.order(items=["pad:0"], coupon="SAVE10"), ZERO)\n\n    def test_unknown_product(self):\n        self.assertRaises(UnknownProduct, self.order, items=["cap:1"])\n\n    def test_out_of_stock_leaves_stock_untouched(self):\n        self.assertRaises(OutOfStock, self.order, items=["pen:1", "ink:3"])\n        self.assertEqual(self.stock["pen"], 20)\n\n    def test_empty(self):\n        self.assertRaises(EmptyOrder, self.order, items=[])\n\n    def test_stock_is_reduced_and_email_sent(self):\n        self.order(items=["ink:2"])\n        self.assertEqual(self.stock["ink"], 0)\n        self.assertEqual(self.sent, [("a@x.com", "订单金额 60.00")])\n\nif __name__ == "__main__":\n    unittest.main(argv=["x"], exit=False, verbosity=1)\nEOF\npython3 test_order.py 2>&1 | tail -n 3',None),
+('新需求：“满 300 减 30”。只新增一个类，并在组装处注册。','cat > threshold.py <<\'EOF\'\nfrom dataclasses import dataclass\nfrom order_after import Money, ZERO\n\n@dataclass(frozen=True)\nclass ThresholdDiscount:\n    minimum: Money\n    off: Money\n\n    def amount(self, request, subtotal):\n        return self.off if subtotal >= self.minimum else ZERO\nEOF\npython3 -c "\nfrom order_after import *\nfrom threshold import ThresholdDiscount\ndiscounts = [CouponDiscount({}), ThresholdDiscount(Money.of(300), Money.of(30))]\nstock = {\'pen\': 100}\nfor items in ([\'pen:20\'], [\'pen:30\']):\n    total = process_order({\'items\': items, \'email\': \'z@x.com\'}, catalog={\'pen\': Money.of(12.5)},\n                          stock=stock, discounts=discounts, notify=lambda *a: None)\n    print(items, total.amount)"',None),
+('前后度量对比（用第 3 课的工具）。','cat > longest.py <<\'EOF\'\nimport ast, sys\nfor path in sys.argv[1:]:\n    tree = ast.parse(open(path).read())\n    fns = [(n.end_lineno - n.lineno + 1, n.name) for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]\n    longest = max(fns)\n    print(f"{path:<16} 函数 {len(fns):>2} 个，最长 {longest[0]:>2} 行（{longest[1]}）")\nEOF\npython3 longest.py order_before.py order_after.py; grep -c "return -\\|return None" order_before.py order_after.py',None)]
+CHAL=('继续扩展','在整洁的结构上完成两个新需求，并说明各自修改了哪些地方：① 优惠券与 VIP 折扣不能叠加，取其中较大者；② 下单成功后除了邮件，还要写一条审计日志，失败的订单也要记录原因。',
+'<ol><li><b>折扣互斥</b>：把“如何组合多个折扣”提取为一个策略，<code>price()</code> 接收 <code>combine</code>：<pre class="cmd">def best_of(discounts):\n    def combine(request, subtotal):\n        return max((d.amount(request, subtotal) for d in discounts), default=ZERO)\n    return combine</pre>修改点：<code>price()</code> 一处（改为调用 <code>combine</code>）+ 组装处。VipDiscount 也作为普通策略注册，不再写死在 <code>price()</code> 中——这是对第一次重构的进一步改进。为“同时满足两者时取较大者”写测试。</li><li><b>审计日志</b>：这是横切关注点，不应写进 <code>place()</code>。在组合根包装 <code>process_order</code>：<pre class="cmd">def audited(process, audit):\n    def run(data, **deps):\n        try:\n            total = process(data, **deps)\n            audit("placed", data, total)\n            return total\n        except OrderError as e:\n            audit("rejected", data, repr(e))\n            raise\n    return run</pre>修改点：只新增代码。<code>process_order</code> 本身与它的测试都没有改变。</li></ol>')
+QUIZ=[['重构遗留代码的第一步？',['建立特征测试与接缝','改名','加新功能'],0,''],
+['把 process_order 拆成 parse / price / place 用的是？',['拆分阶段','内联函数','萌芽类'],0,''],
+['返回码 -1、-2 被替换为？',['领域异常','更多返回码','None'],0,''],
+['新增“满减”规则只需新增一个类，体现了？',['开闭原则','里氏替换','迪米特法则'],0,''],
+['审计日志最适合放在？',['组合根中的包装（横切关注点）','place() 函数内部','全局变量'],0,'']]

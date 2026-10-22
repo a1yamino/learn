@@ -9,7 +9,7 @@ const e2={n:{w:700,cls:'tag'}};PH.forEach(([k,t,s])=>e2[k]=S(t,s,'',200));const 
 const upto=n=>{const o={};PH.forEach(([k],i)=>o[k]=[...pos(i),{cls:i<n-1?'blk ok':i===n-1?'blk sig':'blk mute'}]);return o};
 Player(document.getElementById('p2'),{els:e2,scenes:[
  {t:'先打地基',p:'命名空间级的约束先就位，之后部署的每个工作负载都会立即受到检查：不合规的 Pod 在第一天就会被拒绝，而不是上线后再整改。',d:4000,set:upto(1)},
- {t:'有状态在前',p:'数据库最难更换也最难恢复，先部署并验证复制与故障切换，应用再接入。',d:3600,set:upto(2)},
+ {t:'有状态在前',p:'先创建数据库所需的网络放行规则和资源声明，再部署并等待数据库就绪，验证复制与故障切换后让应用接入。',d:3600,set:upto(2)},
  {t:'应用与入口',p:'应用就绪后再开放入口。每一步都有验证命令：rollout status、端点、curl 健康检查。',d:3600,set:upto(4)},
  {t:'可运维才算上线',p:'交给 GitOps 管理、有告警、备份恢复过、故障演练过，才算完成。',d:3600,set:upto(6)}]});
 (()=>{const I=[['req','每个容器设置 requests 和 limits.memory',1,'调度不准确，节点可能超卖；HPA 无法按 CPU 利用率工作；内存泄漏会拖垮整个节点。','第 9 课'],

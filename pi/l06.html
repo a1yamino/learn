@@ -1,0 +1,257 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 6 课 · Agent 循环：runLoop 逐行精读</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 6 课</span><span class="sp"></span><a href="l05.html">← 第 5 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 6 课</div><h1>Agent 循环：runLoop 逐行精读</h1>
+<p>整个编码 agent 的“心脏”只有大约 160 行：<code>packages/agent/src/agent-loop.ts</code> 中的 <code>runLoop</code>。它由两层 while 组成：内层处理“工具调用与 steering”，外层处理“follow-up”。本课逐段阅读它，再直接调用底层的 <code>runAgentLoop</code>（不经过 Agent 类），用四个场景验证每条分支：连续工具调用、输出被截断、钩子提前结束、follow-up 续跑。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">两层循环</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：预测循环的行为</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码：runLoop</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">四个场景</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>两层循环</h2><div class="goal">内层：工具与 steering；外层：follow-up。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：预测循环的行为</h2><div class="goal">选择一个场景，看循环如何反应（与练习脚本的真实输出一致）。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码：runLoop</h2><div class="goal">完整阅读下面的代码；每段后面是要点。</div></div></div>
+<p>内层循环的开头：准备下一个 turn、写入排队消息、准备请求：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent-loop.ts#L172-L190" target="_blank" rel="noopener">packages/agent/src/agent-loop.ts  L172–190, L220–229 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">async function runLoop(
+  initialContext: AgentContext,
+  newMessages: AgentMessage[],
+  initialConfig: AgentLoopConfig,
+  signal: AbortSignal | undefined,
+  emit: AgentEventSink,
+  streamFunction: StreamFn,
+): Promise&lt;void&gt; {
+  let currentContext = initialContext;
+  let config = initialConfig;
+  let lastCompletedTurn: PrepareNextTurnContext | undefined;
+  let explicitContinuation = false;
+  // Check for steering messages at start (user may have typed while waiting)
+  let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
+
+  // Outer loop: continues when queued follow-up messages arrive after agent would stop
+  while (true) {
+    let hasMoreToolCalls = true;
+
+  // …
+for (const message of declareToolChanges(currentContext, [...preparedMessages, ...pendingMessages])) {
+  await emit({ type: &quot;message_start&quot;, message });
+  await emit({ type: &quot;message_end&quot;, message });
+  currentContext.messages.push(message);
+  newMessages.push(message);
+}
+pendingMessages = [];
+
+const requestUpdate = await config.prepareRequest?.(
+  {</pre><p>请求模型，以及两种出口（硬退出、正常工具执行）：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent-loop.ts#L250-L305" target="_blank" rel="noopener">packages/agent/src/agent-loop.ts  L250–305 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// Stream assistant response
+const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
+newMessages.push(message);
+
+if (message.stopReason === &quot;error&quot; || message.stopReason === &quot;aborted&quot;) {
+  lastCompletedTurn = {
+    message,
+    toolResults: [],
+    context: currentContext,
+    newMessages,
+  };
+  await config.finishTurn?.(lastCompletedTurn, signal);
+  await emit({ type: &quot;turn_end&quot;, message, toolResults: [] });
+  await emit({ type: &quot;agent_end&quot;, messages: newMessages });
+  return;
+}
+
+// Check for tool calls
+const toolCalls = message.content.filter((c) =&gt; c.type === &quot;toolCall&quot;);
+
+const toolResults: ToolResultMessage[] = [];
+hasMoreToolCalls = false;
+if (toolCalls.length &gt; 0) {
+  // A &quot;length&quot; stop means the output was cut off by the token limit, so
+  // every tool call in the message may carry truncated arguments. Fail
+  // them all instead of executing potentially borked calls.
+  const executedToolBatch =
+    message.stopReason === &quot;length&quot;
+      ? await failToolCallsFromTruncatedMessage(toolCalls, emit)
+      : await executeToolCalls(currentContext, message, config, signal, emit);
+  toolResults.push(...executedToolBatch.messages);
+  hasMoreToolCalls = !executedToolBatch.terminate;
+
+  for (const result of toolResults) {
+    currentContext.messages.push(result);
+    newMessages.push(result);
+  }
+}
+
+lastCompletedTurn = {
+  message,
+  toolResults,
+  context: currentContext,
+  newMessages,
+};
+const decision = await config.finishTurn?.(lastCompletedTurn, signal);
+await emit({ type: &quot;turn_end&quot;, message, toolResults });
+
+if (decision?.action === &quot;end&quot;) {
+  await emit({ type: &quot;agent_end&quot;, messages: newMessages });
+  return;
+}
+
+explicitContinuation = decision?.action === &quot;continue&quot;;
+pendingMessages = (await config.getSteeringMessages?.()) || [];
+if (hasMoreToolCalls || pendingMessages.length &gt; 0) {</pre><p>turn 结束后的决策与外层循环：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent-loop.ts#L306-L330" target="_blank" rel="noopener">packages/agent/src/agent-loop.ts  L306–330 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">        explicitContinuation = false;
+      }
+    }
+
+    // Agent would stop here. Check for follow-up messages.
+    const followUpMessages = (await config.getFollowUpMessages?.()) || [];
+    if (followUpMessages.length &gt; 0) {
+      // Set as pending so inner loop processes them
+      explicitContinuation = false;
+      pendingMessages = followUpMessages;
+      continue;
+    }
+
+    // No natural request was selected, so fulfill the continuation decision with one context-only turn.
+    if (explicitContinuation) {
+      explicitContinuation = false;
+      continue;
+    }
+
+    // No more messages, exit
+    break;
+  }
+
+  await emit({ type: &quot;agent_end&quot;, messages: newMessages });
+}</pre><p>流式回复如何进入上下文：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/agent/src/agent-loop.ts#L390-L420" target="_blank" rel="noopener">packages/agent/src/agent-loop.ts  L390–420, L452–467 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">async function streamAssistantResponse(
+  context: AgentContext,
+  config: AgentLoopConfig,
+  signal: AbortSignal | undefined,
+  emit: AgentEventSink,
+  streamFunction: StreamFn,
+): Promise&lt;AssistantMessage&gt; {
+  // Apply context transform if configured (AgentMessage[] → AgentMessage[])
+  let messages = context.messages;
+  if (config.transformContext) {
+    messages = await config.transformContext(messages, signal);
+  }
+
+  // Convert to LLM-compatible messages (AgentMessage[] → Message[])
+  const llmMessages = await config.convertToLlm(messages);
+
+  const llmContext = normalizeContext({ messages: llmMessages });
+
+  // Resolve API key (important for expiring tokens)
+  const resolvedApiKey =
+    (config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
+
+  const response = await streamFunction(config.model, llmContext, {
+    ...config,
+    apiKey: resolvedApiKey,
+    identity: mergeClientIdentity(DEFAULT_AGENT_IDENTITY, config.identity),
+    signal,
+  });
+  // Record the requested level, whichever stream function answered.
+  const result = async () =&gt; Object.assign(await response.result(), { thinkingLevel: config.reasoning ?? &quot;off&quot; });
+
+  // …
+
+  case &quot;done&quot;:
+  case &quot;error&quot;: {
+    const finalMessage = await result();
+    if (addedPartial) {
+      context.messages[context.messages.length - 1] = finalMessage;
+    } else {
+      context.messages.push(finalMessage);
+    }
+    if (!addedPartial) {
+      await emit({ type: &quot;message_start&quot;, message: { ...finalMessage } });
+    }
+    await emit({ type: &quot;message_end&quot;, message: finalMessage });
+    return finalMessage;
+  }
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 的对应物是 <code>codex-rs/core</code> 中的 turn 执行：采样一次、处理输出项、执行工具调用、若需要后续就继续采样。它在同一位置还要处理沙箱与审批的结果、自动压缩、以及 turn 级的计划/目标状态。见 <a href="../codex/l06.html">Codex 第 6 课 · run_turn 循环</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>四个场景</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">直接调用 <code>runAgentLoop</code>。用 <code>transformContext</code> 统计模型请求次数（它在每次请求前被调用一次）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行四个场景。</p><pre class="cmd">cat &gt; pi-mono/scratch/l06.ts &lt;&lt;&#x27;EOF&#x27;
+import { Type } from &quot;@earendil-works/pi-ai&quot;;
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, streamSimple } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { runAgentLoop, type AgentLoopConfig } from &quot;@earendil-works/pi-agent-core&quot;;
+
+const faux = registerFauxProvider();
+const echo = {
+  name: &quot;echo&quot;, label: &quot;echo&quot;, description: &quot;回显&quot;, parameters: Type.Object({ s: Type.String() }),
+  execute: async (_id: string, p: { s: string }) =&gt; ({ content: [{ type: &quot;text&quot; as const, text: p.s }], details: {} }),
+};
+
+async function run(title: string, responses: any[], extra: Partial&lt;AgentLoopConfig&gt; = {}) {
+  faux.setResponses(responses);
+  const log: string[] = [];
+  let requests = 0;
+  const config: AgentLoopConfig = {
+    model: faux.getModel(),
+    convertToLlm: (ms) =&gt; ms as any,
+    transformContext: async (ms) =&gt; { requests++; return ms; },
+    ...extra,
+  };
+  const msgs = await runAgentLoop(
+    [{ role: &quot;user&quot;, content: &quot;开始&quot;, timestamp: Date.now() }],
+    { systemPrompt: &quot;&quot;, messages: [], tools: [echo] },
+    config,
+    (e) =&gt; { if (e.type.startsWith(&quot;turn&quot;) || e.type.startsWith(&quot;agent&quot;) || e.type === &quot;tool_execution_end&quot;) log.push(e.type + (e.type === &quot;tool_execution_end&quot; ? (e.isError ? &quot;(错误)&quot; : &quot;(成功)&quot;) : &quot;&quot;)); },
+    undefined,
+    streamSimple,
+  );
+  console.log(`== ${title}：模型请求 ${requests} 次`);
+  console.log(&quot;   事件:&quot;, log.join(&quot; → &quot;));
+  console.log(&quot;   新消息:&quot;, msgs.map((m: any) =&gt; m.role + (m.stopReason ? `(${m.stopReason})` : &quot;&quot;)).join(&quot;, &quot;));
+}
+
+const call = (s: string) =&gt; fauxAssistantMessage([fauxToolCall(&quot;echo&quot;, { s })], { stopReason: &quot;toolUse&quot; });
+await run(&quot;两次工具调用&quot;, [call(&quot;a&quot;), call(&quot;b&quot;), fauxAssistantMessage(&quot;完成&quot;)]);
+await run(&quot;输出被截断&quot;, [fauxAssistantMessage([fauxToolCall(&quot;echo&quot;, { s: &quot;rm -rf /tm&quot; })], { stopReason: &quot;length&quot; }), fauxAssistantMessage(&quot;重来&quot;)]);
+await run(&quot;finishTurn 提前结束&quot;, [call(&quot;a&quot;), call(&quot;b&quot;), fauxAssistantMessage(&quot;完成&quot;)], { finishTurn: async () =&gt; ({ action: &quot;end&quot; }) });
+let once = true;
+await run(&quot;follow-up&quot;, [fauxAssistantMessage(&quot;第一次回答&quot;), fauxAssistantMessage(&quot;第二次回答&quot;)], {
+  getFollowUpMessages: async () =&gt; (once ? ((once = false), [{ role: &quot;user&quot;, content: &quot;再说一次&quot;, timestamp: Date.now() }]) : []),
+});
+EOF
+cd pi-mono/scratch &amp;&amp; node l06.ts</pre><pre class="out">== 两次工具调用：模型请求 3 次
+   事件: agent_start → turn_start → tool_execution_end(成功) → turn_end → turn_start → tool_execution_end(成功) → turn_end → turn_start → turn_end → agent_end
+   新消息: system, user, assistant(toolUse), toolResult, assistant(toolUse), toolResult, assistant(stop)
+== 输出被截断：模型请求 2 次
+   事件: agent_start → turn_start → tool_execution_end(错误) → turn_end → turn_start → turn_end → agent_end
+   新消息: system, user, assistant(length), toolResult, assistant(stop)
+== finishTurn 提前结束：模型请求 1 次
+   事件: agent_start → turn_start → tool_execution_end(成功) → turn_end → agent_end
+   新消息: system, user, assistant(toolUse), toolResult
+== follow-up：模型请求 2 次
+   事件: agent_start → turn_start → turn_end → turn_start → turn_end → agent_end
+   新消息: system, user, assistant(stop), user, assistant(stop)</pre></div></div><div class="st"><span class="n">02</span><div><p>数一数 runLoop 有多长：</p><pre class="cmd">cd pi-mono &amp;&amp; awk &#x27;/^async function runLoop/{s=NR} s&amp;&amp;/^}/{print &quot;runLoop:&quot;, NR-s+1, &quot;行&quot;; exit}&#x27; packages/agent/src/agent-loop.ts</pre><pre class="out">runLoop: 159 行</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>实现“最多 N 个 turn”</h3><p>用 <code>finishTurn</code> 实现一个上限：第 3 个 turn 结束时停止运行，即使模型还想调用工具。用“无限调用工具”的脚本化模型（准备 10 条工具调用回复）验证模型只被请求 3 次。</p><details><summary>查看参考答案</summary><div><pre>let turns = 0;
+await run("上限 3", Array.from({ length: 10 }, (_, i) => call(String(i))), {
+  finishTurn: async () => (++turns >= 3 ? { action: "end" } : undefined),
+});
+// == 上限 3：模型请求 3 次
+//    新消息: system, user, assistant(toolUse), toolResult ×3 组</pre><p><code>finishTurn</code> 在工具结果已经发出之后、<code>turn_end</code> 之前调用；返回 <code>{action:"end"}</code> 时循环发出 agent_end 并返回，不读任何队列。返回 undefined 保持正常调度。注意转录仍然一致：最后一个工具调用有对应的结果。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>入口</b>：<code>runAgentLoop(prompts, context, config, emit, signal, streamFn)</code> 发出 agent_start、turn_start 和提示消息，然后进入 <code>runLoop</code>。<code>runAgentLoopContinue</code> 从现有上下文继续（最后一条不能是 assistant）。</li><li><b>内层循环条件</b>：<code>hasMoreToolCalls || pendingMessages.length &gt; 0</code>。每圈：（非首圈）<code>prepareNextTurn</code> 钩子 → 把排队的消息写入上下文 → <code>prepareRequest</code> 钩子 → <code>streamAssistantResponse</code> → 执行工具 → <code>finishTurn</code> 钩子 → <code>turn_end</code> → 读 steering 队列。</li><li><b>硬退出</b>：stopReason 为 error 或 aborted 时立即 turn_end + agent_end 并返回，不执行任何工具。</li><li><b>截断保护</b>：stopReason 为 length 时，消息中的所有工具调用都被判为失败（可能带着被截断的参数，例如 <code>rm -rf /tm</code>），模型在下一轮看到错误结果。</li><li><b>外层循环</b>：内层结束（没有工具调用、没有 steering）时读 follow-up 队列；有就作为 pending 继续；<code>finishTurn</code> 返回 continue 时额外跑一个只基于上下文的 turn；否则退出并发出 agent_end。</li><li><b>streamAssistantResponse</b>：<code>transformContext</code>（AgentMessage 层面的变换，如裁剪）→ <code>convertToLlm</code>（过滤/转换自定义消息）→ 每次请求重新解析 API key（应对过期令牌）→ 把 partial 消息放进上下文并随事件不断替换 → done/error 时换成最终消息并发出 message_end。</li><li><b>工具声明</b>：<code>declareToolChanges</code> 比较“转录中已声明的工具”与 <code>context.tools</code>，差异作为 system 消息（toolsAdded/toolsRemoved）插入。所以练习输出的新消息里第一条是 system。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 07</div><a class="big" href="l07.html">工具调用：参数校验、并行执行与钩子 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l06.js"></script>
+</body></html>

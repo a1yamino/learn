@@ -1,0 +1,215 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 9 课 · 编码工具集：read、write、ls、grep、find</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 9 课</span><span class="sp"></span><a href="l08.html">← 第 8 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 9 课</div><h1>编码工具集：read、write、ls、grep、find</h1>
+<p>pi 默认只给模型四个工具：read、bash、edit、write；另有只读的 grep、find、ls 可按需启用。每个工具都是一个普通的 <code>ToolDefinition</code>：TypeBox 参数、写给模型看的描述、一个 <code>execute</code>。真正的工程细节在于<b>输出给模型的文字</b>：截断规则、“如何继续”的提示、错误信息——它们决定了模型能否高效地自己往下走。本课阅读 read、write、grep、find、ls 的实现并逐个调用它们。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">read 的截断与续读</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这次调用返回什么？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>read 的截断与续读</h2><div class="goal">让模型能自己翻页。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这次调用返回什么？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>read 的参数与截断逻辑：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/read.ts#L14-L18" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/read.ts  L14–18, L176–203 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">const readSchema = Type.Object({
+  path: Type.String({ description: &quot;Path to the file to read (relative or absolute)&quot; }),
+  offset: Type.Optional(Type.Number({ description: &quot;Line number to start reading from (1-indexed)&quot; })),
+  limit: Type.Optional(Type.Number({ description: &quot;Maximum number of lines to read&quot; })),
+});
+  // …
+// Apply truncation, respecting both line and byte limits.
+const truncation = truncateHead(selectedContent);
+let outputText: string;
+if (truncation.firstLineExceedsLimit) {
+  // First line alone exceeds the byte limit. Point the model at a bash fallback.
+  const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], &quot;utf-8&quot;));
+  outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n &#x27;${startLineDisplay}p&#x27; ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
+  details = { truncation };
+} else if (truncation.truncated) {
+  // Truncation occurred. Build an actionable continuation notice.
+  const endLineDisplay = startLineDisplay + truncation.outputLines - 1;
+  const nextOffset = endLineDisplay + 1;
+  outputText = truncation.content;
+  if (truncation.truncatedBy === &quot;lines&quot;) {
+    outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
+  } else {
+    outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
+  }
+  details = { truncation };
+} else if (userLimitedLines !== undefined &amp;&amp; startLine + userLimitedLines &lt; allLines.length) {
+  // User-specified limit stopped early, but the file still has more content.
+  const remaining = allLines.length - (startLine + userLimitedLines);
+  const nextOffset = startLine + userLimitedLines + 1;
+  outputText = `${truncation.content}\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
+} else {
+  // No truncation and no remaining user-limited content.
+  outputText = truncation.content;
+}</pre><p>限制常量：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/truncate.ts#L11-L13" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/truncate.ts  L11–13 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export const DEFAULT_MAX_LINES = 2000;
+export const DEFAULT_MAX_BYTES = 50 * 1024; // 50KB
+export const GREP_MAX_LINE_LENGTH = 500; // Max chars per grep match line</pre><p>write：在文件修改队列中创建目录并写入：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/write.ts#L65-L89" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/write.ts  L65–89 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">const absolutePath = resolveToCwd(path, ctx?.cwd || cwd);
+const dir = dirname(absolutePath);
+return withFileMutationQueue(absolutePath, async () =&gt; {
+  // Do not reject from an abort event listener here: that would release the
+  // mutation queue while an in-flight filesystem operation may still finish.
+  // Checking signal.aborted after each await observes the same aborts while
+  // keeping the queue locked until the current operation has settled.
+  const throwIfAborted = (): void =&gt; {
+    if (signal?.aborted) throw new Error(&quot;Operation aborted&quot;);
+  };
+
+  throwIfAborted();
+  // Create parent directories if needed.
+  await ops.mkdir(dir);
+  throwIfAborted();
+
+  // Write the file contents.
+  await ops.writeFile(absolutePath, content);
+  throwIfAborted();
+
+  return {
+    content: [{ type: &quot;text&quot;, text: `Successfully wrote to ${path}` }],
+    details: undefined,
+  };
+});</pre><p>同一文件的修改串行化：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/file-mutation-queue.ts#L28-L61" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/file-mutation-queue.ts  L28–61 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">/**
+ * Serialize file mutation operations targeting the same file.
+ * Operations for different files still run in parallel.
+ */
+export async function withFileMutationQueue&lt;T&gt;(filePath: string, fn: () =&gt; Promise&lt;T&gt;): Promise&lt;T&gt; {
+  const registration = registrationQueue.then(async () =&gt; {
+    const key = await getMutationQueueKey(filePath);
+    const currentQueue = fileMutationQueues.get(key) ?? Promise.resolve();
+
+    let releaseNext!: () =&gt; void;
+    const nextQueue = new Promise&lt;void&gt;((resolveQueue) =&gt; {
+      releaseNext = resolveQueue;
+    });
+    const chainedQueue = currentQueue.then(() =&gt; nextQueue);
+    fileMutationQueues.set(key, chainedQueue);
+
+    return { key, currentQueue, chainedQueue, releaseNext };
+  });
+  registrationQueue = registration.then(
+    () =&gt; undefined,
+    () =&gt; undefined,
+  );
+
+  const { key, currentQueue, chainedQueue, releaseNext } = await registration;
+  await currentQueue;
+  try {
+    return await fn();
+  } finally {
+    releaseNext();
+    if (fileMutationQueues.get(key) === chainedQueue) {
+      fileMutationQueues.delete(key);
+    }
+  }
+}</pre><p>grep 调用 ripgrep 的参数：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/tools/grep.ts#L162-L170" target="_blank" rel="noopener">packages/coding-agent/src/core/tools/grep.ts  L162–170 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// --no-config: the tool contract (literal, glob, limit, ...) must not depend on
+// ambient user config like RIPGREP_CONFIG_PATH. Users can customize via bash or extensions.
+const args: string[] = [&quot;--no-config&quot;, &quot;--json&quot;, &quot;--line-number&quot;, &quot;--color=never&quot;, &quot;--hidden&quot;];
+if (ignoreCase) args.push(&quot;--ignore-case&quot;);
+if (literal) args.push(&quot;--fixed-strings&quot;);
+if (glob) args.push(&quot;--glob&quot;, glob);
+args.push(&quot;--&quot;, pattern, searchPath);
+
+const child = spawn(rgPath, args, { stdio: [&quot;ignore&quot;, &quot;pipe&quot;, &quot;pipe&quot;] });</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 没有独立的 read/grep/find 工具，而是让模型通过 shell 运行 <code>cat</code>、<code>rg</code> 等命令，由沙箱保证安全；文件修改统一走 <code>apply_patch</code>。见 <a href="../codex/l09.html">Codex 第 9 课 · shell 与 unified exec</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">直接创建工具并调用 <code>execute</code>，观察模型实际看到的文字。首次运行 find 时若系统没有 fd，pi 会把它下载到 <code>~/.pi/agent/bin</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l09.ts &lt;&lt;&#x27;EOF&#x27;
+import { mkdtempSync, writeFileSync } from &quot;node:fs&quot;;
+import { tmpdir } from &quot;node:os&quot;;
+import { join } from &quot;node:path&quot;;
+import { createReadTool, createWriteTool, createLsTool, createGrepTool, createFindTool } from &quot;@earendil-works/pi-coding-agent&quot;;
+
+const dir = mkdtempSync(join(tmpdir(), &quot;l09-&quot;));
+writeFileSync(join(dir, &quot;big.txt&quot;), Array.from({ length: 2500 }, (_, i) =&gt; `line ${i + 1}`).join(&quot;\n&quot;));
+writeFileSync(join(dir, &quot;.gitignore&quot;), &quot;build/\n&quot;);
+const [read, write, ls, grep, find] = [createReadTool, createWriteTool, createLsTool, createGrepTool, createFindTool].map((f) =&gt; f(dir));
+
+async function call(tool: any, args: any) {
+  try {
+    const r = await tool.execute(&quot;id&quot;, args);
+    const t = r.content.map((c: any) =&gt; c.text).join(&quot;&quot;);
+    const lines = t.split(&quot;\n&quot;);
+    const shown = lines.length &gt; 6 ? [...lines.slice(0, 2), `  …(${lines.length - 4} 行)…`, ...lines.slice(-2)] : lines;
+    console.log(`&gt; ${tool.name}(${JSON.stringify(args)})\n  ` + shown.join(&quot;\n  &quot;));
+  } catch (e) { console.log(`&gt; ${tool.name}(${JSON.stringify(args)})\n  抛出: ${(e as Error).message}`); }
+}
+
+await call(write, { path: &quot;src/util/math.ts&quot;, content: &quot;export const add = (a: number, b: number) =&gt; a + b;\n&quot; });
+await call(write, { path: &quot;build/out.js&quot;, content: &quot;const add = 1;\n&quot; });
+await call(read, { path: &quot;big.txt&quot; });
+await call(read, { path: &quot;big.txt&quot;, offset: 10, limit: 3 });
+await call(read, { path: &quot;nope.txt&quot; });
+await call(ls, { path: &quot;.&quot; });
+await call(grep, { pattern: &quot;add&quot;, path: &quot;.&quot; });
+await call(find, { pattern: &quot;**/*.ts&quot; });
+// 变成 git 仓库后，ripgrep 才会遵守 .gitignore
+(await import(&quot;node:child_process&quot;)).execSync(&quot;git init -q --template=&quot;, { cwd: dir });
+console.log(&quot;-- git init 之后 --&quot;);
+await call(grep, { pattern: &quot;add&quot;, path: &quot;.&quot; });
+EOF
+cd pi-mono/scratch &amp;&amp; node l09.ts 2&gt;&amp;1 | sed -E &quot;s#/tmp/l09-[A-Za-z0-9]+#/tmp/l09-XXXX#&quot;</pre><pre class="out">&gt; write({&quot;path&quot;:&quot;src/util/math.ts&quot;,&quot;content&quot;:&quot;export const add = (a: number, b: number) =&gt; a + b;\n&quot;})
+  Successfully wrote to src/util/math.ts
+&gt; write({&quot;path&quot;:&quot;build/out.js&quot;,&quot;content&quot;:&quot;const add = 1;\n&quot;})
+  Successfully wrote to build/out.js
+&gt; read({&quot;path&quot;:&quot;big.txt&quot;})
+  line 1
+  line 2
+    …(1998 行)…
+  
+  [Showing lines 1-2000 of 2500. Use offset=2001 to continue.]
+&gt; read({&quot;path&quot;:&quot;big.txt&quot;,&quot;offset&quot;:10,&quot;limit&quot;:3})
+  line 10
+  line 11
+  line 12
+  
+  [2488 more lines in file. Use offset=13 to continue.]
+&gt; read({&quot;path&quot;:&quot;nope.txt&quot;})
+  抛出: ENOENT: no such file or directory, access &#x27;/tmp/l09-XXXX/nope.txt&#x27;
+&gt; ls({&quot;path&quot;:&quot;.&quot;})
+  .gitignore
+  big.txt
+  build/
+  src/
+&gt; grep({&quot;pattern&quot;:&quot;add&quot;,&quot;path&quot;:&quot;.&quot;})
+  build/out.js:1: const add = 1;
+  src/util/math.ts:1: export const add = (a: number, b: number) =&gt; a + b;
+&gt; find({&quot;pattern&quot;:&quot;**/*.ts&quot;})
+  src/util/math.ts
+-- git init 之后 --
+&gt; grep({&quot;pattern&quot;:&quot;add&quot;,&quot;path&quot;:&quot;.&quot;})
+  src/util/math.ts:1: export const add = (a: number, b: number) =&gt; a + b;</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>远程 read</h3><p><code>ReadOperations</code> 允许替换底层文件访问。实现一个“内存文件系统”版本的 read 工具：<code>readFile</code> 从一个 <code>Map&lt;string,string&gt;</code> 返回内容，<code>access</code> 在不存在时抛错。验证截断提示仍然生效。</p><details><summary>查看参考答案</summary><div><pre>const files = new Map([["/virt/a.txt", Array.from({length: 3000}, (_, i) => `x${i}`).join("\n")]]);
+const memRead = createReadTool("/virt", { operations: {
+  readFile: async (p) => Buffer.from(files.get(p)!),
+  access: async (p) => { if (!files.has(p)) throw new Error(`ENOENT: ${p}`); },
+  detectImageMimeType: async () => null,
+}});
+const r = await memRead.execute("1", { path: "a.txt" });
+// …
+// [Showing lines 1-2000 of 3000. Use offset=2001 to continue.]</pre><p>截断、续读提示、offset/limit 都在 operations 之上实现，所以换了存储也照常工作。pi 正是用这种方式让同一套工具在 SSH、容器等环境中运行（见 <code>docs/containerization.md</code>）。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>工具集</b>：<code>createCodingTools</code> = read、bash、edit、write（默认）；<code>createReadOnlyTools</code> = read、grep、find、ls；所有工具都可以指定 cwd，并可替换底层 <code>operations</code>（例如通过 SSH 操作远程机器）。</li><li><b>read</b>：参数 path、offset（从 1 开始）、limit。文本输出最多 2000 行或 50KB；被截断时附上 <code>[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]</code>；单行超过 50KB 时建议改用 bash 的 sed。图片作为附件返回，可自动缩放；当前模型不支持图片时会附注说明。</li><li><b>write</b>：自动创建父目录；通过 <code>withFileMutationQueue</code> 对同一文件（按 realpath）的修改串行化，不同文件仍并行——并行工具执行（第 7 课）不会让两次写入交错。</li><li><b>grep</b>：调用 ripgrep（<code>--json --hidden --no-config</code>），默认最多 100 条匹配，长行截断到 500 字符，结果附“如何获取更多”的提示。遵守 .gitignore（ripgrep 只在 git 仓库内应用 .gitignore）。</li><li><b>find</b>：调用 fd 按 glob 查找，默认最多 1000 条。<b>ls</b>：列目录，目录名带 <code>/</code>，包含点文件。</li><li><b>外部二进制</b>：<code>ensureTool("rg"|"fd")</code> 先找系统中的，找不到就下载到 <code>~/.pi/agent/bin</code>；离线模式下跳过下载。</li><li><b>系统提示贡献</b>：每个工具都带 <code>promptSnippet</code> 与 <code>promptGuidelines</code>（如“Use read to examine files instead of cat or sed.”），被拼进系统提示的 tools 段（第 12 课）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 10</div><a class="big" href="l10.html">edit 工具：精确替换、diff 与文件修改队列 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l09.js"></script>
+</body></html>

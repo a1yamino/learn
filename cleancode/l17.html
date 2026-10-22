@@ -1,0 +1,138 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 17 课 · 重构手法：提取、内联、移动与以多态取代条件</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 17 课</span><span class="sp"></span><a href="l16.html">← 第 16 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 17 课</div><h1>重构手法：提取、内联、移动与以多态取代条件</h1>
+<p>重构是在不改变外部行为的前提下改善代码的内部结构，每一步都很小、可以随时停下、测试始终是绿的。本课练习最常用的手法：提取函数 / 内联函数、提取变量 / 内联变量、改名、引入参数对象、移动函数、拆分阶段、以卫语句取代嵌套条件、以多态取代条件、以查表取代条件。重点是“小步”：每一步之后都运行测试并提交。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次重构的节奏</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：之前 / 之后</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">“两顶帽子”与提交节奏</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">小步提交</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次重构的节奏</h2><div class="goal">每一步都很小，测试一直是绿的。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：之前 / 之后</h2><div class="goal">选择一种手法，看重构前后的代码。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>“两顶帽子”与提交节奏</h2><div class="goal">重构与功能开发交替进行，但不同时进行。</div></div></div>
+<table class="tbl"><tr><th>时刻</th><th>帽子</th><th>做法</th></tr>
+<tr><td>准备添加功能，发现结构不便</td><td>重构</td><td>先让修改变得容易（“make the change easy, then make the easy change”——Kent Beck）</td></tr>
+<tr><td>结构合适了</td><td>功能</td><td>写失败的测试，实现</td></tr>
+<tr><td>功能完成，代码有点乱</td><td>重构</td><td>测试保护下清理</td></tr></table>
+<p><b>提交建议</b>：重构的提交与功能的提交分开。评审者看到“仅重构”的提交时，只需确认行为未变；看到功能提交时，diff 很小、很专注。</p>
+<p><b>编辑器的自动重构</b>：PyCharm 与 VS Code（Pylance / Rope）支持改名、提取方法 / 变量、内联、移动、修改签名。它们基于语法树而非文本，能同时更新所有引用。动态语言中自动重构并不总是 100% 安全（如 <code>getattr</code> 动态访问），所以测试仍然必要。</p>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>小步提交</h2><div class="goal">一次重构的 git 历史。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">对一个有多处类型分支的模块应用“以多态取代条件”，每一步运行测试。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>之前：同样的类型分支出现在两个函数中。先写测试。</p><pre class="cmd">cat &gt; birds.py &lt;&lt;&#x27;EOF&#x27;
+def plumage(bird):
+    if bird[&quot;kind&quot;] == &quot;european&quot;:
+        return &quot;average&quot;
+    elif bird[&quot;kind&quot;] == &quot;african&quot;:
+        return &quot;tired&quot; if bird[&quot;coconuts&quot;] &gt; 2 else &quot;average&quot;
+    elif bird[&quot;kind&quot;] == &quot;norwegian_blue&quot;:
+        return &quot;scorched&quot; if bird[&quot;voltage&quot;] &gt; 100 else &quot;beautiful&quot;
+    return &quot;unknown&quot;
+
+def speed(bird):
+    if bird[&quot;kind&quot;] == &quot;european&quot;:
+        return 35
+    elif bird[&quot;kind&quot;] == &quot;african&quot;:
+        return 40 - 2 * bird[&quot;coconuts&quot;]
+    elif bird[&quot;kind&quot;] == &quot;norwegian_blue&quot;:
+        return 0 if bird[&quot;nailed&quot;] else 10 + bird[&quot;voltage&quot;] / 10
+    return None
+EOF
+cat &gt; test_birds.py &lt;&lt;&#x27;EOF&#x27;
+import unittest
+from birds import plumage, speed
+B = [dict(kind=&quot;european&quot;), dict(kind=&quot;african&quot;, coconuts=3),
+     dict(kind=&quot;norwegian_blue&quot;, voltage=200, nailed=False), dict(kind=&quot;norwegian_blue&quot;, voltage=50, nailed=True)]
+class T(unittest.TestCase):
+    def test_plumage(self):
+        self.assertEqual([plumage(b) for b in B], [&quot;average&quot;, &quot;tired&quot;, &quot;scorched&quot;, &quot;beautiful&quot;])
+    def test_speed(self):
+        self.assertEqual([speed(b) for b in B], [35, 34, 30.0, 0])
+unittest.main(argv=[&quot;x&quot;], exit=False, verbosity=0)
+EOF
+python3 test_birds.py 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div></div><div class="st"><span class="n">02</span><div><p>第 1 步：创建类层次与工厂，旧函数委托给对象。测试仍然通过。</p><pre class="cmd">cat &gt; birds.py &lt;&lt;&#x27;EOF&#x27;
+class Bird:
+    def __init__(self, data):
+        self._data = data
+    @property
+    def plumage(self):
+        return &quot;unknown&quot;
+    @property
+    def speed(self):
+        return None
+
+class European(Bird):
+    @property
+    def plumage(self):
+        return &quot;average&quot;
+    @property
+    def speed(self):
+        return 35
+
+class African(Bird):
+    @property
+    def plumage(self):
+        return &quot;tired&quot; if self._data[&quot;coconuts&quot;] &gt; 2 else &quot;average&quot;
+    @property
+    def speed(self):
+        return 40 - 2 * self._data[&quot;coconuts&quot;]
+
+class NorwegianBlue(Bird):
+    @property
+    def plumage(self):
+        return &quot;scorched&quot; if self._data[&quot;voltage&quot;] &gt; 100 else &quot;beautiful&quot;
+    @property
+    def speed(self):
+        return 0 if self._data[&quot;nailed&quot;] else 10 + self._data[&quot;voltage&quot;] / 10
+
+BIRD_TYPES = {&quot;european&quot;: European, &quot;african&quot;: African, &quot;norwegian_blue&quot;: NorwegianBlue}
+
+def create_bird(data):
+    return BIRD_TYPES.get(data[&quot;kind&quot;], Bird)(data)
+
+def plumage(data):
+    return create_bird(data).plumage
+
+def speed(data):
+    return create_bird(data).speed
+EOF
+python3 test_birds.py 2&gt;&amp;1 | tail -n 1</pre><pre class="out">OK</pre></div></div><div class="st"><span class="n">03</span><div><p>“一个 switch 原则”：类型选择只剩工厂里的一处（这里是查表）。新增一种鸟只需一个类和一行注册。</p><pre class="cmd">grep -c &quot;kind&quot; birds.py; python3 -c &quot;from birds import create_bird; b = create_bird({&#x27;kind&#x27;: &#x27;african&#x27;, &#x27;coconuts&#x27;: 1}); print(type(b).__name__, b.plumage, b.speed)&quot;</pre><pre class="out">1
+African average 38</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计重构步骤</h3><p>下面的函数既解析又计算，并且对类型有条件分支。写出一个由小步组成的重构计划（每一步都能保持测试通过）：<pre class="cmd">def price(order_text, products):
+    # 格式："SKU-数量"，如 "kettle-3"
+    sku, qty = order_text.split("-")
+    qty = int(qty)
+    p = products[sku]
+    base = p["base_price"] * qty
+    if p["category"] == "food":
+        discount = 0
+    elif p["category"] == "electronics":
+        discount = max(qty - p["discount_threshold"], 0) * p["base_price"] * 0.1
+    else:
+        discount = max(qty - p["discount_threshold"], 0) * p["base_price"] * p["discount_rate"]
+    return base - discount</pre></p><details><summary>查看参考答案</summary><div><ol><li>写特征测试，覆盖三种品类与阈值两侧。</li><li><b>拆分阶段</b>：提取 <code>parse_order(text) -> OrderLine(sku, qty)</code>，<code>price</code> 先调用它。测试，提交。</li><li><b>提取函数</b>：<code>discount_for(product, qty)</code>，把条件链移进去。测试，提交。</li><li><b>以卫语句取代条件</b>：<code>if category == "food": return 0</code> 提前返回。测试，提交。</li><li>如果品类会继续增加，或别处也有按品类的分支：<b>以多态 / 查表取代条件</b>——<code>DISCOUNT_RATES = {"electronics": 0.1}</code>，其他品类使用产品自身的 <code>discount_rate</code>。测试，提交。</li><li>最后<b>改名</b>：<code>price</code> → <code>price_order</code>，<code>p</code> → <code>product</code>。</li></ol><p>每一步都是机械的、可单独回退的。重构计划的好坏不在于终点，而在于每一步之间测试是否始终是绿的。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>重构的定义</b>：不改变可观察行为，只改结构。功能修改和重构要分开做（“两顶帽子”）：戴着重构的帽子时不加功能，反之亦然。</li><li><b>小步</b>：每一步只做一个机械的变换，运行测试，必要时提交。出错时只需回退最后一小步。现代编辑器的自动重构（改名、提取、内联、移动）比手工更安全。</li><li><b>提取与内联是一对</b>：提取函数给一段代码一个名字；当名字并没有比代码本身更清楚，或者想重新组织一组函数时，先内联再重新提取。</li><li><b>以卫语句取代嵌套条件</b>：先处理特殊情况并立即返回，主逻辑不必缩进在多层 if 中。</li><li><b>以多态 / 查表取代条件</b>：按类型的条件分支在多处出现时，用多态（每种类型一个类）；只是映射数据时，用一个 dict 更简单。</li><li><b>拆分阶段</b>：一段代码同时做两件按顺序发生的事（解析然后计算），把它拆成两个阶段，中间用一个数据结构连接。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 18</div><a class="big" href="l18.html">遗留代码：特征测试与接缝 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l17.js"></script>
+</body></html>

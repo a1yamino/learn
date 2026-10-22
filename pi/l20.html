@@ -1,0 +1,223 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 20 课 · 毕业项目：用 SDK 写一个迷你编码 agent</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 20 课</span><span class="sp"></span><a href="l19.html">← 第 19 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 20 课</div><h1>毕业项目：用 SDK 写一个迷你编码 agent</h1>
+<p>把整门课拼起来：用 <code>createAgentSession()</code> 组装一个名叫 <b>fixbot</b> 的迷你编码 agent——内置 read/edit 工具、一个自定义的 <code>run_tests</code> 工具、一道禁止 bash 的守卫，以及一个订阅事件流的极简界面。它要修复一个真实的 bug：先跑测试看到失败，读代码，改代码，再跑测试确认通过。中途它还会试图执行 <code>git push --force</code>，被守卫拦下。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">fixbot 的一次运行</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这部分来自哪一课？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>fixbot 的一次运行</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这部分来自哪一课？</h2><div class="goal">fixbot 的每个零件都对应前面的课程。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>SDK 入口：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/sdk.ts#L191-L199" target="_blank" rel="noopener">packages/coding-agent/src/core/sdk.ts  L191–199, L453–479 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export async function createAgentSession(options: CreateAgentSessionOptions = {}): Promise&lt;CreateAgentSessionResult&gt; {
+  const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());
+  const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
+  let resourceLoader = options.resourceLoader;
+
+  const authPath = options.agentDir ? join(agentDir, &quot;auth.json&quot;) : undefined;
+  const modelsPath = options.agentDir ? join(agentDir, &quot;models.json&quot;) : undefined;
+  const modelRuntime = options.modelRuntime ?? (await ModelRuntime.create({ authPath, modelsPath }));
+
+  // …
+  const session = new AgentSession({
+    agent,
+    sessionManager,
+    settingsManager,
+    cwd,
+    scopedModels: options.scopedModels,
+    resourceLoader,
+    customTools: options.customTools,
+    modelRuntime,
+    cacheWarmer,
+    initialActiveToolNames,
+    usesDefaultTools: (options.tools === undefined || toolModifiers !== undefined) &amp;&amp; !options.noTools,
+    defaultToolModifiers: toolModifiers,
+    allowedToolNames,
+    excludedToolNames,
+    extensionRunnerRef,
+    sessionStartEvent: options.sessionStartEvent,
+  });
+
+  const extensionsResult = resourceLoader.getExtensions();
+
+  return {
+    session,
+    extensionsResult,
+    modelFallbackMessage,
+  };
+}</pre><p>会话安装的工具钩子（所以要串联）：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/agent-session.ts#L652-L655" target="_blank" rel="noopener">packages/coding-agent/src/core/agent-session.ts  L652–655 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">private _installAgentToolHooks(): void {
+  this.agent.beforeToolCall = (context) =&gt; this._beforeToolCall(context);
+  this.agent.afterToolCall = (context) =&gt; this._afterToolCall(context);
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 的“同一件事”由 Rust 的 codex-core 完成，内置沙箱、审批、计划与目标，是更重、更完整的产品。下一门课逐一对照：<a href="../codex/l24.html">Codex 第 24 课 · 毕业项目</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">需要 pi-mono 已构建（<code>npm install &amp;&amp; npm run build</code>）、Node 22.18+（可直接运行 .ts）。<code>faux-session.ts</code> 是本课程反复使用的辅助文件。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>辅助文件（若前面课程已创建可跳过）。</p><pre class="cmd">cat &gt; pi-mono/scratch/faux-session.ts &lt;&lt;&#x27;EOF&#x27;
+// 课程练习用的小工具：用 faux 模型创建一个真实的 AgentSession（无需 API key）。
+import { type FauxResponseStep, registerFauxProvider } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { type CreateAgentSessionOptions, createAgentSession, ModelRuntime, SessionManager, SettingsManager } from &quot;@earendil-works/pi-coding-agent&quot;;
+import { mkdirSync, mkdtempSync, writeFileSync } from &quot;node:fs&quot;;
+import { tmpdir } from &quot;node:os&quot;;
+import { dirname, join } from &quot;node:path&quot;;
+
+export async function fauxSession(
+  responses: FauxResponseStep[],
+  options: { files?: Record&lt;string, string&gt;; settings?: object; extra?: Partial&lt;CreateAgentSessionOptions&gt; } = {},
+) {
+  const dir = mkdtempSync(join(tmpdir(), &quot;pi-course-&quot;));
+  for (const [name, text] of Object.entries(options.files ?? {})) {
+    mkdirSync(dirname(join(dir, name)), { recursive: true });
+    writeFileSync(join(dir, name), text);
+  }
+  const faux = registerFauxProvider();
+  faux.setResponses(responses);
+  const model = faux.getModel();
+  const modelRuntime = await ModelRuntime.create({ authPath: join(dir, &quot;.auth.json&quot;), modelsPath: null, allowModelNetwork: false });
+  modelRuntime.registerProvider(model.provider, {
+    baseUrl: model.baseUrl, apiKey: &quot;faux-key&quot;, api: faux.api,
+    models: faux.models.map((m) =&gt; ({ id: m.id, name: m.name, api: m.api, reasoning: m.reasoning, input: m.input,
+      cost: m.cost, contextWindow: m.contextWindow, maxTokens: m.maxTokens, baseUrl: m.baseUrl })),
+  });
+  const { session } = await createAgentSession({
+    cwd: dir, agentDir: join(dir, &quot;.pi-agent&quot;), model, thinkingLevel: &quot;off&quot;, modelRuntime,
+    sessionManager: SessionManager.inMemory(dir), settingsManager: SettingsManager.inMemory(options.settings ?? {}),
+    ...options.extra,
+  });
+  return { session, dir, faux };
+}
+
+export function show(messages: readonly any[]) {
+  for (const m of messages) {
+    const c = m.role === &quot;system&quot;
+      ? `sections=${Object.keys(m.sections ?? {}).join(&quot;,&quot;)} tools=${(m.toolsAdded ?? []).map((t: any) =&gt; t.name).join(&quot;,&quot;)}`
+      : typeof m.content === &quot;string&quot; ? m.content : JSON.stringify(m.content ?? &quot;&quot;);
+    console.log(m.role.padEnd(11), c.replace(/\s+/g, &quot; &quot;).slice(0, 90));
+  }
+}
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>fixbot。</p><pre class="cmd">cat &gt; pi-mono/scratch/l20.ts &lt;&lt;&#x27;EOF&#x27;
+// 毕业项目：fixbot —— 用 pi SDK 组装的迷你编码 agent
+// 组成：AgentSession（第 2–8 课）+ 内置 read/edit（第 9–10 课）+ 自定义工具 run_tests
+//      + tool_call 守卫（第 15 课）+ 自己写的极简“界面”（订阅事件，第 3/18 课）
+import { Type } from &quot;@earendil-works/pi-ai&quot;;
+import { fauxAssistantMessage, fauxToolCall } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { defineTool } from &quot;@earendil-works/pi-coding-agent&quot;;
+import { execFileSync } from &quot;node:child_process&quot;;
+import { readFileSync } from &quot;node:fs&quot;;
+import { join } from &quot;node:path&quot;;
+import { fauxSession } from &quot;./faux-session.ts&quot;;
+
+let cwd = &quot;&quot;;
+// 1. 自定义工具：运行测试，返回通过/失败与输出
+const runTests = defineTool({
+  name: &quot;run_tests&quot;, label: &quot;run_tests&quot;, description: &quot;运行项目测试（node test.js），返回输出&quot;,
+  parameters: Type.Object({}),
+  async execute() {
+    try {
+      const out = execFileSync(&quot;node&quot;, [&quot;test.js&quot;], { cwd, encoding: &quot;utf8&quot;, stdio: &quot;pipe&quot; });
+      return { content: [{ type: &quot;text&quot;, text: &quot;PASS\n&quot; + out }], details: { ok: true } };
+    } catch (e: any) {
+      return { content: [{ type: &quot;text&quot;, text: &quot;FAIL\n&quot; + (e.stdout + e.stderr).trim() }], details: { ok: false } };
+    }
+  },
+});
+
+// 2. 脚本化的“模型”：先跑测试 → 读代码 → 修改 → 再跑测试 → 总结；也会试图越权
+const last = (ctx: any) =&gt; ctx.messages.at(-1).content[0].text as string;
+const responses = [
+  fauxAssistantMessage([fauxToolCall(&quot;run_tests&quot;, {})], { stopReason: &quot;toolUse&quot; }),
+  (ctx: any) =&gt; fauxAssistantMessage([fauxToolCall(&quot;read&quot;, { path: &quot;math.js&quot; })], { stopReason: &quot;toolUse&quot; }),
+  (ctx: any) =&gt; {
+    const bug = last(ctx).includes(&quot;a - b&quot;) ? &quot;a - b&quot; : &quot;?&quot;;
+    return fauxAssistantMessage([
+      fauxToolCall(&quot;edit&quot;, { path: &quot;math.js&quot;, edits: [{ oldText: bug, newText: &quot;a + b&quot; }] }),
+      fauxToolCall(&quot;bash&quot;, { command: &quot;git push --force&quot; }),
+    ], { stopReason: &quot;toolUse&quot; });
+  },
+  fauxAssistantMessage([fauxToolCall(&quot;run_tests&quot;, {})], { stopReason: &quot;toolUse&quot; }),
+  (ctx: any) =&gt; fauxAssistantMessage(`修好了：add 把减号改成加号。测试结果：${last(ctx).split(&quot;\n&quot;)[0]}`),
+];
+
+const { session, dir } = await fauxSession(responses, {
+  files: {
+    &quot;math.js&quot;: &quot;export function add(a, b) {\n  return a - b;\n}\n&quot;,
+    &quot;test.js&quot;: &#x27;import { add } from &quot;./math.js&quot;;\nif (add(2, 3) !== 5) { console.error(`add(2,3) = ${add(2, 3)}，期望 5`); process.exit(1); }\nconsole.log(&quot;1 passed&quot;);\n&#x27;,
+    &quot;package.json&quot;: &#x27;{ &quot;type&quot;: &quot;module&quot; }\n&#x27;,
+  },
+  extra: { customTools: [runTests], tools: [&quot;read&quot;, &quot;edit&quot;, &quot;bash&quot;, &quot;run_tests&quot;] },
+});
+cwd = dir;
+
+// 3. 守卫：只允许测试与只读命令；在会话层拦截（与 permission-gate 同一机制）
+//    先保存会话自己安装的钩子（它负责调用扩展的 tool_call 处理器），再串联
+const inner = session.agent.beforeToolCall;
+session.agent.beforeToolCall = async (ctx: any, signal?: AbortSignal) =&gt;
+  ctx.toolCall.name === &quot;bash&quot; ? { block: true, reason: &quot;fixbot 不允许执行 bash&quot; } : inner?.(ctx, signal);
+
+// 4. 极简界面：把事件流打印成一行行日志
+session.subscribe((e: any) =&gt; {
+  if (e.type === &quot;tool_execution_start&quot;) console.log(`→ ${e.toolName} ${JSON.stringify(e.args)}`);
+  if (e.type === &quot;tool_execution_end&quot;)
+    console.log(`  ${e.isError ? &quot;✗&quot; : &quot;✓&quot;} ${JSON.stringify(e.result.content[0]?.text ?? &quot;&quot;).slice(0, 70)}`);
+  if (e.type === &quot;message_end&quot; &amp;&amp; e.message.role === &quot;assistant&quot; &amp;&amp; e.message.stopReason === &quot;stop&quot;)
+    console.log(`fixbot: ${e.message.content[0].text}`);
+});
+
+await session.prompt(&quot;测试挂了，请修复&quot;);
+console.log(&quot;--- 修复后的 math.js ---\n&quot; + readFileSync(join(dir, &quot;math.js&quot;), &quot;utf8&quot;).trim());
+console.log(`--- 会话共 ${session.messages.length} 条消息，${session.messages.filter((m: any) =&gt; m.role === &quot;toolResult&quot;).length} 次工具调用`);
+session.dispose();
+EOF
+cd pi-mono/scratch &amp;&amp; node l20.ts</pre><pre class="out">→ run_tests {}
+  ✓ &quot;FAIL\nadd(2,3) = -1，期望 5&quot;
+→ read {&quot;path&quot;:&quot;math.js&quot;}
+  ✓ &quot;export function add(a, b) {\n  return a - b;\n}\n&quot;
+→ edit {&quot;path&quot;:&quot;math.js&quot;,&quot;edits&quot;:[{&quot;oldText&quot;:&quot;a - b&quot;,&quot;newText&quot;:&quot;a + b&quot;}]}
+→ bash {&quot;command&quot;:&quot;git push --force&quot;}
+  ✗ &quot;fixbot 不允许执行 bash&quot;
+  ✓ &quot;Successfully replaced 1 block(s) in math.js.&quot;
+→ run_tests {}
+  ✓ &quot;PASS\n1 passed\n&quot;
+fixbot: 修好了：add 把减号改成加号。测试结果：PASS
+--- 修复后的 math.js ---
+export function add(a, b) {
+  return a + b;
+}
+--- 会话共 12 条消息，5 次工具调用</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>让 fixbot 接上真模型</h3><p>去掉 faux：用 <code>ModelRuntime.create()</code> 读取你的凭据，挑一个模型传给 <code>createAgentSession</code>，保留 run_tests、守卫与事件界面。再加一条规则：run_tests 连续失败 3 次就 <code>session.abort()</code>。</p><details><summary>查看参考答案</summary><div><pre>import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+const modelRuntime = await ModelRuntime.create();
+const model = modelRuntime.getModel("anthropic", "claude-sonnet-4-5")!; // 第 4 课：按 provider/id 查找
+const { session } = await createAgentSession({ cwd, model, modelRuntime,
+  customTools: [runTests], tools: ["read", "edit", "run_tests"],
+  sessionManager: SessionManager.inMemory(cwd), settingsManager: SettingsManager.inMemory({}) });
+let fails = 0;
+session.subscribe((e: any) =&gt; {
+  if (e.type === "tool_execution_end" &amp;&amp; e.toolName === "run_tests")
+    fails = e.result.details?.ok ? 0 : fails + 1;
+  if (fails &gt;= 3) void session.abort();
+});</pre><p><code>getModel(providerId, modelId)</code> 找不到时返回 undefined；凭据优先级见第 4 课。直接把 bash 从允许列表中去掉，比运行时拦截更彻底。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>内核</b>：<code>createAgentSession()</code>（<code>sdk.ts</code>）解析 cwd、agentDir、ModelRuntime、设置、资源加载器与工具集，构造 <code>AgentSession</code>（第 2、8 课）。</li><li><b>工具</b>：<code>tools: ["read","edit","bash","run_tests"]</code> 是允许列表；<code>customTools</code> 中的 <code>defineTool()</code> 工具用 TypeBox 声明参数，循环负责校验（第 7 课）。</li><li><b>守卫</b>：会话已在 <code>agent.beforeToolCall</code> 上安装钩子（用于分发扩展的 <code>tool_call</code>）。我们<b>串联</b>而不是覆盖它；正式项目更推荐写成扩展（第 15、19 课）。</li><li><b>并行与顺序</b>：edit 与被拦截的 bash 在同一条助手消息中，拦截结果先返回，edit 后返回——同一消息中的工具调用并行执行，事件按完成顺序发出（第 7 课）。</li><li><b>界面</b>：只是 <code>session.subscribe()</code>。把它换成 pi-tui（第 17 课）就是交互模式，换成 JSON 输出就是 print/json/rpc（第 18 课）。</li><li><b>换真模型</b>：把 faux 换成 <code>modelRuntime</code> 中的真实模型（第 4 课），其余代码不变。</li></ol></section>
+<footer class="endnav"><div class="k">课程完成</div><a class="big" href="index.html">课程目录 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l20.js"></script>
+</body></html>

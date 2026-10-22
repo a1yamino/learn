@@ -1,0 +1,172 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 16 课 · 斜杠命令与提示模板</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 16 课</span><span class="sp"></span><a href="l15.html">← 第 15 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 16 课</div><h1>斜杠命令与提示模板</h1>
+<p>在 pi 的编辑器里输入 <code>/</code>，会出现四类命令：<b>内置命令</b>（/model、/tree、/compact……，由交互界面处理）、<b>扩展命令</b>、<b>技能</b>（/skill:name）和<b>提示模板</b>（Markdown 文件）。它们在不同的层被处理，顺序决定了谁能覆盖谁。本课还会加载 pi 官方示例中的 <code>plan-mode</code> 扩展：在 pi 里，“计划模式”不是内置功能，而是一个用工具切换实现的扩展。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条 / 输入的去向</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这些输入展开成什么？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一条 / 输入的去向</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这些输入展开成什么？</h2><div class="goal">模板 review.md：<code>审查暂存区的改动，重点关注 ${1:-正确性与安全}。其余参数：${@:2}</code>；fix.md：<code>修复 issue #$1：$ARGUMENTS</code></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>参数替换：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/prompt-templates.ts#L76-L108" target="_blank" rel="noopener">packages/coding-agent/src/core/prompt-templates.ts  L76–108 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export function substituteArgs(content: string, args: string[]): string {
+  const allArgs = args.join(&quot; &quot;);
+
+  return content.replace(
+    /\$\{(\d+|ARGUMENTS|@):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)/g,
+    (_match, defaultTarget, defaultValue, sliceStart, sliceLength, simple) =&gt; {
+      if (defaultTarget) {
+        const value =
+          defaultTarget === &quot;@&quot; || defaultTarget === &quot;ARGUMENTS&quot; ? allArgs : args[parseInt(defaultTarget, 10) - 1];
+        return value ? value : defaultValue;
+      }
+
+      if (sliceStart) {
+        let start = parseInt(sliceStart, 10) - 1; // Convert to 0-indexed (user provides 1-indexed)
+        // Treat 0 as 1 (bash convention: args start at 1)
+        if (start &lt; 0) start = 0;
+
+        if (sliceLength) {
+          const length = parseInt(sliceLength, 10);
+          return args.slice(start, start + length).join(&quot; &quot;);
+        }
+        return args.slice(start).join(&quot; &quot;);
+      }
+
+      if (simple === &quot;ARGUMENTS&quot; || simple === &quot;@&quot;) {
+        return allArgs;
+      }
+
+      const index = parseInt(simple, 10) - 1;
+      return args[index] ?? &quot;&quot;;
+    },
+  );
+}</pre><p>模板展开：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/prompt-templates.ts#L309-L325" target="_blank" rel="noopener">packages/coding-agent/src/core/prompt-templates.ts  L309–325 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export function expandPromptTemplate(text: string, templates: PromptTemplate[]): string {
+  if (!text.startsWith(&quot;/&quot;)) return text;
+
+  const match = text.match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
+  if (!match) return text;
+
+  const templateName = match[1];
+  const argsString = match[2] ?? &quot;&quot;;
+
+  const template = templates.find((t) =&gt; t.name === templateName);
+  if (template) {
+    const args = parseCommandArgs(argsString);
+    return substituteArgs(template.content, args);
+  }
+
+  return text;
+}</pre><p>内置命令在界面层处理（节选）：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/modes/interactive/interactive-mode.ts#L3156-L3160" target="_blank" rel="noopener">packages/coding-agent/src/modes/interactive/interactive-mode.ts  L3156–3160, L3261–3270 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">private setupEditorSubmitHandler(): void {
+  this.defaultEditor.onSubmit = async (text: string) =&gt; {
+    text = text.trim();
+    if (!text) return;
+
+  // …
+if (text === &quot;/new&quot;) {
+  this.editor.setText(&quot;&quot;);
+  await this.handleClearCommand();
+  return;
+}
+if (text === &quot;/compact&quot; || text.startsWith(&quot;/compact &quot;)) {
+  const customInstructions = text.startsWith(&quot;/compact &quot;) ? text.slice(9).trim() : undefined;
+  this.editor.setText(&quot;&quot;);
+  await this.handleCompactCommand(customInstructions);
+  return;</pre><p>示例扩展 plan-mode 的工具切换：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/examples/extensions/plan-mode/index.ts#L21-L25" target="_blank" rel="noopener">packages/coding-agent/examples/extensions/plan-mode/index.ts  L21–25, L90–95 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">// Tools
+const PLAN_MODE_TOOLS = [&quot;read&quot;, &quot;bash&quot;, &quot;grep&quot;, &quot;find&quot;, &quot;ls&quot;, &quot;questionnaire&quot;];
+const NORMAL_MODE_TOOLS = [&quot;read&quot;, &quot;bash&quot;, &quot;edit&quot;, &quot;write&quot;];
+const PLAN_MODE_DISABLED_TOOLS = new Set&lt;string&gt;([&quot;edit&quot;, &quot;write&quot;]);
+const PLAN_MANAGED_TOOLS = new Set&lt;string&gt;([...PLAN_MODE_TOOLS, ...NORMAL_MODE_TOOLS]);
+  // …
+function getPlanModeTools(activeToolNames: string[]): string[] {
+  return uniqueToolNames([
+    ...activeToolNames.filter((name) =&gt; !PLAN_MODE_DISABLED_TOOLS.has(name)),
+    ...PLAN_MODE_TOOLS,
+  ]);
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 的斜杠命令是一个 Rust 枚举（<code>SlashCommand</code>），/plan、/goal、/compact、/review 等都是<b>内置</b>功能，深度集成到协议与核心中。pi 选择把这些留给扩展。见 <a href="../codex/l18.html">Codex 第 18 课 · 斜杠命令</a>、<a href="../codex/l19.html">Codex 第 19 课 · /plan 与 update_plan</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">两个模板 + 官方 plan-mode 示例扩展（直接从 pi-mono 复制到临时项目）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l16.ts &lt;&lt;&#x27;EOF&#x27;
+import { readFileSync } from &quot;node:fs&quot;;
+import { fauxAssistantMessage } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { fauxSession } from &quot;./faux-session.ts&quot;;
+
+const ex = &quot;../packages/coding-agent/examples/extensions/plan-mode&quot;;
+const { session } = await fauxSession(Array.from({ length: 6 }, () =&gt; fauxAssistantMessage(&quot;ok&quot;)), {
+  files: {
+    &quot;.pi/prompts/review.md&quot;: &quot;---\ndescription: 审查改动\nargument-hint: \&quot;[重点]\&quot;\n---\n审查暂存区的改动，重点关注 ${1:-正确性与安全}。其余参数：${@:2}\n&quot;,
+    &quot;.pi/prompts/fix.md&quot;: &quot;修复 issue #$1：$ARGUMENTS\n&quot;,
+    // 官方示例扩展：/plan 只读计划模式
+    &quot;.pi/extensions/plan-mode/index.ts&quot;: readFileSync(`${ex}/index.ts`, &quot;utf8&quot;),
+    &quot;.pi/extensions/plan-mode/utils.ts&quot;: readFileSync(`${ex}/utils.ts`, &quot;utf8&quot;),
+  },
+});
+
+const lastUser = () =&gt; { const u = session.messages.filter((m) =&gt; m.role === &quot;user&quot;).at(-1) as any; return u.content.map((c: any) =&gt; c.text).join(&quot;&quot;); };
+for (const input of [&quot;/review&quot;, &quot;/review 并发 \&quot;API 兼容性\&quot; 性能&quot;, &quot;/fix 42 登录 超时&quot;, &quot;/unknown 你好&quot;]) {
+  await session.prompt(input);
+  console.log(`${input}\n   → ${lastUser().trim()}`);
+}
+
+console.log(&quot;\n/plan 之前的活动工具:&quot;, session.agent.state.tools.map((t) =&gt; t.name).join(&quot;, &quot;));
+await session.prompt(&quot;/plan&quot;);
+console.log(&quot;/plan 之后的活动工具:&quot;, session.agent.state.tools.map((t) =&gt; t.name).join(&quot;, &quot;));
+session.dispose();
+EOF
+cd pi-mono/scratch &amp;&amp; node l16.ts</pre><pre class="out">/review
+   → 审查暂存区的改动，重点关注 正确性与安全。其余参数：
+/review 并发 &quot;API 兼容性&quot; 性能
+   → 审查暂存区的改动，重点关注 并发。其余参数：API 兼容性 性能
+/fix 42 登录 超时
+   → 修复 issue #42：42 登录 超时
+/unknown 你好
+   → /unknown 你好
+
+/plan 之前的活动工具: read, bash, edit, write
+/plan 之后的活动工具: read, bash, grep, find, ls</pre></div></div><div class="st"><span class="n">02</span><div><p>看看 plan-mode 允许哪些 bash 命令：</p><pre class="cmd">cd pi-mono/packages/coding-agent/examples/extensions/plan-mode &amp;&amp; grep -n -A12 &quot;SAFE_PATTERNS = &quot; utils.ts | head -16</pre><pre class="out">44:const SAFE_PATTERNS = [
+45-	/^\s*cat\b/,
+46-	/^\s*head\b/,
+47-	/^\s*tail\b/,
+48-	/^\s*less\b/,
+49-	/^\s*more\b/,
+50-	/^\s*grep\b/,
+51-	/^\s*find\b/,
+52-	/^\s*ls\b/,
+53-	/^\s*pwd\b/,
+54-	/^\s*echo\b/,
+55-	/^\s*printf\b/,
+56-	/^\s*wc\b/,</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一个 /commit 模板</h3><p>写 <code>.pi/prompts/commit.md</code>：让模型查看 <code>git diff --staged</code>，按 Conventional Commits 写提交信息；第一个参数是类型（默认 feat），其余参数是额外说明。然后回答：如果同时存在名为 commit 的扩展命令，<code>/commit</code> 会执行哪个？</p><details><summary>查看参考答案</summary><div><pre>---
+description: 根据暂存区生成提交信息并提交
+argument-hint: "[type] [说明…]"
+---
+运行 git diff --staged 查看改动，然后用 Conventional Commits 格式写提交信息并执行 git commit。
+类型：${1:-feat}
+额外说明：${@:2}</pre><p>扩展命令优先：<code>AgentSession.prompt</code> 首先尝试执行扩展命令（找到就直接执行并返回），模板展开在最后一步，根本不会被到达。内置命令更早——在界面层就被拦截，所以扩展也无法用同名覆盖 /model 之类的内置命令。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>内置命令</b>：定义在 <code>core/slash-commands.ts</code>（settings、model、tree、fork、clone、compact、resume、new、reload、login、export、share、trust……），由 <code>interactive-mode.ts</code> 的编辑器提交处理器逐一匹配。它们属于 UI 层，print/RPC 模式有各自的对应方式。</li><li><b>未被界面处理的输入</b>进入 <code>AgentSession.prompt</code>：扩展命令 → input 事件 → <code>/skill:</code> 展开 → 提示模板展开（第 2 课的顺序）。不认识的 <code>/xxx</code> 原样作为文本发给模型。</li><li><b>提示模板</b>：<code>~/.pi/agent/prompts/*.md</code> 或项目 <code>.pi/prompts/*.md</code>，文件名就是命令名；frontmatter 可写 description、argument-hint。参数按类 shell 规则解析（引号内的空格保留）。</li><li><b>占位符</b>：<code>$1</code>、<code>$2</code>…；<code>$@</code> / <code>$ARGUMENTS</code>（全部参数）；<code>${1:-默认}</code>；<code>${@:N}</code>、<code>${@:N:L}</code>（切片）。替换只做一层，参数中的 <code>$1</code> 不会被再次替换。</li><li><b>模板 vs 技能 vs 扩展命令</b>：模板只是可复用的文字；技能是带资源文件、可被模型自主选用的说明书；扩展命令执行代码。</li><li><b>计划模式是扩展</b>：示例 <code>plan-mode</code> 注册 <code>/plan</code> 命令和 <code>--plan</code> 标志，用 <code>setActiveTools</code> 去掉 edit/write、加入 grep/find/ls，并通过 <code>tool_call</code> 钩子只允许白名单内的只读 bash 命令；计划中的步骤从 “Plan:” 段落提取，执行时用 <code>[DONE:n]</code> 标记进度。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 17</div><a class="big" href="l17.html">pi-tui：差分渲染的终端界面 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l16.js"></script>
+</body></html>

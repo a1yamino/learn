@@ -1,0 +1,110 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 16 课 · 代码坏味道（下）：类、耦合与启发式</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 16 课</span><span class="sp"></span><a href="l15.html">← 第 15 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 16 课</div><h1>代码坏味道（下）：类、耦合与启发式</h1>
+<p>本课整理与类和模块之间关系相关的坏味道：发散式变化（一个类因多种原因被修改）、散弹式修改（一个变化要改许多类）、依恋情结（方法更关心别的类的数据）、过长的消息链、中间人、不恰当的亲密关系、被拒绝的遗赠、全局可变数据、重复的 switch，以及书中第 17 章的一些通用启发式：不同抽象层级混杂、基类依赖派生类、不该有的人为耦合、封装条件、避免否定条件、隐藏的时间耦合。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">发散式变化 vs 散弹式修改</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：闻一闻（下）</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">书中的其他启发式</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">用 git 发现散弹式修改</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>发散式变化 vs 散弹式修改</h2><div class="goal">同一个原则（一个变化原因对应一个模块）的两种违反。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：闻一闻（下）</h2><div class="goal">选择一段代码。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>书中的其他启发式</h2><div class="goal">第 17 章还列出了许多通用的检查项，这里选出最实用的几条。</div></div></div>
+<table class="tbl"><tr><th>启发式</th><th>说明</th></tr>
+<tr><td>基类不依赖派生类</td><td>基类中出现 <code>if isinstance(self, Special)</code> 说明抽象泄漏了</td></tr>
+<tr><td>信息过多</td><td>模块暴露的接口越少越好；不需要公开的就设为私有</td></tr>
+<tr><td>不恰当的静态方法</td><td>如果函数可能需要多态行为，就不要做成静态方法</td></tr>
+<tr><td>使用解释性变量</td><td>把复杂表达式的中间结果命名，比注释更好</td></tr>
+<tr><td>函数名应说明行为</td><td><code>date.add(5)</code>：加 5 天？5 周？修改自身还是返回新对象？→ <code>add_days_to</code> / <code>days_later(5)</code></td></tr>
+<tr><td>理解算法</td><td>不要靠反复试错让测试通过；先理解它为什么正确</td></tr>
+<tr><td>用多态替代 if/else</td><td>“一个 switch 原则”：同一选择只出现一次，用于创建多态对象</td></tr>
+<tr><td>遵循约定</td><td>团队的约定比个人偏好重要</td></tr>
+<tr><td>边界条件封装</td><td><code>level + 1</code> 出现在多处 → <code>next_level = level + 1</code></td></tr></table>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>用 git 发现散弹式修改</h2><div class="goal">经常一起被修改的文件，往往藏着一个应该合并的概念。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">修复依恋情结与隐藏的时间耦合。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>之前：方法依恋别人的数据；步骤依赖隐式字段。</p><pre class="cmd">cat &gt; gen.py &lt;&lt;&#x27;EOF&#x27;
+class Customer:
+    def __init__(self, tier, years, country):
+        self.tier, self.years, self.country = tier, years, country
+
+class Invoice:
+    def shipping(self, c):
+        if c.tier == &quot;gold&quot; and c.years &gt; 3:
+            return 0
+        return 10 if c.country == &quot;CN&quot; else 30
+
+class ReportGenerator:
+    def load(self, raw):
+        self.rows = [r.split(&quot;,&quot;) for r in raw]
+    def summarize(self):
+        self.total = sum(int(r[1]) for r in self.rows)
+    def render(self):
+        return f&quot;total={self.total}&quot;
+EOF
+python3 -c &quot;
+from gen import *
+g = ReportGenerator()
+g.load([&#x27;a,1&#x27;, &#x27;b,2&#x27;])
+try:
+    print(g.render())   # 忘了 summarize()
+except AttributeError as e:
+    print(&#x27;AttributeError:&#x27;, e)&quot;</pre><pre class="out">AttributeError: &#x27;ReportGenerator&#x27; object has no attribute &#x27;total&#x27;</pre></div></div><div class="st"><span class="n">02</span><div><p>之后：行为移到数据旁边；数据流强制顺序。</p><pre class="cmd">cat &gt; gen.py &lt;&lt;&#x27;EOF&#x27;
+from dataclasses import dataclass
+
+FREE_SHIPPING_MIN_YEARS = 3
+
+@dataclass(frozen=True)
+class Customer:
+    tier: str
+    years: int
+    country: str
+
+    def shipping_fee(self):
+        if self.tier == &quot;gold&quot; and self.years &gt; FREE_SHIPPING_MIN_YEARS:
+            return 0
+        return 10 if self.country == &quot;CN&quot; else 30
+
+def parse(raw):
+    return [line.split(&quot;,&quot;) for line in raw]
+
+def summarize(rows):
+    return sum(int(amount) for _, amount in rows)
+
+def render(total):
+    return f&quot;total={total}&quot;
+
+def report(raw):
+    return render(summarize(parse(raw)))
+EOF
+python3 -c &quot;
+from gen import *
+print(report([&#x27;a,1&#x27;, &#x27;b,2&#x27;]))
+print(Customer(&#x27;gold&#x27;, 5, &#x27;US&#x27;).shipping_fee(), Customer(&#x27;basic&#x27;, 1, &#x27;CN&#x27;).shipping_fee())&quot;</pre><pre class="out">total=3
+0 10</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>选择方向</h3><p><code>Order</code> 类中有一个方法 <code>discount()</code>，它读取 <code>customer.tier</code>、<code>customer.years</code>、<code>customer.coupons</code>，以及 <code>self.total</code>。它应该留在 Order、移到 Customer，还是放到新的地方？说出你的判断依据。</p><details><summary>查看参考答案</summary><div><p>它同时依恋两个对象。判断依据是“<b>什么变化会导致它改变</b>”：</p><ul><li>如果折扣规则主要是“会员等级的权益”（由会员体系决定），移到 <code>Customer.discount_for(total)</code>，Order 只传入金额。</li><li>如果折扣规则经常变化、由营销团队调整、还会涉及商品与活动，提取一个 <code>DiscountPolicy.discount(order, customer)</code>（策略对象），两者都不依恋。</li><li>只有当它主要依赖订单内容时才留在 Order。</li></ul><p>“依恋情结”提示的是数据与行为离得太远；解决方案是让行为靠近变化原因所在的地方。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>发散式变化与散弹式修改是一对</b>：前者是一个类承担了多个变化原因（拆分它）；后者是一个变化原因散落在多个类（合并它们）。目标是让“一个变化原因 ↔ 一个模块”。</li><li><b>依恋情结</b>：一个方法频繁访问另一个对象的数据，计算的逻辑应搬到数据所在的类（移动函数）。“把行为放在数据旁边”。</li><li><b>消息链与中间人</b>：<code>a.b().c().d()</code> 让调用方依赖整条结构（隐藏委托）；但如果一个类的一半方法都只是转发给另一个对象，它就成了多余的中间人（移除中间人）。两者之间需要平衡。</li><li><b>全局可变数据</b>：任何地方都能修改，因此任何地方都可能是 bug 的来源。封装它（只能通过函数修改），缩小作用域，或改为不可变。</li><li><b>封装条件、避免否定</b>：<code>if timer.has_expired() and not timer.is_recurrent()</code> → <code>if should_be_deleted(timer)</code>；<code>if not buffer.should_not_compact()</code> → <code>if buffer.should_compact()</code>。</li><li><b>隐藏的时间耦合</b>：必须先调用 <code>a()</code> 再调用 <code>b()</code>，但代码中没有任何体现。让每一步的输出成为下一步的输入，顺序就由数据流强制。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 17</div><a class="big" href="l17.html">重构手法：提取、内联、移动与以多态取代条件 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l16.js"></script>
+</body></html>

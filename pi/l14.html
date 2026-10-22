@@ -1,0 +1,164 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pi 第 14 课 · 上下文压缩（compaction）</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">pi</a><span class="crumb">第 14 课</span><span class="sp"></span><a href="l13.html">← 第 13 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">pi · 第 14 课</div><h1>上下文压缩（compaction）</h1>
+<p>长时间工作的 agent 迟早会撑满上下文窗口。pi 的办法是<b>压缩</b>：用模型把较早的对话总结成一份结构化的“检查点”，保留最近的若干消息原文，之后发给模型的就是“系统提示 + 摘要 + 近期消息”。原始消息仍完整留在会话文件里。本课阅读 <code>core/compaction/compaction.ts</code>（1104 行），并用 faux 模型扮演“摘要器”，亲眼看到压缩时发出的请求。约 55 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">压缩前后</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：会发生什么？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>压缩前后</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：会发生什么？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>触发条件：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/compaction/compaction.ts#L267-L270" target="_blank" rel="noopener">packages/coding-agent/src/core/compaction/compaction.ts  L267–270 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
+  if (!settings.enabled) return false;
+  return contextTokens &gt; contextWindow - settings.reserveTokens;
+}</pre><p>寻找切点：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/compaction/compaction.ts#L446-L474" target="_blank" rel="noopener">packages/coding-agent/src/core/compaction/compaction.ts  L446–474 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">export function findCutPoint(
+  entries: SessionEntry[],
+  startIndex: number,
+  endIndex: number,
+  keepRecentTokens: number,
+): CutPointResult {
+  const cutPoints = findValidCutPoints(entries, startIndex, endIndex);
+
+  if (cutPoints.length === 0) {
+    return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
+  }
+
+  // Walk backwards from newest, accumulating estimated message sizes
+  let accumulatedTokens = 0;
+  let cutIndex = cutPoints[0]; // Default: keep from first message (not header)
+
+  for (let i = endIndex - 1; i &gt;= startIndex; i--) {
+    const entry = entries[i];
+    const messageTokens = sessionEntryToContextMessages(entry).reduce(
+      (sum, message) =&gt; sum + estimateTokens(message),
+      0,
+    );
+    if (messageTokens === 0) continue;
+    accumulatedTokens += messageTokens;
+
+    // Check if we&#x27;ve exceeded the budget
+    if (accumulatedTokens &gt;= keepRecentTokens) {
+      // Prefer the closest valid cut point at or after this entry. If trailing
+      // tool results exceed the budget by themselves, keep their preceding</pre><p>摘要提示（节选）：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/badlogic/pi-mono/blob/db774055e3ecae05ab6eae8656454cde98e36780/packages/coding-agent/src/core/compaction/compaction.ts#L507-L537" target="_blank" rel="noopener">packages/coding-agent/src/core/compaction/compaction.ts  L507–537 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+
+Use this EXACT format:
+
+## Goal
+[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+
+## Constraints &amp; Preferences
+- [Any constraints, preferences, or requirements mentioned by user]
+- [Or &quot;(none)&quot; if none were mentioned]
+
+## Progress
+### Done
+- [x] [Completed tasks/changes]
+
+### In Progress
+- [ ] [Current work]
+
+### Blocked
+- [Issues preventing progress, if any]
+
+## Key Decisions
+- **[Decision]**: [Brief rationale]
+
+## Next Steps
+1. [Ordered list of what should happen next]
+
+## Critical Context
+- [Any data, examples, or references needed to continue]
+- [Or &quot;(none)&quot; if not applicable]
+</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 Codex 对照</b>：Codex 也有 <code>/compact</code> 与自动压缩（达到 token 上限时），实现上有两种路径：本地用模型生成摘要，或在支持的 OpenAI 模型上调用服务端的远程压缩。见 <a href="../codex/l16.html">Codex 第 16 课 · 压缩与 /compact</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">把 keepRecentTokens 调小，让 faux 模型扮演摘要器，观察压缩的两次请求与压缩后的转录。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l14.ts &lt;&lt;&#x27;EOF&#x27;
+import { fauxAssistantMessage } from &quot;@earendil-works/pi-ai/compat&quot;;
+import { fauxSession } from &quot;./faux-session.ts&quot;;
+
+const long = (s: string) =&gt; s + &quot;。&quot; + &quot;细节&quot;.repeat(2000);
+const brief = (m: any) =&gt; m.role === &quot;compactionSummary&quot; ? `compactionSummary  ${m.summary.replace(/\n+/g, &quot; &quot;).slice(0, 70)} …` : `${m.role.padEnd(18)} ${(typeof m.content === &quot;string&quot; ? m.content : m.content.map((c: any) =&gt; c.text ?? &quot;&quot;).join(&quot;&quot;)).replace(/(细节)+/g, &quot;细节…&quot;).slice(0, 40)}`;
+const seen: string[] = [];
+const summarizer = (ctx: any) =&gt; {
+  const last = ctx.messages.at(-1);
+  const text = typeof last.content === &quot;string&quot; ? last.content : last.content.map((c: any) =&gt; c.text).join(&quot;&quot;);
+  seen.push(text.replace(/(细节)+/g, &quot;细节…&quot;));
+  return fauxAssistantMessage(seen.length === 1 ? &quot;## Goal\n实现数据库层\n## Progress\n### Done\n- [x] src/db.ts&quot; : &quot;## 本轮前半部分\n用户要求加连接池&quot;);
+};
+const { session } = await fauxSession([
+  fauxAssistantMessage(long(&quot;第一轮：已创建 src/db.ts&quot;)),
+  fauxAssistantMessage(long(&quot;第二轮：已为 db.ts 添加连接池&quot;)),
+  fauxAssistantMessage(long(&quot;第三轮：测试通过&quot;)),
+  // 接下来两个回复给“摘要器”：一次总结更早的历史，一次总结被切开的那一轮的前半部分
+  summarizer, summarizer,
+  fauxAssistantMessage(&quot;好的，接着写文档。&quot;),
+], { settings: { compaction: { keepRecentTokens: 1500 } } });
+
+for (const p of [&quot;建一个数据库模块&quot;, &quot;加连接池&quot;, &quot;跑测试&quot;]) await session.prompt(p);
+console.log(&quot;压缩前发给模型的消息数:&quot;, session.messages.length);
+
+const r = await session.compact(&quot;重点保留文件路径&quot;);
+console.log(&quot;tokensBefore:&quot;, r.tokensBefore, &quot;| firstKeptEntryId 存在:&quot;, !!r.firstKeptEntryId);
+seen.forEach((t, i) =&gt; console.log(`摘要请求 ${i + 1}：\n  ` + t.split(&quot;\n&quot;).filter(Boolean).slice(0, 5).join(&quot;\n  &quot;).slice(0, 300)));
+
+await session.prompt(&quot;继续&quot;);
+console.log(&quot;\n压缩后转录：&quot;);
+for (const m of session.messages) console.log(&quot;  &quot; + (m.role === &quot;system&quot; ? &quot;system&quot; : brief(m)));
+const types = session.sessionManager.getEntries().map((e) =&gt; e.type);
+console.log(&quot;\n会话文件条目:&quot;, types.join(&quot;, &quot;));
+session.dispose();
+EOF
+cd pi-mono/scratch &amp;&amp; node l14.ts</pre><pre class="out">压缩前发给模型的消息数: 7
+tokensBefore: 7498 | firstKeptEntryId 存在: true
+摘要请求 1：
+  &lt;conversation&gt;
+  [User]: 建一个数据库模块
+  [Assistant]: 第一轮：已创建 src/db.ts。细节…
+  &lt;/conversation&gt;
+  The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+摘要请求 2：
+  # Conversation
+  [User]: 加连接池
+  # Instructions
+  The messages above are earlier context from an ongoing conversation. Later messages are stored separately and do not need to be reconstructed.
+  Create a concise checkpoint of the user&#x27;s request and the progress shown above. This checkpoint will be pl
+
+压缩后转录：
+  system
+  compactionSummary  ## Goal 实现数据库层 ## Progress ### Done - [x] src/db.ts --- **Turn Context …
+  assistant          第二轮：已为 db.ts 添加连接池。细节…
+  user               跑测试
+  assistant          第三轮：测试通过。细节…
+  user               继续
+  assistant          好的，接着写文档。
+
+会话文件条目: model_change, thinking_level_change, message, message, message, message, message, message, message, compaction, message, message</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为什么序列化成文本？</h3><p>摘要请求把整段对话变成一条用户消息里的 <code>&lt;conversation&gt;[User]: … [Assistant]: …</code> 文本，而不是把原消息原样作为多轮对话发给模型。列出两个原因。再思考：摘要中为什么特别要求“保留确切的文件路径、函数名和错误信息”？</p><details><summary>查看参考答案</summary><div><p>原因：①避免模型“继续对话”——如果以原始多轮形式发送，最后一条是 assistant 或工具结果，模型倾向于接着干活而不是总结；变成一段待总结的材料，任务就清楚了。②摆脱协议约束——原始消息包含工具调用/结果配对、thinking 签名等，换个模型（摘要可能用便宜的模型）就需要转换，有的 API 还会拒绝；纯文本对任何模型都有效。另外也禁用了提示缓存写入，因为这种一次性请求不会被复用。</p><p>精确信息：压缩后 agent 要继续工作，它会根据摘要去 read 文件、重跑命令、搜索错误。“修改了数据库模块”无法行动，“修改了 src/db.ts 的 createPool()，错误 ECONNREFUSED 127.0.0.1:5432”可以直接行动。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>何时触发</b>：<code>contextTokens &gt; contextWindow − reserveTokens</code>（reserve 默认 16384）。在多轮运行中，工具结果追加后、下一次模型请求前检查（通过 <code>prepareNextTurn</code> 钩子）；新的用户提示前也检查。也可以手动 <code>/compact [指令]</code>。</li><li><b>溢出恢复</b>：提供方报“上下文溢出”或过早的 length 停止时，可触发一次“压缩后重试”。</li><li><b>切点</b>：从最新往回累加估算的 token，直到达到 <code>keepRecentTokens</code>（默认 20000）。可以在 user、assistant、bash 执行、自定义消息处切开，<b>永远不在工具结果处切开</b>（结果必须跟着它的调用）。</li><li><b>切开的一轮</b>：如果切点落在某个用户消息开启的一轮中间，会生成两份摘要：更早历史的摘要 + 这一轮前半部分的摘要，然后合并。</li><li><b>摘要格式</b>：固定的 Markdown 结构——Goal、Constraints &amp; Preferences、Progress（Done / In Progress / Blocked）、Key Decisions、Next Steps、Critical Context，要求保留确切的文件路径、函数名和错误信息。再次压缩时使用“更新摘要”提示，把旧摘要放在 <code>&lt;previous-summary&gt;</code> 中增量更新。<code>/compact</code> 的指令以 “Additional focus:” 追加。</li><li><b>持久化</b>：追加一个 <code>compaction</code> 条目（summary、firstKeptEntryId、tokensBefore、usage、details 中累计的读/改文件列表）。构建上下文时，最新的压缩条目之前、firstKeptEntryId 之前的消息被摘要替代。</li><li><b>扩展可接管</b>：<code>session_before_compact</code> 事件允许扩展取消压缩或提供自己的摘要。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 15</div><a class="big" href="l15.html">扩展系统：工具、命令与事件钩子 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l14.js"></script>
+</body></html>
