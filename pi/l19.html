@@ -62,14 +62,14 @@ Safety comes from limiting the files, credentials, processes, and network servic
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">脚本在临时目录里构造一个“陌生项目”：带一个项目扩展和一个 <code>build</code> 目录；faux 模型总是要求执行 <code>rm -rf build</code>。一切发生在临时 HOME 与临时目录中，不会碰你的文件。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>运行实验。</p><pre class="cmd">cat &gt; pi-mono/scratch/l19.sh &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。脚本在临时目录里构造一个“陌生项目”：带一个项目扩展和一个 <code>build</code> 目录；faux 模型总是要求执行 <code>rm -rf build</code>。一切发生在临时 HOME 与临时目录中，不会碰你的文件。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>运行实验。</p><pre class="cmd">cat &gt; scratch/l19.sh &lt;&lt;&#x27;EOF&#x27;
 #!/bin/bash
 # 信任边界实验：项目扩展是否加载？危险命令谁来拦？
-ROOT=&quot;$(cd .. &amp;&amp; pwd)&quot;; CLI=&quot;node $ROOT/packages/coding-agent/dist/cli.js&quot;
+ROOT=&quot;$PWD&quot;; CLI=(node &quot;$ROOT/packages/coding-agent/dist/cli.js&quot;)
 export HOME=$(mktemp -d); W=$(mktemp -d)
 # 一个让模型执行 &quot;rm -rf build&quot; 的 faux 扩展
-cat &gt; $W/faux.ts &lt;&lt;&#x27;TS&#x27;
+cat &gt; &quot;$W&quot;/faux.ts &lt;&lt;&#x27;TS&#x27;
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from &quot;@earendil-works/pi-ai/compat&quot;;
 export default function (pi: any) {
   const f = registerFauxProvider();
@@ -82,19 +82,19 @@ export default function (pi: any) {
 }
 TS
 # 被测项目：带一个项目扩展
-P=$W/project; mkdir -p $P/.pi/extensions $P/build
-echo &#x27;export default function () { console.error(&quot;!! 项目扩展被加载并执行了&quot;); }&#x27; &gt; $P/.pi/extensions/hello.ts
-cd $P
-PI=&quot;$CLI --no-session -e $W/faux.ts --model faux/faux-1&quot;
-echo &quot;== 1. 默认（非交互，无保存的决定）&quot;; $PI -p &quot;清理&quot; &lt;/dev/null; ls -d build 2&gt;/dev/null || echo &quot;(build 已被删除)&quot;
+P=$W/project; mkdir -p &quot;$P&quot;/.pi/extensions &quot;$P&quot;/build
+echo &#x27;export default function () { console.error(&quot;!! 项目扩展被加载并执行了&quot;); }&#x27; &gt; &quot;$P&quot;/.pi/extensions/hello.ts
+cd &quot;$P&quot;
+PI=(&quot;${CLI[@]}&quot; --no-session -e &quot;$W/faux.ts&quot; --model faux/faux-1)
+echo &quot;== 1. 默认（非交互，无保存的决定）&quot;; &quot;${PI[@]}&quot; -p &quot;清理&quot; &lt;/dev/null; ls -d build 2&gt;/dev/null || echo &quot;(build 已被删除)&quot;
 mkdir -p build
-echo &quot;== 2. --approve：信任本项目&quot;; $PI --approve -p &quot;清理&quot; &lt;/dev/null
+echo &quot;== 2. --approve：信任本项目&quot;; &quot;${PI[@]}&quot; --approve -p &quot;清理&quot; &lt;/dev/null
 mkdir -p build
 echo &quot;== 3. 加载官方示例 permission-gate&quot;
-$PI -e $ROOT/packages/coding-agent/examples/extensions/permission-gate.ts -p &quot;清理&quot; &lt;/dev/null
+&quot;${PI[@]}&quot; -e &quot;$ROOT&quot;/packages/coding-agent/examples/extensions/permission-gate.ts -p &quot;清理&quot; &lt;/dev/null
 ls -d build &amp;&amp; echo &quot;(build 仍在)&quot;
 EOF
-cd pi-mono/scratch &amp;&amp; bash l19.sh 2&gt;&amp;1</pre><pre class="out">== 1. 默认（非交互，无保存的决定）
+bash scratch/l19.sh 2&gt;&amp;1</pre><pre class="out">== 1. 默认（非交互，无保存的决定）
 工具结果：&quot;已删除\n&quot;
 (build 已被删除)
 == 2. --approve：信任本项目
