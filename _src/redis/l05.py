@@ -11,13 +11,15 @@ def secs(prac,E):
 ('跳表查找','从高层快速逼近目标。','<div id="p2"></div>'),
 ('动手：复杂度与耗时','一个有 100 万成员的 ZSet <code>rank</code>。选择命令，看复杂度和大致耗时。','<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>'),
 ('相关命令','观察字典与有序集合。','<div id="t4"></div>'),
-('在你的电脑上练习','在 redis-cli 中执行。',prac([
+('在你的电脑上练习','以下只在临时本地容器中启用 DEBUG，不改课程主容器；实验结束后删除它。',prac([
+ ('启动隔离的调试实例并进入 redis-cli。','docker run -d --name learn-review-rdebug redis:8.10 redis-server --enable-debug-command local\ndocker exec -it learn-review-rdebug redis-cli','127.0.0.1:6379>'),
  ('造 100 万个键（DEBUG POPULATE 在官方镜像中默认禁用，这里用 Lua）。','EVAL "for i=1,1000000 do redis.call(\'SET\',\'key:\'..i,i) end return 1" 0','(integer) 1'),
  ('看键空间的哈希表：桶数与元素数。','DEBUG HTSTATS 0','[Dictionary HT]\n Hash table 0 stats (main hash table):\n table size: 1048576\n number of elements: 1000000\n …'),
- ('SCAN 每次返回的数量不固定。','SCAN 0 COUNT 10\nSCAN 393216 COUNT 10','1) "393216"\n2)  1) "key:5521"\n    …\n   11) "key:90213"\n1) "720896"\n2) 1) "key:12"\n   …'),
+ ('SCAN 每次返回的数量不固定。','SCAN 0 COUNT 10\n# 每次使用上一条返回的游标继续，直到返回 0；下面的游标只是示意。\nSCAN 393216 COUNT 10','1) "393216"\n2)  1) "key:5521"\n    …\n   11) "key:90213"\n1) "720896"\n2) 1) "key:12"\n   …'),
  ('造一个 10 万成员的 ZSet，编码为 skiplist。','EVAL "for i=1,100000 do redis.call(\'ZADD\',\'rank\',math.random(1,1000000),\'u\'..i) end return 1" 0\nOBJECT ENCODING rank','(integer) 1\n"skiplist"'),
  ('O(1) 与 O(log N) 的操作。','ZSCORE rank u42\nZREVRANK rank u42\nZRANGE rank 0 4 REV WITHSCORES','"873120"\n(integer) 12699\n1) "u71203"\n2) "999987"\n…'),
- ('用 SLOWLOG 看 O(N) 命令。','CONFIG SET slowlog-log-slower-than 1000\nZRANGE rank 0 -1\nSLOWLOG GET 1','…\n1) 1) (integer) 0\n   2) (integer) 1761101230\n   3) (integer) 38211\n   4) 1) "ZRANGE"\n      2) "rank"\n      3) "0"\n      4) "-1"')],
+ ('用 SLOWLOG 看 O(N) 命令。','CONFIG SET slowlog-log-slower-than 1000\nZRANGE rank 0 -1\nSLOWLOG GET 1','…\n1) 1) (integer) 0\n   2) (integer) 1761101230\n   3) (integer) 38211\n   4) 1) "ZRANGE"\n      2) "rank"\n      3) "0"\n      4) "-1"'),
+ ('退出 redis-cli 后清理实验容器。','exit\ndocker rm -f learn-review-rdebug','learn-review-rdebug')],
  ('分页读取一个大排行榜','排行榜 ZSet 有 500 万成员，前端要按名次分页，每页 50 条，用户经常跳到第 2 万页附近。<code>ZRANGE rank 1000000 1000049 REV</code> 的复杂度是多少？还有什么需要注意的？如果要“从我的名次附近开始显示”，怎么写？',
- '<p>ZRANGE 按下标取范围的复杂度是 O(log N + M)：借助每层的跨度信息，跳表可以在 O(log N) 内定位到第 100 万名，再顺序取 M = 50 个。所以深分页在 Redis 的 ZSet 里依然很快（和数据库 OFFSET 不同），不需要特殊处理。</p><pre class="cmd">ZREVRANK rank u42          → (integer) 812345\nZRANGE rank 812320 812370 REV WITHSCORES</pre><p>注意：两条命令之间排名可能变化，对展示通常无妨；需要一致时可以用 Lua 把两步放在一起执行。分数相同的成员按成员名的字典序排列，排名会因此看起来“不公平”，常见做法是把时间编码进分数（例如 分数 × 10<sup>10</sup> + (最大时间戳 − 达成时间)），让先达到的排在前面。不要用 ZRANGE 0 -1 取全部。</p>'))),
+ '<p>ZRANGE 按下标取范围的复杂度是 O(log N + M)：借助每层的跨度信息，跳表可以在 O(log N) 内定位到第 100 万名，再顺序取 M = 50 个。所以深分页在 Redis 的 ZSet 里依然很快（和数据库 OFFSET 不同），不需要特殊处理。</p><pre class="cmd">ZREVRANK rank u42          → (integer) 812345\nZRANGE rank 812320 812370 REV WITHSCORES</pre><p>注意：两条命令之间排名可能变化，对展示通常无妨；需要一致时可以用 Lua 把两步放在一起执行。分数相同的成员按成员名的字典序排列，排名会因此看起来“不公平”，常见做法是把时间编码进分数（先根据分数和时间的取值范围分配整数位，确保编码不超过 2<sup>53</sup> − 1；第 21 课给出示例），让先达到的排在前面。不要用 ZRANGE 0 -1 取全部。</p>'))),
 ('自测','选完显示解释。答错可以再选。','<div id="qs"></div>')]
