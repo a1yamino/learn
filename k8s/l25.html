@@ -27,7 +27,10 @@
 </section>
 
 <section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">故意制造几种常见故障，用本课的方法定位。每一步先自己判断，再看预期输出。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>故障一：selector 写错，Service 没有端点。</p><pre class="cmd">kubectl create deploy web --image=nginx:alpine --replicas=2
+<div class="prac"><div class="st"><span class="n">01</span><div><p>先清理本地 learn 集群里前课同名的 web Deployment 和 Service，再创建故障实验。确保 context 是 kind-learn。故障一：selector 写错，Service 没有端点。</p><pre class="cmd">kubectl config use-context kind-learn
+kubectl delete deploy web --ignore-not-found
+kubectl delete svc web --ignore-not-found
+kubectl create deploy web --image=nginx:alpine --replicas=2
 kubectl create service clusterip web --tcp=80 --dry-run=client -o yaml | sed &quot;s/app: web/app: wbe/&quot; | kubectl apply -f -
 kubectl get endpointslices -l kubernetes.io/service-name=web</pre><pre class="out">NAME        ADDRESSTYPE   PORTS     ENDPOINTS   AGE
 web-7xk2p   IPv4          &lt;unset&gt;   &lt;unset&gt;     3s</pre></div></div><div class="st"><span class="n">02</span><div><p>对比 Service 的 selector 和 Pod 的标签，修正。</p><pre class="cmd">kubectl get svc web -o jsonpath=&quot;{.spec.selector}&quot;; echo; kubectl get pods -l app=web --show-labels | tail -1
