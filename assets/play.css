@@ -139,3 +139,4 @@ details{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}summar
 .tot{font:700 28px/1 var(--f);letter-spacing:-.02em;margin-top:14px}
 .grp{font:500 12px/1 var(--m);letter-spacing:.1em;color:var(--sig);padding:40px 0 14px;border-bottom:1px solid var(--line);list-style:none}
 .blk{flex-direction:column;line-height:1.35}
+.tbl{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0 18px;display:block;overflow-x:auto}.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}.tbl th{font:600 12px var(--m);color:var(--ink2);letter-spacing:.04em}.mis>ul,.mis>p{max-width:760px}

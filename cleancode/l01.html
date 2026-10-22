@@ -1,0 +1,134 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clean Code 第 1 课 · 为什么要写整洁的代码：混乱的代价与童子军规则</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Clean Code</a><span class="crumb">第 1 课</span><span class="sp"></span><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Clean Code · 第 1 课</div><h1>为什么要写整洁的代码：混乱的代价与童子军规则</h1>
+<p>《代码整洁之道》开篇的论点：代码被阅读的次数远多于被编写的次数，混乱会让每一次修改变得更慢，最终拖垮团队。本课讲“整洁”到底指什么（几位资深程序员的不同定义），混乱如何以复利方式累积，“以后再清理”为何几乎从不发生，童子军规则（离开时让营地比来时更干净），以及如何把整洁当作专业态度而不是审美偏好。最后也介绍对这本书的常见批评，帮你在本课程中有判断地吸收它。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">混乱的复利</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：哪一个更快读懂？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">“整洁”的几种定义</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">童子军规则：一次签入</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>混乱的复利</h2><div class="goal">一个功能接一个功能地加，看生产率怎么变化。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：哪一个更快读懂？</h2><div class="goal">同一个函数的两个版本。选一个，看读它需要回答的问题。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>“整洁”的几种定义</h2><div class="goal">书中引用了几位资深程序员的看法，归纳起来是同一件事的不同侧面。</div></div></div>
+<table class="tbl"><tr><th>侧面</th><th>含义</th><th>反面</th></tr>
+<tr><td>优雅、高效</td><td>逻辑直接，缺陷难以藏身，依赖最少</td><td>绕弯的流程让 bug 有地方躲</td></tr>
+<tr><td>像好文章一样可读</td><td>读起来像在叙述意图，不需要逆向工程</td><td>读者要在脑中模拟执行</td></tr>
+<tr><td>他人可以改进</td><td>有测试、有清楚的边界，别人敢改</td><td>只有作者敢动的代码</td></tr>
+<tr><td>看得出作者在乎</td><td>没有明显可改进之处</td><td>遗留的 TODO、注释掉的代码、随意的命名</td></tr>
+<tr><td>没有重复、表达力强、抽象恰当</td><td>每个概念只在一处表达</td><td>同一规则改三处</td></tr>
+<tr><td>符合预期</td><td>每个函数都基本是你读之前猜的样子</td><td>名为 <code>get_user</code> 的函数还会发邮件</td></tr></table>
+<p>还有一些对本书的讨论值得在开始前知道：</p>
+<ul><li><b>John Ousterhout</b>（《软件设计的哲学》）认为过度拆分出大量很浅的小函数会增加接口数量与阅读跳转，好的模块应该“深”：接口简单、隐藏大量实现。第 3 课会对比两种观点。</li>
+<li>书中一些 Java 重构示例的结果被批评为可读性反而下降（例如依赖大量实例变量在小方法间传递状态）。本课程会指出这些地方，给出更稳妥的写法。</li>
+<li>测试先行、小步重构、命名、去重复、关注点分离等核心观点则被广泛接受。</li></ul>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>童子军规则：一次签入</h2><div class="goal">一次小修改中，顺手做了哪些清理。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">只需要 Python 3（3.10 以上）。在一个空目录里做：先为混乱的版本写测试，再在测试保护下重构。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建混乱的版本 <code>orders.py</code>。</p><pre class="cmd">cat &gt; orders.py &lt;&lt;&#x27;EOF&#x27;
+def calc(l, t):
+    r = 0
+    for i in l:
+        if i[2] == 1 and i[1] &gt; t:
+            r += i[1] * 0.9
+        elif i[2] == 1:
+            r += i[1]
+    return r
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>先写<b>特征测试</b>：把现有行为固定下来（元组：订单号、金额、状态，1 = 已支付）。</p><pre class="cmd">cat &gt; test_orders.py &lt;&lt;&#x27;EOF&#x27;
+import unittest
+from orders import calc
+
+ORDERS = [(1, 100, 1), (2, 300, 1), (3, 500, 0), (4, 200, 1)]
+
+class TestCalc(unittest.TestCase):
+    def test_only_paid_orders_count(self):
+        self.assertEqual(calc([(1, 100, 0)], 1000), 0)
+
+    def test_discount_above_threshold(self):
+        self.assertAlmostEqual(calc([(1, 300, 1)], 250), 270)
+
+    def test_mixed(self):
+        self.assertAlmostEqual(calc(ORDERS, 250), 570)
+
+    def test_threshold_is_exclusive(self):
+        self.assertEqual(calc([(1, 250, 1)], 250), 250)
+
+if __name__ == &quot;__main__&quot;:
+    unittest.main()
+EOF
+python3 -m unittest -v</pre><pre class="out">test_discount_above_threshold (test_orders.TestCalc.test_discount_above_threshold) ... ok
+test_mixed (test_orders.TestCalc.test_mixed) ... ok
+test_only_paid_orders_count (test_orders.TestCalc.test_only_paid_orders_count) ... ok
+test_threshold_is_exclusive (test_orders.TestCalc.test_threshold_is_exclusive) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK</pre></div></div><div class="st"><span class="n">03</span><div><p>在测试保护下重构：引入 <code>Order</code>、改名、命名常量。旧函数保留为一个薄包装，调用方不用一次全改。</p><pre class="cmd">cat &gt; orders.py &lt;&lt;&#x27;EOF&#x27;
+from dataclasses import dataclass
+
+PAID = 1
+DISCOUNT_RATE = 0.9
+
+@dataclass(frozen=True)
+class Order:
+    id: int
+    amount: float
+    status: int
+
+    @property
+    def is_paid(self):
+        return self.status == PAID
+
+def total_of_paid_orders(orders, discount_threshold):
+    total = 0
+    for order in orders:
+        if not order.is_paid:
+            continue
+        if order.amount &gt; discount_threshold:
+            total += order.amount * DISCOUNT_RATE
+        else:
+            total += order.amount
+    return total
+
+def calc(rows, threshold):  # 兼容旧调用方，逐步迁移后删除
+    return total_of_paid_orders([Order(*r) for r in rows], threshold)
+EOF
+python3 -m unittest</pre><pre class="out">....
+----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK</pre></div></div><div class="st"><span class="n">04</span><div><p>确认行为没有变化的同时，代码现在“说出了”它在做什么。</p><pre class="cmd">python3 -c &quot;from orders import Order, total_of_paid_orders as t; print(t([Order(1, 300, 1), Order(2, 100, 0)], 250))&quot;</pre><pre class="out">270.0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>童子军规则：一次小清理</h3><p>在下面这个函数里只做<b>三处</b>最有价值的小改进（不改变行为），并说明为什么选它们：<pre class="cmd">def proc(d):
+    # 检查
+    if d["a"] < 18:
+        return False
+    x = d["e"].split("@")
+    if len(x) != 2:
+        return False
+    # TODO 以后支持手机号
+    return True</pre></p><details><summary>查看参考答案</summary><div><ol><li><b>函数名</b>：<code>proc</code> → <code>is_valid_signup</code>。它返回布尔值并判断注册数据是否合法，名字应该说出来。</li><li><b>字典键</b>：<code>d["a"]</code>、<code>d["e"]</code> → <code>signup["age"]</code>、<code>signup["email"]</code>（或改为数据类）。键名是读者最大的猜谜来源。</li><li><b>魔法数和无用注释</b>：<code>18</code> → <code>MINIMUM_AGE = 18</code>；删除“# 检查”这种复述代码的注释；TODO 移到问题跟踪系统里。</li></ol><p>没有选择大改结构：童子军规则要求的是每次一点点、有测试兜底，而不是在修 bug 时顺手重写模块。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>读远多于写</b>：修改代码之前必须先读懂它，读与写的时间比经常超过 10:1。让代码易读，就是让后续每一次修改都更快。</li><li><b>混乱有复利</b>：每一处“先这样凑合”都会让下一处修改更难，于是又多一处凑合。生产率随时间下降，加人也救不回来，最后常常走向“推倒重写”——而重写的系统又会重复同样的过程。</li><li><b>“以后再清理”通常等于“永不清理”</b>（LeBlanc 定律）。真正可行的是在每次修改时顺手清理一点点。</li><li><b>整洁的特征</b>：意图一目了然、只做一件事并做好、没有重复、有测试保护、最小惊讶——读到的每个函数都基本是你预期的样子。</li><li><b>童子军规则</b>：每次签入代码时，让它比你签出时更干净一点：改一个名字、拆一个长函数、删一处重复。小步、持续、有测试兜底。</li><li><b>有判断地吸收</b>：书中的 Java 示例与“函数越短越好”等主张受到不少批评（例如 Ousterhout 的“深模块”观点）。本课程把原则当成可权衡的工具：目标始终是降低理解与修改的成本，而不是机械地遵守规则。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 02</div><a class="big" href="l02.html">有意义的命名 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l01.js"></script>
+</body></html>
