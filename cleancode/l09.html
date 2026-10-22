@@ -38,7 +38,7 @@ class WeatherClient:
         if q == &quot;nowhere&quot;:
             raise KeyError(&quot;city&quot;)
         return {&quot;data&quot;: {&quot;current&quot;: {&quot;temp_k&quot;: 293.15, &quot;cond&quot;: [{&quot;txt&quot;: &quot;Clear&quot;}]}}}
-EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>学习测试：把我们对它的理解写成测试。</p><pre class="cmd">cat &gt; test_learning.py &lt;&lt;&#x27;EOF&#x27;
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>学习测试：把我们对它的理解写成测试。直接运行并保留失败退出码；不要用 exit=False 或无 pipefail 的 grep 管道把失败伪装成成功。</p><pre class="cmd">cat &gt; test_learning.py &lt;&lt;&#x27;EOF&#x27;
 import unittest
 from vendor_weather import WeatherClient
 
@@ -51,11 +51,16 @@ class LearningWeatherClient(unittest.TestCase):
         with self.assertRaises(KeyError):
             WeatherClient().fetch(&quot;nowhere&quot;)
 
-unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;], exit=False)
+if __name__ == &quot;__main__&quot;:
+    unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;])
 EOF
-python3 test_learning.py 2&gt;&amp;1 | grep -E &quot;ok|FAIL|Ran&quot;</pre><pre class="out">test_temperature_is_in_kelvin (__main__.LearningWeatherClient.test_temperature_is_in_kelvin) ... ok
+python3 test_learning.py</pre><pre class="out">test_temperature_is_in_kelvin (__main__.LearningWeatherClient.test_temperature_is_in_kelvin) ... ok
 test_unknown_city_raises_key_error (__main__.LearningWeatherClient.test_unknown_city_raises_key_error) ... ok
-Ran 2 tests in 0.000s</pre></div></div><div class="st"><span class="n">03</span><div><p>适配器 + 端口 + 假实现：业务代码只认识 <code>Weather</code>。</p><pre class="cmd">cat &gt; weather.py &lt;&lt;&#x27;EOF&#x27;
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK</pre></div></div><div class="st"><span class="n">03</span><div><p>适配器 + 端口 + 假实现：业务代码只认识 <code>Weather</code>。</p><pre class="cmd">cat &gt; weather.py &lt;&lt;&#x27;EOF&#x27;
 from dataclasses import dataclass
 from typing import Protocol
 
