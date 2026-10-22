@@ -26,7 +26,7 @@ Term(document.getElementById('t4'),[
 ['\\d+ events','                    Partitioned table "public.events"\n…\nPartition key: RANGE (created_at)\nPartitions: events_2026_09 FOR VALUES FROM (\'2026-09-01 …\') TO (\'2026-10-01 …\'),\n            events_2026_10 FOR VALUES FROM …,\n            events_default DEFAULT','分区键和所有分区。'],
 ['SELECT * FROM pg_partition_tree(\'events\');','     relid      | parentrelid | isleaf | level\n----------------+-------------+--------+-------\n events         |             | f      |     0\n events_2026_09 | events      | t      |     1\n …','分区树，支持多级分区。'],
 ['CREATE TABLE events_2026_11 (LIKE events INCLUDING ALL);\nALTER TABLE events_2026_11 ADD CONSTRAINT c CHECK (created_at >= \'2026-11-01\' AND created_at < \'2026-12-01\');\nALTER TABLE events ATTACH PARTITION events_2026_11 FOR VALUES FROM (\'2026-11-01\') TO (\'2026-12-01\');','ALTER TABLE','先建好再挂载：已有的 CHECK 约束让 ATTACH 跳过全表验证。'],
-['ALTER TABLE events DETACH PARTITION events_2026_08 CONCURRENTLY;','ALTER TABLE','不阻塞其他查询（不能在事务块中执行）。'],
+['ALTER TABLE events DETACH PARTITION events_2026_08 CONCURRENTLY;','ALTER TABLE','降低父表锁级别；不能在事务块中执行，父表有 DEFAULT 分区时也不允许。此时应使用普通 DETACH，并设置较短的 lock_timeout。'],
 ['SHOW enable_partition_pruning;',' enable_partition_pruning\n--------------------------\n on','默认开启。'],
 ['CREATE EXTENSION pg_partman;\nSELECT partman.create_parent(\'public.events\', \'created_at\', \'1 month\', p_premake => 3);','…','pg_partman 自动预建分区、按保留期删除旧分区，配合其后台进程或定时任务运行。']]);
 Quiz(document.getElementById('qs'),[
