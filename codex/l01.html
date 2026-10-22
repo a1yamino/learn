@@ -1,0 +1,211 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 1 课 · Codex 全景：仓库地图与 crate 分层</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 1 课</span><span class="sp"></span><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 1 课</div><h1>Codex 全景：仓库地图与 crate 分层</h1>
+<p>pi 用约十万行 TypeScript 给出了编码 agent 的最小内核；Codex 则是一个 Rust 工作区，包含 160 多个 crate，核心库 <code>codex-core</code> 一个就有四十多万行（含测试）。多出来的东西几乎都围绕一个主题：<b>让 agent 在真实机器上安全地自主工作</b>——沙箱、审批、执行策略、可恢复的会话、计划与长时间目标。本课画出仓库地图，并用一个假的模型服务器离线跑通真实的 codex。约 35 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个请求穿过哪些 crate</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这个功能在哪个 crate？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个请求穿过哪些 crate</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这个功能在哪个 crate？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>工作区成员（节选）：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/Cargo.toml#L1-L12" target="_blank" rel="noopener">codex-rs/Cargo.toml  L1–12 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">[workspace]
+members = [
+    &quot;aws-auth&quot;,
+    &quot;analytics&quot;,
+    &quot;agent-graph-store&quot;,
+    &quot;agent-message-board-client&quot;,
+    &quot;agent-identity&quot;,
+    &quot;agent-roles&quot;,
+    &quot;backend-client&quot;,
+    &quot;cloud-client&quot;,
+    &quot;bwrap&quot;,
+    &quot;build-info&quot;,</pre><p>CLI 子命令：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/cli/src/main.rs#L150-L162" target="_blank" rel="noopener">codex-rs/cli/src/main.rs  L150–162 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">enum Subcommand {
+    /// Browse all agent sessions on the shared local app-server daemon.
+    Agents(AgentsCommand),
+
+    /// Internal: forward a local TCP socket through an HTTP/3 CONNECT proxy.
+    #[clap(hide = true)]
+    TcpTunnel(codex_tcp_tunnel::Args),
+    /// Run Codex non-interactively.
+    #[clap(visible_alias = &quot;e&quot;)]
+    Exec(ExecCli),
+
+    /// Run a code review non-interactively.
+    Review(ReviewCommand),</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l01.html">pi 第 1 课 · pi 是什么：极简 agent harness 与 monorepo 地图</a>。两者回答的是同一个问题——“一个编码 agent 由什么组成”，但 Codex 的答案多出一整层安全与运维机制。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">先构建，再写假模型服务器与启动脚本。练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>从源码构建 codex（固定提交 c260087；首次约 5–10 分钟，需要 rust-toolchain.toml 指定的工具链，Linux 还需 pkg-config、libssl-dev），并把它放进 PATH。</p><pre class="cmd">cd codex/codex-rs &amp;&amp; cargo build -p codex-cli --bin codex
+export PATH=&quot;$PWD/target/debug:$PATH&quot;</pre></div></div><div class="st"><span class="n">02</span><div><p>假的 Responses API 服务器。</p><pre class="cmd">cat &gt; codex/scratch/mock.py &lt;&lt;&#x27;EOF&#x27;
+#!/usr/bin/env python3
+&quot;&quot;&quot;课程练习用的假 Responses API 服务器（离线，无需 API key）。
+用法：python3 mock.py &lt;剧本.py&gt; &lt;端口&gt; &lt;日志目录&gt;
+剧本里定义 reply(n, body) -&gt; list[dict]：第 n 次请求（从 1 开始）要返回的输出项。
+每次请求的完整 JSON 保存为 &lt;日志目录&gt;/reqNN.json，便于查看 Codex 实际发送了什么。&quot;&quot;&quot;
+import json, sys, os, importlib.util, itertools
+sys.dont_write_bytecode = True
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+spec = importlib.util.spec_from_file_location(&quot;script&quot;, sys.argv[1]); script = importlib.util.module_from_spec(spec); spec.loader.exec_module(script)
+PORT, LOG = int(sys.argv[2]), sys.argv[3]; os.makedirs(LOG, exist_ok=True)
+counter = itertools.count(1)
+
+def msg(text):  # 便捷构造：助手文本消息
+    return {&quot;type&quot;: &quot;message&quot;, &quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: [{&quot;type&quot;: &quot;output_text&quot;, &quot;text&quot;: text}]}
+def call(name, args, cid=None):  # 便捷构造：函数调用
+    return {&quot;type&quot;: &quot;function_call&quot;, &quot;name&quot;: name, &quot;arguments&quot;: json.dumps(args, ensure_ascii=False), &quot;call_id&quot;: cid or f&quot;call_{name}&quot;}
+script.msg, script.call = msg, call
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        self.send_response(200); self.send_header(&quot;content-type&quot;, &quot;application/json&quot;); self.end_headers()
+        self.wfile.write(b&#x27;{&quot;object&quot;:&quot;list&quot;,&quot;data&quot;:[],&quot;models&quot;:[]}&#x27;)
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get(&quot;content-length&quot;, 0))) or b&quot;{}&quot;)
+        n = next(counter)
+        json.dump({&quot;path&quot;: self.path, &quot;body&quot;: body}, open(f&quot;{LOG}/req{n:02d}.json&quot;, &quot;w&quot;), ensure_ascii=False, indent=1)
+        items = script.reply(n, body)
+        self.send_response(200); self.send_header(&quot;content-type&quot;, &quot;text/event-stream&quot;); self.end_headers()
+        def ev(d): self.wfile.write(f&quot;event: {d[&#x27;type&#x27;]}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n&quot;.encode())
+        rid = f&quot;resp_{n}&quot;
+        ev({&quot;type&quot;: &quot;response.created&quot;, &quot;response&quot;: {&quot;id&quot;: rid}})
+        for i, it in enumerate(items):
+            it = {&quot;id&quot;: f&quot;item_{n}_{i}&quot;, **it}
+            if it[&quot;type&quot;] == &quot;message&quot;:
+                ev({&quot;type&quot;: &quot;response.output_item.added&quot;, &quot;output_index&quot;: i, &quot;item&quot;: {**it, &quot;content&quot;: []}})
+                ev({&quot;type&quot;: &quot;response.output_text.delta&quot;, &quot;output_index&quot;: i, &quot;item_id&quot;: it[&quot;id&quot;], &quot;delta&quot;: it[&quot;content&quot;][0][&quot;text&quot;]})
+            ev({&quot;type&quot;: &quot;response.output_item.done&quot;, &quot;output_index&quot;: i, &quot;item&quot;: it})
+        ev({&quot;type&quot;: &quot;response.completed&quot;, &quot;response&quot;: {&quot;id&quot;: rid, &quot;usage&quot;: {&quot;input_tokens&quot;: 1000 * n, &quot;input_tokens_details&quot;: {&quot;cached_tokens&quot;: 0},
+            &quot;output_tokens&quot;: 50, &quot;output_tokens_details&quot;: {&quot;reasoning_tokens&quot;: 0}, &quot;total_tokens&quot;: 1000 * n + 50}}})
+
+ThreadingHTTPServer((&quot;127.0.0.1&quot;, PORT), H).serve_forever()
+EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>启动脚本：临时 CODEX_HOME + 自定义 provider。</p><pre class="cmd">cat &gt; codex/scratch/run.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# run.sh &lt;剧本.py&gt; [codex 参数...]：启动假模型，用临时 CODEX_HOME 运行 codex exec
+# 环境变量 KEEP=1 时保留工作目录；W 指定工作目录
+MODEL=${MODEL:-gpt-5.5}
+SCRIPT=$(realpath &quot;$1&quot;); shift
+export CODEX_HOME=${CODEX_HOME:-$(mktemp -d)}; mkdir -p $CODEX_HOME; LOG=$CODEX_HOME/requests
+PORT=$((20000 + RANDOM % 20000))
+python3 &quot;$(dirname &quot;$0&quot;)/mock.py&quot; &quot;$SCRIPT&quot; $PORT &quot;$LOG&quot; &amp; MOCK=$!
+trap &quot;kill $MOCK 2&gt;/dev/null&quot; EXIT
+cat &gt; $CODEX_HOME/config.toml &lt;&lt;TOML
+model = &quot;$MODEL&quot;
+model_provider = &quot;mock&quot;
+$EXTRA_CONFIG
+[model_providers.mock]
+name = &quot;Mock&quot;
+base_url = &quot;http://127.0.0.1:$PORT/v1&quot;
+wire_api = &quot;responses&quot;
+request_max_retries = 0
+stream_max_retries = 0
+TOML
+sleep 0.5
+codex exec --skip-git-repo-check &quot;$@&quot; &lt;/dev/null
+EOF</pre></div></div><div class="st"><span class="n">04</span><div><p>仓库地图。</p><pre class="cmd">cat &gt; codex/scratch/l01.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# Codex 仓库地图：crate 数量、各层代码量，以及一次离线运行
+cd ../codex-rs
+echo &quot;== crate 数量（含 ext/ 与 utils/ 下的子 crate）&quot;
+find . -name Cargo.toml -not -path &#x27;./target/*&#x27; | wc -l
+echo &quot;== 几个关键 crate 的 Rust 代码行数（含测试）&quot;
+for d in core protocol tui exec cli apply-patch execpolicy linux-sandbox app-server codex-mcp hooks ext/goal; do
+  printf &quot;%-14s %7s\n&quot; $d $(find $d -name &#x27;*.rs&#x27; | xargs cat | wc -l)
+done
+echo &quot;== codex 的子命令&quot;
+codex --help | sed -n &#x27;/^Commands:/,/^$/p&#x27;
+EOF
+cd codex/scratch &amp;&amp; bash l01.sh</pre><pre class="out">== crate 数量（含 ext/ 与 utils/ 下的子 crate）
+167
+== 几个关键 crate 的 Rust 代码行数（含测试）
+core            469430
+protocol         33069
+tui             464488
+exec             13231
+cli              44723
+apply-patch       5556
+execpolicy        2975
+linux-sandbox    12748
+app-server      201692
+codex-mcp        28297
+hooks            16734
+ext/goal          5878
+== codex 的子命令
+Commands:
+  agents            Browse all agent sessions on the shared local app-server daemon
+  exec              Run Codex non-interactively [aliases: e]
+  review            Run a code review non-interactively
+  login             Manage login
+  logout            Remove stored authentication credentials
+  mcp               Manage external MCP servers for Codex
+  plugin            Manage Codex plugins
+  app-server        [experimental] Run the app server or related tooling
+  remote-control    [experimental] Manage the app-server daemon with remote control enabled
+  completion        Generate shell completion scripts
+  update            Update Codex to the latest version
+  doctor            Diagnose local Codex installation, config, auth, and runtime health
+  sandbox           Run commands within a Codex-provided sandbox
+  debug             Debugging tools
+  apply             Apply the latest diff produced by Codex agent as a `git apply` to your local
+                    working tree [aliases: a]
+  resume            Resume a previous interactive session (picker by default; use --last to continue
+                    the most recent)
+  queue             Queue a message for an existing session
+  archive           Archive a saved session by id or session name
+  delete            Permanently delete a saved session by id or session name
+  migrate-rollouts  Inspect or migrate legacy local sessions to paginated thread history
+  migrate-nfs-db    [experimental] Migrate configured SQLite databases to DELETE mode in place
+  unarchive         Unarchive a saved session by id or session name
+  fork              Fork a previous interactive session (picker by default; use --last to fork the
+                    most recent)
+  cloud             [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally
+  exec-server       [EXPERIMENTAL] Run the standalone exec-server service
+  features          Inspect feature flags
+  help              Print this message or the help of the given subcommand(s)</pre></div></div><div class="st"><span class="n">05</span><div><p>剧本：先调用 exec_command，再回答。运行真实 codex。</p><pre class="cmd">cat &gt; codex/scratch/s_hello.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：第 1 次请求让模型调用 exec_command，第 2 次给出最终回答
+def reply(n, body):
+    if n == 1:
+        return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;echo 你好，codex&quot;})]
+    return [msg(&quot;命令输出了：你好，codex&quot;)]
+EOF
+cd &quot;$(mktemp -d)&quot; &amp;&amp; bash $OLDPWD/codex/scratch/run.sh $OLDPWD/codex/scratch/s_hello.py &quot;打个招呼&quot; 2&gt;&amp;1 | tail -12</pre><pre class="out">user
+打个招呼
+exec
+/bin/bash -lc &#x27;echo 你好，codex&#x27; in /tmp/tmp.VjmPEgZH22
+ succeeded in 0ms:
+你好，codex
+
+codex
+命令输出了：你好，codex
+tokens used
+3,100
+命令输出了：你好，codex</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>看看 codex 发了什么</h3><p>打开 <code>$CODEX_HOME/requests/req01.json</code>：列出 <code>tools</code> 中每个工具的名字，以及 <code>input</code> 中每条消息的 role。再把 run.sh 里的 <code>MODEL</code> 换成一个不存在的名字，比较工具列表的变化。</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">python3 -c "import json,sys;b=json.load(open(sys.argv[1]))['body'];print([t.get('name',t['type']) for t in b['tools']]);print([i.get('role') for i in b['input']])" $CODEX_HOME/requests/req01.json</pre><p>使用 gpt-5.5 时工具为 exec_command、write_stdin、request_user_input、apply_patch、view_image、get_goal、create_goal、update_goal、tool_search、web_search；input 中是两条 developer 消息（权限说明、协作模式等）和两条 user 消息（AGENTS/环境上下文与你的提示）。没有顶层 instructions 字段。换成未知模型时 codex 警告“使用回退元数据”，工具集也会不同（例如没有 apply_patch）：工具集由模型元数据（models-manager/models.json）决定。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>分层</b>：<code>protocol</code>（Op/Event/ResponseItem 等类型）→ <code>codex-api</code>/<code>codex-client</code>（与模型通信）→ <code>core</code>（会话、turn 循环、工具、上下文、压缩）→ 前端：<code>tui</code>（交互）、<code>exec</code>（非交互）、<code>app-server</code>（给 IDE/桌面应用的 JSON-RPC）。<code>cli</code> 把它们组装成一个 <code>codex</code> 可执行文件。</li><li><b>安全相关 crate</b>：<code>linux-sandbox</code>、<code>bwrap</code>、Windows 沙箱、<code>execpolicy</code>（命令规则）、<code>apply-patch</code>（自有补丁格式）。</li><li><b>扩展</b>：<code>ext/</code> 下是以扩展形式实现的功能，例如 <code>ext/goal</code>（/goal 背后的目标运行时）、<code>ext/skills</code>、<code>ext/mcp</code>、<code>ext/web-search</code>。<code>hooks</code>、<code>core-plugins</code> 提供钩子与插件。</li><li><b>与 pi 对照</b>：pi-ai ≈ codex-api + 模型目录；pi-agent-core ≈ core 的 turn 循环；coding-agent 的工具 ≈ core/tools；pi-tui ≈ tui（ratatui）。pi 把安全交给扩展和容器，Codex 把它做进内核。</li><li><b>离线练习</b>：Codex 支持在 <code>config.toml</code> 中自定义 <code>model_providers</code>（<code>base_url</code> + <code>wire_api = "responses"</code>）。我们把它指向本机的假服务器，就能在不联网、没有 API key 的情况下观察真实 codex 的行为。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 02</div><a class="big" href="l02.html">一次 turn 的生命周期 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l01.js"></script>
+</body></html>

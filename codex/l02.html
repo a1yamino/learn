@@ -1,0 +1,153 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 2 课 · 一次 turn 的生命周期</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 2 课</span><span class="sp"></span><a href="l01.html">← 第 1 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 2 课</div><h1>一次 turn 的生命周期</h1>
+<p>在 pi 里，一次对话是 <code>session.prompt()</code> 触发的 agent 循环。Codex 的结构多了一层“队列”：前端把 <b>Op</b>（操作）提交到会话的提交队列，会话的 <code>submission_loop</code> 逐个处理，把一次用户输入变成一个 <b>turn</b> 任务；任务里的 <code>run_turn</code> 反复请求模型、执行工具，期间通过事件队列把 <b>Event</b> 发回前端。本课跟踪一次真实的 turn：从 exec 的 JSONL 事件，到假服务器收到的两次请求。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">Op 进，Event 出</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：事件顺序</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>Op 进，Event 出</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：事件顺序</h2><div class="goal">排列一次 turn 中的事件。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>提交循环：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/session/handlers.rs#L443-L460" target="_blank" rel="noopener">codex-rs/core/src/session/handlers.rs  L443–460, L566–577 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub(super) async fn submission_loop(
+    sess: Arc&lt;Session&gt;,
+    config: Arc&lt;Config&gt;,
+    rx_sub: Receiver&lt;Submission&gt;,
+) {
+    // Session shutdown and tree shutdown both use the existing teardown handler.
+    let mut shutdown_received = false;
+    let mut mailbox = sess.input_queue.mailbox_updates();
+    if let Some(updates) = &amp;mut mailbox {
+        updates.mark_changed();
+    }
+    loop {
+        let sub = tokio::select! {
+            biased;
+            _ = sess.services.local_agent_runtime.shutdown.cancelled() =&gt; {
+                shutdown_received = shutdown(&amp;sess, super::new_submission_id()).await;
+                break;
+            }
+  // …
+Op::TurnInput {
+    request,
+    mode,
+    reply,
+} =&gt; {
+    let request = WithTurnExtensionData {
+        request: *request,
+        turn_extension_init: sub.turn_extension_init,
+    };
+    let result = turn_input::handle(&amp;sess, request, mode, sub.id.clone()).await;
+    let _ = reply.send(result);
+    false</pre><p>exec 的事件类型：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/exec/src/exec_events.rs#L10-L37" target="_blank" rel="noopener">codex-rs/exec/src/exec_events.rs  L10–37 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">#[serde(tag = &quot;type&quot;)]
+pub enum ThreadEvent {
+    /// Emitted when a new thread is started as the first event.
+    #[serde(rename = &quot;thread.started&quot;)]
+    ThreadStarted(ThreadStartedEvent),
+    /// Emitted when a turn is started by sending a new prompt to the model.
+    /// A turn encompasses all events that happen while agent is processing the prompt.
+    #[serde(rename = &quot;turn.started&quot;)]
+    TurnStarted(TurnStartedEvent),
+    /// Emitted when a turn is completed. Typically right after the assistant&#x27;s response.
+    #[serde(rename = &quot;turn.completed&quot;)]
+    TurnCompleted(TurnCompletedEvent),
+    /// Indicates that a turn failed with an error.
+    #[serde(rename = &quot;turn.failed&quot;)]
+    TurnFailed(TurnFailedEvent),
+    /// Emitted when a new item is added to the thread. Typically the item will be in an &quot;in progress&quot; state.
+    #[serde(rename = &quot;item.started&quot;)]
+    ItemStarted(ItemStartedEvent),
+    /// Emitted when an item is updated.
+    #[serde(rename = &quot;item.updated&quot;)]
+    ItemUpdated(ItemUpdatedEvent),
+    /// Signals that an item has reached a terminal state—either success or failure.
+    #[serde(rename = &quot;item.completed&quot;)]
+    ItemCompleted(ItemCompletedEvent),
+    /// Represents an unrecoverable error emitted directly by the event stream.
+    #[serde(rename = &quot;error&quot;)]
+    Error(ThreadErrorEvent),
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l02.html">pi 第 2 课 · 一次对话的生命周期</a>。pi 的 <code>prompt()</code> 直接运行循环并通过订阅回调发事件；Codex 用异步通道把前端与内核彻底隔开。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。 本课新增 <code>show.py</code>，概览请求内容。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>请求概览工具。</p><pre class="cmd">cat &gt; codex/scratch/show.py &lt;&lt;&#x27;EOF&#x27;
+#!/usr/bin/env python3
+&quot;&quot;&quot;show.py &lt;requests 目录&gt;：概览每次请求的 input 条目（类型/角色/摘要）与工具列表&quot;&quot;&quot;
+import json, sys, glob
+for f in sorted(glob.glob(sys.argv[1] + &quot;/req*.json&quot;)):
+    b = json.load(open(f))[&quot;body&quot;]
+    print(f&quot;== {f.split(&#x27;/&#x27;)[-1]}  工具 {len(b.get(&#x27;tools&#x27;, []))} 个，input {len(b[&#x27;input&#x27;])} 条&quot;)
+    for it in b[&quot;input&quot;]:
+        t = it.get(&quot;type&quot;); role = it.get(&quot;role&quot;, &quot;&quot;)
+        if t == &quot;message&quot;:
+            text = &quot; &quot;.join(c.get(&quot;text&quot;, &quot;&quot;) for c in it[&quot;content&quot;])
+        elif t == &quot;function_call&quot;:
+            text = f&quot;{it[&#x27;name&#x27;]}({it[&#x27;arguments&#x27;]})&quot;
+        elif t in (&quot;function_call_output&quot;, &quot;custom_tool_call_output&quot;):
+            o = it[&quot;output&quot;]; text = o if isinstance(o, str) else json.dumps(o, ensure_ascii=False)
+        elif t == &quot;custom_tool_call&quot;:
+            text = f&quot;{it[&#x27;name&#x27;]}: {it[&#x27;input&#x27;]}&quot;
+        else:
+            text = json.dumps(it, ensure_ascii=False)
+        print(f&quot;  {t:22} {role:9} {text.replace(chr(10), &#x27; ⏎ &#x27;)[:int(sys.argv[2]) if len(sys.argv) &gt; 2 else 70]}&quot;)
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>跟踪一次 turn。</p><pre class="cmd">cat &gt; codex/scratch/l02.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 一次 turn：exec --json 的事件流，以及两次模型请求的 input 对比
+export CODEX_HOME=$(mktemp -d); S=$(cd &quot;$(dirname &quot;$0&quot;)&quot; &amp;&amp; pwd)
+cd &quot;$(mktemp -d)&quot;
+echo &quot;== codex exec --json 的事件（JSONL）&quot;
+bash $S/run.sh $S/s_hello.py --json &quot;打个招呼&quot; 2&gt;/dev/null | python3 -c &quot;import sys;[print(l.rstrip()[:150]) for l in sys.stdin]&quot;
+echo; echo &quot;== 假服务器收到的两次请求&quot;
+python3 $S/show.py $CODEX_HOME/requests
+EOF
+cd codex/scratch &amp;&amp; bash l02.sh</pre><pre class="out">== codex exec --json 的事件（JSONL）
+{&quot;type&quot;:&quot;thread.started&quot;,&quot;thread_id&quot;:&quot;01a16333-43f9-7d53-99f7-54526490c17c&quot;}
+{&quot;type&quot;:&quot;turn.started&quot;}
+{&quot;type&quot;:&quot;item.started&quot;,&quot;item&quot;:{&quot;id&quot;:&quot;item_0&quot;,&quot;type&quot;:&quot;command_execution&quot;,&quot;command&quot;:&quot;/bin/bash -lc &#x27;echo 你好，codex&#x27;&quot;,&quot;aggregated_output&quot;:&quot;&quot;,&quot;exit_code&quot;:n
+{&quot;type&quot;:&quot;item.completed&quot;,&quot;item&quot;:{&quot;id&quot;:&quot;item_0&quot;,&quot;type&quot;:&quot;command_execution&quot;,&quot;command&quot;:&quot;/bin/bash -lc &#x27;echo 你好，codex&#x27;&quot;,&quot;aggregated_output&quot;:&quot;你好，codex\n&quot;,&quot;
+{&quot;type&quot;:&quot;item.completed&quot;,&quot;item&quot;:{&quot;id&quot;:&quot;item_1&quot;,&quot;type&quot;:&quot;agent_message&quot;,&quot;text&quot;:&quot;命令输出了：你好，codex&quot;}}
+{&quot;type&quot;:&quot;turn.completed&quot;,&quot;usage&quot;:{&quot;input_tokens&quot;:3000,&quot;cached_input_tokens&quot;:0,&quot;cache_write_input_tokens&quot;:0,&quot;output_tokens&quot;:100,&quot;reasoning_output_token
+
+== 假服务器收到的两次请求
+== req01.json  工具 10 个，input 4 条
+  message                developer You are Codex, a coding agent based on GPT-5. You and the user share o
+  message                developer &lt;skills_instructions&gt; ⏎ ## Skills ⏎ A skill is a set of local instruct
+  message                user      &lt;environment_context&gt; ⏎   &lt;cwd&gt;/tmp/tmp.8A5311d77J&lt;/cwd&gt; ⏎   &lt;shell&gt;ba
+  message                user      打个招呼
+== req02.json  工具 10 个，input 6 条
+  message                developer You are Codex, a coding agent based on GPT-5. You and the user share o
+  message                developer &lt;skills_instructions&gt; ⏎ ## Skills ⏎ A skill is a set of local instruct
+  message                user      &lt;environment_context&gt; ⏎   &lt;cwd&gt;/tmp/tmp.8A5311d77J&lt;/cwd&gt; ⏎   &lt;shell&gt;ba
+  message                user      打个招呼
+  function_call                    exec_command({&quot;cmd&quot;: &quot;echo 你好，codex&quot;})
+  function_call_output             Chunk ID: 51fb54 ⏎ Wall time: 0.0000 seconds ⏎ Process exited with cod</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>两轮工具调用</h3><p>修改剧本：第 1 次请求调用 <code>exec_command</code> 执行 <code>ls</code>，第 2 次再执行 <code>pwd</code>，第 3 次回答。预测 exec --json 会输出几个 item.completed，req03 的 input 有几条。</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">def reply(n, body):
+    if n == 1: return [call("exec_command", {"cmd": "ls"}, "c1")]
+    if n == 2: return [call("exec_command", {"cmd": "pwd"}, "c2")]
+    return [msg("完成")]</pre><p>三个 item.completed（两个 command_execution、一个 agent_message），仍然只有一个 turn。req03 的 input 是 4 条初始消息 + 2 对（function_call, function_call_output）= 8 条。注意 call_id 要不同，否则两次输出会对应到同一个调用。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>SQ/EQ 模型</b>：前端（tui、exec、app-server）只和会话交换两种消息——提交 <code>Submission{id, op}</code>，接收 <code>Event{id, msg}</code>。这让同一个内核可以服务多个前端。</li><li><b>submission_loop</b>（<code>session/handlers.rs</code>）：<code>tokio::select!</code> 等待关闭信号、新的提交或邮箱更新；<code>Op::TurnInput</code> 交给 <code>turn_input::handle</code>，它要么启动新 turn，要么把输入排进正在运行的 turn（转向，第 8 课）。</li><li><b>任务</b>：turn 以 <code>SessionTask</code> 形式运行（<code>tasks/regular.rs</code> 调用 <code>run_turn</code>）；压缩、评审、用户 shell 命令也是任务。</li><li><b>一个 turn 内多次请求</b>：第一次请求模型返回 <code>exec_command</code> 调用；codex 执行后，把 <code>function_call</code> 与 <code>function_call_output</code> 追加进历史，再发第二次请求，直到模型不再调用工具。</li><li><b>exec 的 JSONL 事件</b>：<code>thread.started</code> → <code>turn.started</code> → <code>item.started/completed</code>（命令执行、助手消息、文件修改……）→ <code>turn.completed</code>（附 token 用量）。这是内核事件的简化投影，定义在 <code>exec/src/exec_events.rs</code>。</li><li><b>请求里没有 instructions 字段</b>：系统提示作为第一条 <code>developer</code> 消息发送，后面是技能说明、环境上下文（cwd、shell……）和用户消息。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 03</div><a class="big" href="l03.html">协议：Op、Event 与 ResponseItem →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l02.js"></script>
+</body></html>
