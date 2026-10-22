@@ -2,8 +2,8 @@ const S=(t,s,c='',w=160)=>({w,h:52,cls:'blk '+c,html:`${t}<br><span style="font-
 const bar=(w,c='var(--sig)')=>({w,h:24,cls:'',html:`<div style="width:${w}px;height:24px;border-radius:5px;background:${c}"></div>`});
 Player(document.getElementById('p1'),{els:{lim:{w:4,h:180,cls:'',html:'<div style="width:3px;height:180px;background:var(--bad)"></div>'},ll:{cls:'pill bad',html:'--memory 256m'},u1:bar(140),u2:bar(230),u3:bar(300,'var(--bad)'),k:{cls:'pill bad',html:'OOMKilled · exit 137'},n:{w:640,cls:'tag'}},scenes:[
  {t:'限制是一条线',p:'<code>--memory 256m</code> 把容器 cgroup 的 <code>memory.max</code> 设为 256 MB。容器里所有进程加起来不能超过它。',set:{lim:[260,0],ll:[220,-40],u1:[0,60]}},
- {t:'接近上限',p:'内存增长到接近上限时，内核先回收页缓存（文件缓存）。应用本身用的匿名内存无法回收。',set:{lim:[260,0],ll:[220,-40],u2:[0,60]}},
- {t:'越过上限：OOM',p:'回收不够，内核的 OOM killer 杀掉 cgroup 里占用最多的进程。主进程被杀，容器退出码 137（128+9，SIGKILL）。',d:3800,set:{lim:[260,0],ll:[220,-40],u3:[0,60],k:[0,110]}},
+ {t:'接近上限',p:'内存增长到接近上限时，内核先回收页缓存（文件缓存）。允许 swap 且宿主机有可用交换空间时，匿名页也可换出；本节 OOM 实验显式禁止 swap。',set:{lim:[260,0],ll:[220,-40],u2:[0,60]}},
+ {t:'越过上限：OOM',p:'回收不够，内核的 OOM killer 根据 OOM 评分等条件选择受害进程，并非简单固定选择内存最大的那个。主进程被杀，容器退出码 137（128+9，SIGKILL）。',d:3800,set:{lim:[260,0],ll:[220,-40],u3:[0,60],k:[0,110]}},
  {t:'应用要知道上限',p:'有些运行时按<b>宿主机</b>内存决定堆大小。新版 JVM、Node 能读取 cgroup 限制，但最好显式设置（<code>-XX:MaxRAMPercentage=75</code>、<code>--max-old-space-size</code>）。',d:3800,set:{lim:[260,0],ll:[220,-40],u1:[0,60],n:[0,120,{html:'堆上限 < 容器上限，留出非堆内存'}]}}]});
 const seg=(on,w)=>({w,h:28,cls:'',html:`<div style="width:${w}px;height:28px;border-radius:4px;background:${on?'var(--sig)':'transparent'};border:1px solid var(--line)"></div>`});
 const P={};for(let i=0;i<4;i++){P['a'+i]=seg(true,50);P['b'+i]=seg(false,50)}
@@ -21,7 +21,7 @@ Player(document.getElementById('p2'),{els:{...P,lb:{w:640,cls:'tag'},th:{cls:'pi
   else L.push('批量请求：内存 420 MB → 正常');
   if(cpu==='0.5'){L.push('<b style="color:var(--bad)">突发：需要 1.5 核，配额 0.5 → 节流，200 ms 的工作变成 600 ms</b>');bad.push('CPU 配额低于突发需求，延迟变成三倍。')}
   else L.push('突发：1.5 核持续 200 ms → 正常');
-  if(mem==='2048')warn.push('2g 远高于峰值，内存泄漏时要很久才被发现，同一台机器能放的容器也更少。');
+  if(mem==='2048')warn.push('2g 远高于本例峰值，进程异常增长时允许占用更多内存。上限不等于预留内存，不会立即占用 2g；仍需结合主机总容量规划。');
   if(mem==='0')warn.push('不限制内存：一个泄漏就可能耗尽宿主机内存，连带其他容器和系统进程。');
   if(cpu==='0')warn.push('不限制 CPU 本身不危险（空闲时可以用满），但争抢时没有保障；可以配合 --cpu-shares。');
   rl.innerHTML=L.map(x=>`<div>${x}</div>`).join('');
