@@ -16,7 +16,7 @@ def secs(prac,E):
  ('在主库写，在副本读。','docker exec m redis-cli SET k v1\ndocker exec r1 redis-cli GET k','OK\n"v1"'),
  ('副本只读。','docker exec r1 redis-cli SET k v2','(error) READONLY You can\'t write against a read only replica.'),
  ('查看复制信息。','docker exec m redis-cli INFO replication','role:master\nconnected_slaves:1\nslave0:ip=172.18.0.3,port=6379,state=online,offset=420,lag=0\nmaster_replid:8f2c…\nmaster_repl_offset:420\nrepl_backlog_size:1048576\n…'),
- ('等待副本确认。','docker exec m redis-cli SET k v3\ndocker exec m redis-cli WAIT 1 100','OK\n(integer) 1'),
+ ('在同一个 redis-cli 连接中写入并等待副本确认；检查 WAIT 返回的副本数量，未达到要求不等于写入回滚。','docker exec -it m redis-cli\nSET k v3\nWAIT 1 100','OK\n(integer) 1'),
  ('断开副本几秒再恢复，看日志中的部分同步。','docker network disconnect rnet r1; sleep 5; docker network connect rnet r1; sleep 3\ndocker logs m 2>&1 | tail -n 3','… Replica 172.18.0.3:6379 asks for synchronization\n… Partial resynchronization request from 172.18.0.3:6379 accepted. Sending 0 bytes of backlog starting from offset 435.')],
  ('配置一个读写分离的主从','一主两从，主库写入峰值 5 MB/s，网络偶尔中断最长 60 秒；业务要求：用户下单后立刻在订单列表看到新订单；商品浏览可以接受 1 秒内的旧数据；希望主库在两个副本都失联时停止接受写入以免故障切换后大量丢数据。给出关键配置和应用侧读路由规则。',
  '<ul><li><code>repl-backlog-size 512mb</code>：5 MB/s × 60 s = 300 MB，再留余量，保证 60 秒内断线可部分同步。</li><li><code>min-replicas-to-write 1</code>，<code>min-replicas-max-lag 10</code>：至少一个副本在 10 秒内确认过，否则主库拒绝写入（返回 NOREPLICAS）。</li><li>主库开启持久化（AOF everysec），不要在无持久化的情况下自动重启。</li><li>副本 <code>replica-read-only yes</code>；<code>client-output-buffer-limit replica 1gb 512mb 60</code> 防止全量同步期间缓冲区超限导致同步反复失败。</li><li>读路由：下单后的订单列表读主库（或在下单后一段时间内对该用户读主库）；商品浏览读副本，客户端监测 <code>master_last_io_seconds_ago</code>/偏移差，延迟超过 1 秒的副本暂时摘除。</li><li>关键写入后可用 <code>WAIT 1 50</code> 提高持久性，但这只是降低丢失概率。</li></ul>'))),
