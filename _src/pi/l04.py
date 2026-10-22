@@ -1,0 +1,36 @@
+from common import *
+L4=open('/workspace/src/pi-mono/scratch/l04.ts').read()
+TITLE='Provider 抽象、模型目录与凭据';MIN=45;NEXT='适配真实 API：消息转换与流式解析'
+DESC='pi-ai 内置 42 家提供方、约 1600 个聊天模型，却只用十来种 <b>API 协议</b>实现。秘诀是把三件事分开：<b>Provider</b>（谁：id、baseUrl、怎样鉴权、有哪些模型）、<b>Api</b>（怎么说话：openai-completions、anthropic-messages……的请求构造与流解析）、<b>Model</b>（目录里的一条记录：上下文窗口、价格、能力）。本课还会读凭据解析的规则：存储的凭据优先于环境变量，OAuth 令牌在过期前自动刷新。'
+SUM=['<b>Provider 接口</b>（<code>models.ts</code>）：<code>id</code>、<code>name</code>、<code>baseUrl</code>、<code>auth</code>（apiKey 和/或 oauth）、<code>getModels()</code>、<code>stream / streamSimple</code>，可选 <code>refreshModels</code>（动态目录）、<code>filterModels</code>、图片与分类器。',
+'<b>Provider ≠ Api</b>：Groq、Cerebras、OpenRouter 等都复用 <code>openAICompletionsApi()</code>；一个新的 OpenAI 兼容服务只需十几行：id、baseUrl、环境变量名、模型列表。',
+'<b>模型目录</b>：由 <code>scripts/generate-models.ts</code> 生成到 <code>providers/data/*.json</code> 与 <code>*.models.ts</code>，带上下文窗口、最大输出、价格、输入模态、是否推理模型。用户可在 <code>models.json</code> 中增加自定义提供方或模型。',
+'<b>Models 集合</b>：持有所有 provider，负责解析凭据并把请求委派给拥有该模型的 provider。<code>getModels</code> 列出全部，<code>getAvailable</code> 只列出已配置凭据的。',
+'<b>凭据解析顺序</b>：调用方显式传入的 apiKey → <b>存储的凭据</b>（auth.json，OAuth 或 API key）→ 环境变量等“环境凭据”。存储的凭据“拥有”该 provider：它存在时不会悄悄回退到环境变量。',
+'<b>OAuth</b>：剩余有效期不足 5 分钟就在凭据存储的锁内刷新并立即持久化（双重检查），避免多个进程同时刷新而作废 refresh token。<code>auth.json</code> 的 key 还可以写成 <code>!命令</code>，从密钥管理器读取。']
+S1=('一个请求如何找到它的 provider','model 记录 → provider → 凭据 → api。')
+A1=[('选择模型','model = groq/llama-3.1-8b-instant',[('m','Model','sig',0,60,140)]),
+('找 provider','Models 根据 model.provider 找到 groqProvider。',[('m','Model','',0,60,140),('p','Provider groq','sig',180,60,160)]),
+('解析凭据','显式 key？存储的凭据？环境变量 GROQ_API_KEY？',[('p','Provider groq','',180,60,160),('a','auth.json / env','sig',180,150,160)]),
+('协议','groq 的 api 是 openai-completions：把转录转换成 Chat Completions 请求，解析 SSE。',[('p','Provider groq','',180,60,160),('api','openai-completions','ok',380,60,180)]),
+('事件','统一的 AssistantMessageEvent 流回到调用方。',[('api','openai-completions','',380,60,180),('ev','事件流','ok',380,150,180)])]
+S2=('动手：凭据从哪里来？','给定场景，预测解析结果。')
+CHI=[('只设了环境变量','GROQ_API_KEY=gsk-...，auth.json 中没有 groq\n\n→ source: "GROQ_API_KEY"','ok','环境凭据只在没有存储凭据时使用。'),
+('auth.json 与环境变量都有','→ source: "stored credential"\n环境变量被忽略','sig','存储的凭据拥有该 provider，避免“我明明设了环境变量”式的意外混用。'),
+('OAuth 令牌 3 分钟后过期','→ 获取凭据存储的锁\n→ 锁内再次检查（可能别的进程已刷新）\n→ 刷新、持久化、释放锁','sig','刷新一旦开始就不受 abort 影响，只有超时限制——否则可能丢失唯一有效的 refresh token。'),
+('OAuth 刷新失败','→ 报错，不会回退到环境变量','bad','“No silent env fallback after a failed refresh.”'),
+('auth.json 里写 "key": "!security find-generic-password ..."','→ 执行命令，用输出作为 key，不写入磁盘','ok','把秘密留在系统钥匙串里。')]
+CHH='选择一个场景。'
+S3=('读代码：Provider、一个最小实现、凭据解析','','''<p>Provider 接口（节选）：</p>'''+X('packages/ai/src/models.ts',[(158,180),(215,226)])+'''<p>Groq 的全部实现——它只是“配置”：</p>'''+X('packages/ai/src/providers/groq.ts',[(6,15)])+'''<p>凭据解析：</p>'''+X('packages/ai/src/auth/resolve.ts',[(27,32),(56,92)])+NOTE('<b>与 Codex 对照</b>：Codex 以 OpenAI 为中心（ChatGPT 登录或 API key），通过配置中的 <code>model_providers</code> 接入其他兼容 Responses/Chat 的服务，凭据可存在系统钥匙串。见 '+codex(4,'模型提供方与认证')+'。'))
+S4=('观察目录','')
+TERM=[['node l04.ts','内置 provider 数: 42 | 聊天模型总数: 1598\n按 API 协议分组: openai-completions=707  anthropic-messages=408  ...','1598 个模型只由 10 种协议实现。']]
+S5=('在你的电脑上练习','用内置目录创建 <code>Models</code>，统计模型，并观察凭据解析的优先级（使用内存凭据存储，不会碰到你的 auth.json）。')
+PRAC=[('写脚本并运行。','cat > pi-mono/scratch/l04.ts <<\'EOF\'\n'+L4+'EOF\ncd pi-mono/scratch && node l04.ts',None),
+('一个新的 OpenAI 兼容 provider 需要多少代码？看看几家：','cd pi-mono/packages/ai/src/providers && wc -l groq.ts cerebras.ts deepseek.ts together.ts',None)]
+CHAL=('接入自己的服务','用 <code>createProvider</code> 写一个 provider：id <code>myllm</code>，baseUrl <code>http://localhost:8080/v1</code>，使用 openai-completions 协议，环境变量 <code>MYLLM_API_KEY</code>，一个模型 <code>tiny</code>（上下文 8192）。把它注册到 <code>builtinModels()</code> 返回的集合中，并验证 <code>checkAuth</code>。',
+'<pre>import { createProvider, envApiKeyAuth } from "@earendil-works/pi-ai";\nimport { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";\nconst myllm = createProvider({\n  id: "myllm", name: "My LLM", baseUrl: "http://localhost:8080/v1",\n  auth: { apiKey: envApiKeyAuth("My LLM key", ["MYLLM_API_KEY"]) },\n  models: [{ id: "tiny", name: "tiny", api: "openai-completions", provider: "myllm",\n    baseUrl: "http://localhost:8080/v1", reasoning: false, input: ["text"],\n    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },\n    contextWindow: 8192, maxTokens: 2048 }],\n  api: openAICompletionsApi(),\n});\nmodels.setProvider(myllm);\nprocess.env.MYLLM_API_KEY = "x";\nconsole.log(await models.checkAuth("myllm"));\n// { source: &quot;MYLLM_API_KEY&quot;, type: &quot;api_key&quot; }</pre><p>对比 <code>groq.ts</code>：形状完全一样。真实使用时更简单的办法是在 <code>~/.pi/agent/models.json</code> 中声明（见 <code>docs/models.md</code>），无需写代码。模型对象的确切字段以 <code>types.ts</code> 中的 <code>Model</code> 类型为准；类型检查会提示缺少的字段。注意 <code>openAICompletionsApi</code> 来自子路径 <code>api/openai-completions.lazy</code>：协议实现按需懒加载，不用的协议（和它的 SDK）不会被导入。</p>')
+QUIZ=[['Groq 与 OpenRouter 共享的是？',['openai-completions 协议实现','凭据','模型目录'],0,''],
+['auth.json 有 groq 凭据，同时设置了 GROQ_API_KEY，用哪个？',['存储的凭据','环境变量','随机'],0,''],
+['OAuth 令牌何时刷新？',['剩余有效期不足 5 分钟时，在锁内刷新','每次请求','过期后'],0,''],
+['getAvailable 与 getModels 的区别？',['前者只列出已配置凭据的 provider 的模型','没有区别','前者包括图片模型'],0,''],
+['内置模型目录从哪里来？',['generate-models 脚本生成的 data/*.json','运行时联网下载','手写'],0,'部分动态 provider 还可以 refreshModels。']]
