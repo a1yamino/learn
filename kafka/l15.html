@@ -1,0 +1,67 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka 第 15 课 · Kafka Streams：拓扑与无状态处理</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kafka</a><span class="crumb">第 15 课</span><span class="sp"></span><a href="l14.html">← 第 14 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kafka · 第 15 课</div><h1>Kafka Streams：拓扑与无状态处理</h1>
+<p>Kafka Streams 是一个 Java 库，用来编写“从 Kafka 读、处理、写回 Kafka”的应用，不需要单独的处理集群。本课讲流处理的基本模型：拓扑由源、处理器和汇组成；KStream 和 KTable 分别表示事件流和变更流；filter、map、flatMap、split 等无状态操作；改变 key 为什么会触发重分区；以及应用如何按分区拆成任务并行运行。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个拓扑</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：KStream 与 KTable</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">重分区与任务</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">DSL 代码片段</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一个拓扑</h2><div class="goal">从订单流中筛选大额订单并分流。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：KStream 与 KTable</h2><div class="goal">同一组记录，分别按事件流和变更流解释。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>重分区与任务</h2><div class="goal">改变 key 之后发生了什么。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>DSL 代码片段</h2><div class="goal">常用的无状态操作。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">Kafka 发行包自带 Streams 示例，在 kafka 容器的 /opt/kafka 下运行。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建输入输出主题。</p><pre class="cmd">bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic streams-plaintext-input --partitions 2
+bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic streams-linesplit-output --partitions 2</pre><pre class="out">Created topic streams-plaintext-input.
+Created topic streams-linesplit-output.</pre></div></div><div class="st"><span class="n">02</span><div><p>启动“按空格拆分单词”的示例应用（无状态的 flatMapValues）。</p><pre class="cmd">bin/kafka-run-class.sh org.apache.kafka.streams.examples.linesplit.LineSplit &gt; /tmp/ls.log 2&gt;&amp;1 &amp;</pre><pre class="out">（后台运行）</pre></div></div><div class="st"><span class="n">03</span><div><p>写入几行文本。</p><pre class="cmd">printf &quot;hello kafka streams\nall streams lead to kafka\n&quot; | bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic streams-plaintext-input</pre><pre class="out">（无输出）</pre></div></div><div class="st"><span class="n">04</span><div><p>读取输出：每个单词一条。</p><pre class="cmd">bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic streams-linesplit-output --from-beginning --timeout-ms 8000</pre><pre class="out">hello
+kafka
+streams
+all
+streams
+lead
+to
+kafka</pre></div></div><div class="st"><span class="n">05</span><div><p>应用就是一个消费者组，组名是 application.id。</p><pre class="cmd">bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group streams-linesplit</pre><pre class="out">GROUP             TOPIC                   PARTITION CURRENT-OFFSET LOG-END-OFFSET LAG …
+streams-linesplit streams-plaintext-input 0         1              1              0
+streams-linesplit streams-plaintext-input 1         1              1              0</pre></div></div><div class="st"><span class="n">06</span><div><p>重置应用（重新处理全部输入，先停止应用）。</p><pre class="cmd">kill %1
+bin/kafka-streams-application-reset.sh --bootstrap-server localhost:9092 --application-id streams-linesplit --input-topics streams-plaintext-input</pre><pre class="out">Reset-offsets for input topics [streams-plaintext-input]
+…
+Done.</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一个订单分流应用</h3><p>输入主题 <code>orders</code>（key 为订单号，value 为 JSON：<code>{user_id, amount, country, status}</code>）。要求：丢弃 <code>status=test</code> 的订单；给每条订单增加 <code>amount_cny</code>（按固定汇率）；金额 ≥ 10000 的写入 <code>orders-large</code>，海外订单写入 <code>orders-intl</code>，其余写入 <code>orders-normal</code>；另外输出一个以 <code>user_id</code> 为 key 的流 <code>orders-by-user</code> 供后续按用户统计。用 DSL 写出拓扑，并指出哪一步会产生重分区以及如何减少它的代价。</p><details><summary>查看参考答案</summary><div><pre>KStream&lt;String, Order&gt; orders = builder.stream("orders", Consumed.with(Serdes.String(), orderSerde));
+KStream&lt;String, Order&gt; clean = orders
+    .filter((id, o) -&gt; !"test".equals(o.status))
+    .mapValues(o -&gt; o.withAmountCny(o.amount * rate(o.currency)));   // 不改 key
+
+clean.split(Named.as("route-"))
+    .branch((id, o) -&gt; o.amountCny &gt;= 10000, Branched.withConsumer(s -&gt; s.to("orders-large")))
+    .branch((id, o) -&gt; !"CN".equals(o.country), Branched.withConsumer(s -&gt; s.to("orders-intl")))
+    .defaultBranch(Branched.withConsumer(s -&gt; s.to("orders-normal")));
+
+clean.selectKey((id, o) -&gt; o.userId).to("orders-by-user");</pre><p>split 的分支按顺序匹配，一条订单只进入第一个满足条件的分支。<code>selectKey</code> 改变了 key，但这里直接 <code>to()</code> 写出，写出时按新 key 分区，<b>不会</b>产生内部重分区主题；只有在改 key 之后紧接 <code>groupByKey</code>/<code>join</code> 才会自动重分区。如果后续的按用户统计在同一个应用中进行，可以直接对 <code>orders-by-user</code> 做聚合（把它当作显式的重分区主题，便于控制分区数和保留时间），或使用 <code>repartition(Repartitioned.numberOfPartitions(12))</code>。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>一个 Streams 应用由 <code>application.id</code> 标识：它同时是消费者组 ID、内部主题的前缀和状态目录名。应用就是普通的 Java 进程，可以部署多个实例，实例之间通过消费者组协议分担工作。</li><li><b>拓扑</b>（Topology）：<b>源处理器</b>从主题读取，中间<b>处理器</b>逐条处理，<b>汇处理器</b>写入主题。用 DSL 编写：<code>builder.stream("orders").filter(...).mapValues(...).to("big-orders")</code>；<code>topology.describe()</code> 打印结构。</li><li><b>KStream</b> 是事件流：每条记录都是独立的事实（“用户 42 下了一单”）。<b>KTable</b> 是变更流：每条记录是某个 key 的最新值（“用户 42 的等级是金卡”），同 key 的新记录覆盖旧值，通常来自压缩主题。<b>GlobalKTable</b> 在每个实例上都有完整副本。</li><li><b>无状态操作</b>：<code>filter</code>、<code>map</code>/<code>mapValues</code>、<code>flatMap</code>/<code>flatMapValues</code>、<code>split().branch()</code>（按条件分流）、<code>merge</code>、<code>peek</code>、<code>selectKey</code>。尽量用 <code>mapValues</code> 而不是 <code>map</code>：不改变 key 就不需要重分区。</li><li><b>重分区</b>：<code>selectKey</code>/<code>map</code> 改变了 key 后，接下来若有按 key 的有状态操作（groupByKey、join），Streams 会自动写入一个内部的 <code>-repartition</code> 主题，再按新 key 读回，以保证相同 key 进入同一个任务。这会增加一次网络往返和存储，应尽量在源头就用对的 key。</li><li><b>并行</b>：输入主题的每个分区对应一个<b>任务</b>（task），任务是并行的最小单位，分配给实例上的<b>流线程</b>（<code>num.stream.threads</code>）。最大并行度等于输入分区数。处理语义由 <code>processing.guarantee</code> 决定：默认 <code>at_least_once</code>，或 <code>exactly_once_v2</code>（第 11 课）。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 16</div><a class="big" href="l16.html">Kafka Streams：状态、窗口与连接 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l15.js"></script>
+</body></html>

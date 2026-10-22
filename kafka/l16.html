@@ -1,0 +1,58 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka 第 16 课 · Kafka Streams：状态、窗口与连接</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kafka</a><span class="crumb">第 16 课</span><span class="sp"></span><a href="l15.html">← 第 15 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kafka · 第 16 课</div><h1>Kafka Streams：状态、窗口与连接</h1>
+<p>计数、求和、去重、关联都需要记住之前看到的数据。本课讲 Kafka Streams 如何把状态放在本地 RocksDB 中、用变更日志主题保证故障后能恢复、用备用副本缩短恢复时间；时间窗口的几种类型与迟到数据的宽限期；三种连接（流—流、流—表、表—表）及共分区要求；以及交互式查询。约 70 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">状态存储与变更日志</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：窗口与迟到数据</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">三种连接</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">DSL 代码片段</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>状态存储与变更日志</h2><div class="goal">计数是如何被记住和恢复的。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：窗口与迟到数据</h2><div class="goal">滚动窗口 1 分钟，宽限期 30 秒。按顺序发送事件，看每个窗口的计数与被丢弃的记录。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:110px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>三种连接</h2><div class="goal">用哪种取决于两边是事件还是状态。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>DSL 代码片段</h2><div class="goal">有状态操作。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">运行自带的 WordCount 示例（有状态的 count）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>创建输出主题（输入主题沿用上一课的 streams-plaintext-input）。</p><pre class="cmd">bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic streams-wordcount-output --partitions 2 --config cleanup.policy=compact</pre><pre class="out">Created topic streams-wordcount-output.</pre></div></div><div class="st"><span class="n">02</span><div><p>启动应用。</p><pre class="cmd">bin/kafka-run-class.sh org.apache.kafka.streams.examples.wordcount.WordCountDemo &gt; /tmp/wc.log 2&gt;&amp;1 &amp;</pre><pre class="out">（后台运行）</pre></div></div><div class="st"><span class="n">03</span><div><p>写入文本。</p><pre class="cmd">printf &quot;a b a\nb a c\n&quot; | bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic streams-plaintext-input</pre><pre class="out">（无输出）</pre></div></div><div class="st"><span class="n">04</span><div><p>读取结果（计数是 Long，需要指定反序列化器）。</p><pre class="cmd">bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic streams-wordcount-output --from-beginning --property print.key=true --value-deserializer org.apache.kafka.common.serialization.LongDeserializer --timeout-ms 10000</pre><pre class="out">a	3
+b	2
+c	1</pre></div></div><div class="st"><span class="n">05</span><div><p>看自动创建的内部主题：重分区和变更日志。</p><pre class="cmd">bin/kafka-topics.sh --bootstrap-server localhost:9092 --list | grep wordcount</pre><pre class="out">streams-wordcount-KSTREAM-AGGREGATE-STATE-STORE-0000000003-changelog
+streams-wordcount-KSTREAM-AGGREGATE-STATE-STORE-0000000003-repartition
+streams-wordcount-output</pre></div></div><div class="st"><span class="n">06</span><div><p>变更日志就是状态：从头读取。</p><pre class="cmd">bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic streams-wordcount-KSTREAM-AGGREGATE-STATE-STORE-0000000003-changelog --from-beginning --property print.key=true --value-deserializer org.apache.kafka.common.serialization.LongDeserializer --timeout-ms 5000</pre><pre class="out">a	3
+c	1
+b	2</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>实现“下单 10 分钟内未支付则提醒”</h3><p>输入：<code>orders</code>（key=订单号，下单事件）和 <code>payments</code>（key=订单号，支付事件，可能晚到 2 分钟）。输出：<code>unpaid-reminders</code>，下单后 10 分钟内没有对应支付的订单。另外要输出每个用户每小时的下单金额（按事件时间，允许 5 分钟迟到）。用 DSL 描述两个拓扑，并说明需要的配置（共分区、窗口、宽限期、状态恢复）。</p><details><summary>查看参考答案</summary><div><p><b>未支付提醒</b>：两个都是事件流，用窗口化的左连接：</p><pre>orders.leftJoin(payments,
+    (order, payment) -&gt; payment == null ? order : null,
+    JoinWindows.ofTimeDifferenceAndGrace(Duration.ofMinutes(10), Duration.ofMinutes(2)))
+  .filter((id, o) -&gt; o != null)
+  .to("unpaid-reminders");</pre><p>Kafka Streams 3.1 起的左连接会等窗口关闭（10 + 2 分钟）后才为没有匹配的记录发出 <code>payment == null</code> 的结果，避免“支付稍后到达”时误报。两个主题必须共分区：key 都是订单号，分区数相同，生产者使用默认分区器。</p><p><b>每用户每小时金额</b>：</p><pre>orders.selectKey((id, o) -&gt; o.userId)
+  .groupByKey()
+  .windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofHours(1), Duration.ofMinutes(5)))
+  .aggregate(() -&gt; 0L, (u, o, sum) -&gt; sum + o.amountCents, Materialized.as("user-hourly"))
+  .suppress(Suppressed.untilWindowCloses(Suppressed.BufferConfig.unbounded()))
+  .toStream().to("user-hourly-amount");</pre><p>selectKey 后的 groupByKey 会触发重分区。配置：<code>num.standby.replicas=1</code> 缩短故障恢复时间；<code>processing.guarantee=exactly_once_v2</code> 避免重复计算；状态目录使用持久卷，避免每次重启都从变更日志完整恢复。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>状态存储</b>：<code>count()</code>、<code>aggregate()</code>、<code>reduce()</code> 等操作把中间结果放在任务本地的状态存储中（默认 RocksDB，位于 <code>state.dir</code>）。每次写入同时发送到一个压缩的<b>变更日志主题</b>（<code>&lt;application.id&gt;-&lt;store&gt;-changelog</code>）。</li><li>任务迁移到别的实例或实例重启丢失本地磁盘时，从变更日志恢复状态，期间该任务暂停处理。<code>num.standby.replicas=1</code> 让另一个实例持续维护一份备用副本，故障时几乎可以立即接管；配合 <code>acceptable.recovery.lag</code> 与预热副本，任务只会分配给已经追上的实例。</li><li><b>窗口</b>：<b>滚动</b>窗口（固定大小、不重叠，如每 1 分钟）、<b>跳跃</b>窗口（大小 5 分钟、每 1 分钟前进一次，会重叠）、<b>会话</b>窗口（按活动间隔划分，间隔超过 30 分钟就开始新会话）、<b>滑动</b>窗口（用于连接和按时间差聚合）。时间默认使用记录的<b>事件时间</b>（时间戳）。</li><li><b>迟到数据</b>：窗口在 <code>窗口结束 + grace</code> 之后关闭，之后到达的记录被丢弃（并计入指标）。默认每次更新都会向下游发出新结果；需要“每个窗口只输出一次最终结果”时用 <code>suppress(Suppressed.untilWindowCloses(...))</code>，或 3.x 起的 <code>emitStrategy(EmitStrategy.onWindowClose())</code>。</li><li><b>连接</b>：<b>KStream–KStream</b> 必须有窗口（<code>JoinWindows.ofTimeDifferenceWithNoGrace(5 分钟)</code>），例如订单与支付在 5 分钟内匹配；<b>KStream–KTable</b> 用流中记录到达时表中的当前值来补充数据（如订单补充用户等级）；<b>KTable–KTable</b> 结果也是表；外键连接允许按 value 中的字段关联表。除 GlobalKTable 外，连接的两边必须<b>共分区</b>：相同的 key、相同的分区数、相同的分区器。</li><li><b>交互式查询</b>：应用可以通过 <code>streams.store(...)</code> 直接读取本地状态存储，并用 <code>queryMetadataForKey</code> 找到某个 key 所在的实例，把查询转发过去，从而直接把流处理结果当作服务的数据源。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 17</div><a class="big" href="l17.html">性能调优：零拷贝、页缓存与批量 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l16.js"></script>
+</body></html>
