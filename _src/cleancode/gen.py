@@ -40,8 +40,8 @@ def capture(cfg,n,steps):
         wd=f"/workspace/run/{cfg['slug']}/l{n:02d}";shutil.rmtree(wd,ignore_errors=True);os.makedirs(wd);cache={}
         for p,c,o in steps:
             if o is None:
-                r=subprocess.run(['bash','-c',c],cwd=wd,capture_output=True,text=True,timeout=600,env={**os.environ,'HOME':wd if cfg.get('home') else os.environ['HOME']})
-                cache[c]=(r.stdout+r.stderr).rstrip('\n')
+                r=subprocess.run(['bash','-c',c],cwd=wd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=600,env={**os.environ,'HOME':wd if cfg.get('home') else os.environ['HOME']})
+                cache[c]=(r.stdout).rstrip('\n')
             else: subprocess.run(['bash','-c',c],cwd=wd,timeout=600) if cfg.get('runall') else None
         json.dump(cache,open(cf,'w'),ensure_ascii=False,indent=0)
     return [(p,c,cache[c] if o is None else o) for p,c,o in steps]
