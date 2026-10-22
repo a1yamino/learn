@@ -33,8 +33,8 @@ bio_close_file
 bio_aof
 bio_lazy_free
 jemalloc_bg_thd</pre></div></div><div class="st"><span class="n">02</span><div><p>事件循环的频率。</p><pre class="cmd">CONFIG GET hz</pre><pre class="out">1) &quot;hz&quot;
-2) &quot;10&quot;</pre></div></div><div class="st"><span class="n">03</span><div><p>开启 I/O 线程（需要重启生效）。</p><pre class="cmd">docker rm -f redis
-docker run -d --name redis -p 6379:6379 redis:8.10 redis-server --io-threads 4
+2) &quot;10&quot;</pre></div></div><div class="st"><span class="n">03</span><div><p>在本地实验容器开启 I/O 线程和 DEBUG（重建会清空前面练习的数据；DEBUG 仅允许容器内回环连接）。</p><pre class="cmd">docker rm -f redis
+docker run -d --name redis -p 6379:6379 redis:8.10 redis-server --io-threads 4 --enable-debug-command local
 docker exec redis sh -c &#x27;cat /proc/1/task/*/comm&#x27;</pre><pre class="out">redis-server
 io_thd_1
 io_thd_2

@@ -14,7 +14,7 @@ def secs(prac,E):
 ('在你的电脑上练习','在宿主机终端和 redis-cli 中执行。',prac([
  ('查看 Redis 进程的线程。','docker exec redis sh -c \'ls /proc/1/task | wc -l; cat /proc/1/task/*/comm\'','5\nredis-server\nbio_close_file\nbio_aof\nbio_lazy_free\njemalloc_bg_thd'),
  ('事件循环的频率。','CONFIG GET hz','1) "hz"\n2) "10"'),
- ('开启 I/O 线程（需要重启生效）。','docker rm -f redis\ndocker run -d --name redis -p 6379:6379 redis:8.10 redis-server --io-threads 4\ndocker exec redis sh -c \'cat /proc/1/task/*/comm\'','redis-server\nio_thd_1\nio_thd_2\nio_thd_3\nbio_close_file\n…'),
+ ('在本地实验容器开启 I/O 线程和 DEBUG（重建会清空前面练习的数据；DEBUG 仅允许容器内回环连接）。','docker rm -f redis\ndocker run -d --name redis -p 6379:6379 redis:8.10 redis-server --io-threads 4 --enable-debug-command local\ndocker exec redis sh -c \'cat /proc/1/task/*/comm\'','redis-server\nio_thd_1\nio_thd_2\nio_thd_3\nbio_close_file\n…'),
  ('用 redis-benchmark 制造 50 个并发连接的负载，比较 io-threads 1 和 4。','docker exec redis redis-benchmark -q -t get -n 1000000 -c 50 -P 16 --threads 4','GET: 1612903.25 requests per second, p50=0.391 msec'),
  ('开启延迟监控，制造一次慢命令。','CONFIG SET latency-monitor-threshold 50\nDEBUG SLEEP 0.2\nLATENCY LATEST','OK\nOK\n1) 1) "command"\n   2) (integer) 1761103320\n   3) (integer) 200\n   4) (integer) 200'),
  ('看最近一次 fork 的耗时（微秒）。','BGSAVE\nINFO stats','Background saving started\n…\nlatest_fork_usec:3120')],
