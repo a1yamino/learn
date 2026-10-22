@@ -26,7 +26,7 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">前半部分需要 Linux（Mac / Windows：在 <code>docker run --rm -it --privileged ubuntu:24.04</code> 里做）。后半部分任何平台都可以。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">前半部分在有 sudo 权限的 Linux 实验机执行；Mac / Windows 用户请连接 Linux 虚拟机。后半部分需要 Docker 25+、Python 3 和 tar。Docker 25 起，无论经典存储还是 containerd 镜像存储，<code>docker save</code> 都输出 OCI 布局（index.json）；containerd 存储下 index.json 里还会嵌套一层 index，所以下面用递归脚本解析。Docker 25 之前的版本只导出 manifest.json 和 layer.tar，不能直接套用 index.json 步骤。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>手动创建一个 overlay。</p><pre class="cmd">mkdir -p /tmp/ov/{lower,upper,work,merged} &amp;&amp; cd /tmp/ov
 echo base &gt; lower/a.txt; echo keep &gt; lower/b.txt
 sudo mount -t overlay overlay -o lowerdir=lower,upperdir=upper,workdir=work merged
@@ -42,15 +42,38 @@ ls; cat index.json | python3 -m json.tool | head -12</pre><pre class="out">blobs
     &quot;manifests&quot;: [
         {
             &quot;mediaType&quot;: &quot;application/vnd.oci.image.manifest.v1+json&quot;,
-            &quot;digest&quot;: &quot;sha256:…&quot;,</pre></div></div><div class="st"><span class="n">06</span><div><p>顺着 index 找到 manifest，再找到层。</p><pre class="cmd">M=$(python3 -c &quot;import json;print(json.load(open(&#x27;index.json&#x27;))[&#x27;manifests&#x27;][0][&#x27;digest&#x27;][7:])&quot;)
-python3 -m json.tool blobs/sha256/$M</pre><pre class="out">{
+            &quot;digest&quot;: &quot;sha256:…&quot;,</pre></div></div><div class="st"><span class="n">06</span><div><p>顺着 index 找到本地平台的 manifest，再找到层。index 可以嵌套；不能假定 manifests[0] 直接包含 layers。下面递归跳过未下载的平台及证明文件，选择本次单平台拉取的镜像。</p><pre class="cmd">cat &gt; /tmp/learn-manifest.py &lt;&lt;&#x27;PY&#x27;
+import json
+from pathlib import Path
+
+def image_manifest(path):
+    if not path.exists():
+        return None  # 索引可能列出未下载的平台
+    obj = json.loads(path.read_text())
+    if &#x27;layers&#x27; in obj:
+        config = Path(&#x27;blobs&#x27;) / obj[&#x27;config&#x27;][&#x27;digest&#x27;].replace(&#x27;:&#x27;, &#x27;/&#x27;)
+        if config.exists() and json.loads(config.read_text()).get(&#x27;architecture&#x27;) != &#x27;unknown&#x27;:
+            return str(path)
+    for child in obj.get(&#x27;manifests&#x27;, []):
+        result = image_manifest(Path(&#x27;blobs&#x27;) / child[&#x27;digest&#x27;].replace(&#x27;:&#x27;, &#x27;/&#x27;))
+        if result:
+            return result
+    return None
+
+result = image_manifest(Path(&#x27;index.json&#x27;))
+if result is None:
+    raise SystemExit(&#x27;未找到本地平台镜像 manifest，请检查导出格式和镜像是否已拉取&#x27;)
+print(result)
+PY
+M=$(python3 /tmp/learn-manifest.py)
+python3 -m json.tool &quot;$M&quot;</pre><pre class="out">{
     &quot;config&quot;: { &quot;digest&quot;: &quot;sha256:91ef0af6…&quot;, &quot;size&quot;: 581 },
     &quot;layers&quot;: [
         { &quot;mediaType&quot;: &quot;application/vnd.oci.image.layer.v1.tar&quot;, &quot;digest&quot;: &quot;sha256:63ca1fbb…&quot;, &quot;size&quot;: 8121344 }
     ]
-}</pre></div></div><div class="st"><span class="n">07</span><div><p>验证：文件名就是内容的 sha256。</p><pre class="cmd">sha256sum blobs/sha256/$M</pre><pre class="out">&lt;与文件名相同的哈希&gt;  blobs/sha256/…</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>不运行容器，找出文件来自哪一层</h3><p>对 <code>python:3.12-slim</code> 执行 <code>docker save</code>，找出 <code>/usr/local/bin/python3.12</code> 是在哪一层加入的，并且只把这个文件从那一层里解压出来。</p><details><summary>查看参考答案</summary><div><pre class="cmd">mkdir /tmp/py && cd /tmp/py && docker save python:3.12-slim | tar -x
-M=$(python3 -c "import json;print(json.load(open('index.json'))['manifests'][0]['digest'][7:])")
-for L in $(python3 -c "import json;[print(l['digest'][7:]) for l in json.load(open('blobs/sha256/$M'))['layers']]"); do
+}</pre></div></div><div class="st"><span class="n">07</span><div><p>验证：文件名就是内容的 sha256。</p><pre class="cmd">python3 -c &quot;import hashlib,pathlib; p=pathlib.Path(&#x27;$M&#x27;); print(hashlib.sha256(p.read_bytes()).hexdigest(), p)&quot;</pre><pre class="out">&lt;与文件名相同的哈希&gt;  blobs/sha256/…</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>不运行容器，找出文件来自哪一层</h3><p>对 <code>python:3.12-slim</code> 执行 <code>docker save</code>，找出 <code>/usr/local/bin/python3.12</code> 是在哪一层加入的，并且只把这个文件从那一层里解压出来。</p><details><summary>查看参考答案</summary><div><pre class="cmd">mkdir /tmp/py && cd /tmp/py && docker save python:3.12-slim | tar -x
+M=$(python3 /tmp/learn-manifest.py)
+for L in $(python3 -c "import json;[print(l['digest'][7:]) for l in json.load(open('$M'))['layers']]"); do
   tar -tf blobs/sha256/$L 2>/dev/null | grep -qx "usr/local/bin/python3.12" && echo "found in $L"
 done
 tar -xf blobs/sha256/&lt;上面找到的哈希&gt; usr/local/bin/python3.12 && ls -lh usr/local/bin/python3.12</pre><pre class="out">found in 6c8f2a1e…
