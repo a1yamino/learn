@@ -35,7 +35,7 @@ Term(document.getElementById('t4'),[
 ['docker ps -a --format "table {{.Names}}\\t{{.Status}}"','NAMES   STATUS\napi     Restarting (137) 3 seconds ago\nworker  Exited (1) 2 minutes ago\nweb     Up 3 hours (unhealthy)','第一眼：谁没在运行、退出码是什么、健康检查是否失败。'],
 ['docker logs --since 10m --timestamps --tail 50 worker','2026-10-21T10:58:02Z Traceback (most recent call last):\n2026-10-21T10:58:02Z KeyError: \'DATABASE_URL\'','<code>--since</code>、<code>--tail</code> 缩小范围；<code>-f</code> 持续跟踪。'],
 ['docker inspect web -f "{{json .State.Health}}" | jq ".Log[-1]"','{ "ExitCode": 1, "Output": "curl: (7) Failed to connect to localhost port 8080" }','健康检查最近一次的输出，说明它为什么 unhealthy。'],
-['docker events --since 1h --filter event=die --filter event=oom','2026-10-21T18:41:13 container oom 3f2a… (name=api)\n2026-10-21T18:41:13 container die 3f2a… (exitCode=137, name=api)','事后还原：什么时候、哪个容器、为什么停止。'],
+['docker events --since 1h --until "$(date +%s)" --filter event=die --filter event=oom','2026-10-21T18:41:13 container oom 3f2a… (name=api)\n2026-10-21T18:41:13 container die 3f2a… (exitCode=137, name=api)','事后还原：什么时候、哪个容器、为什么停止。'],
 ['docker debug api','root@api / [debug]# ps\n  PID USER  COMMAND\n    1 app   node server.js','Docker Desktop 自带。给任何容器（包括已停止的、没有 shell 的）挂上一个带工具的调试 shell。'],
 ['nsenter -t $(docker inspect -f {{.State.Pid}} api) -n ss -lnt','LISTEN 0 511 0.0.0.0:3000','在宿主机上直接进入容器的网络命名空间，用宿主机的工具。需要 root。'],
 ['docker cp api:/app/config.json .','Successfully copied 2.05kB to /home/alice/.','把容器里的文件拷出来看，对停止的容器也有效。']]);
