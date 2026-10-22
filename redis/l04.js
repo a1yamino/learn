@@ -15,7 +15,7 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
 ['SET s "user-profile-json-…"（30 字节）','OBJECT ENCODING s → "embstr"\nMEMORY USAGE s → 88','ok',''],
 ['APPEND s "x"','OBJECT ENCODING s → "raw"','sig','embstr 是只读的，任何修改都会转为 raw。'],
 ['HSET u name a age 3（2 个字段）','OBJECT ENCODING u → "listpack"\nMEMORY USAGE u → 40','ok',''],
-['HSET 600 个字段（每个值 10 字节）','OBJECT ENCODING u → "hashtable"\nMEMORY USAGE u → 约 12 KB','sig','超过 hash-max-listpack-entries 512。内存数字仅示意，具体用 MEMORY USAGE 测量。'],
+['HSET 600 个字段（每个值 10 字节）','OBJECT ENCODING u → "hashtable"\nMEMORY USAGE u → 约 36 KB','sig','超过 hash-max-listpack-entries 512。内存数字仅示意，具体用 MEMORY USAGE 测量。'],
 ['SADD ids 1 2 3 … 500','OBJECT ENCODING ids → "intset"\nMEMORY USAGE ids → 约 1 KB（每个整数 2 字节）','ok','≤ 512 个整数（set-max-intset-entries）。'],
 ['SADD ids 1 … 600','OBJECT ENCODING ids → "hashtable"\nMEMORY USAGE ids → 约 30 KB','sig','超过 512 个整数，且超过 set-max-listpack-entries 128，直接变成 hashtable。'],
 ['ZADD z 1 a 2 b 3 c','OBJECT ENCODING z → "listpack"','ok','小 ZSet 是按分数有序的 listpack：成员和分数交替存放。超过阈值后变为 skiplist + dict（第 5 课）。'],
