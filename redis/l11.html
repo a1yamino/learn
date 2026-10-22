@@ -1,0 +1,67 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 11 课 · 发布订阅与 Stream</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 11 课</span><span class="sp"></span><a href="l10.html">← 第 10 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 11 课</div><h1>发布订阅与 Stream</h1>
+<p>Redis 可以在服务之间传递消息。本课比较两种方式：即发即弃的 Pub/Sub（包括 Redis 7 的分片 Pub/Sub），以及可持久化、可回放、支持消费者组和确认机制的 Stream，并讲清楚 List 做队列的局限、Stream 的 ID、PEL 与消息认领。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">Pub/Sub：只发给在线的人</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Stream 与消费者组</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：消费者崩溃了</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>Pub/Sub：只发给在线的人</h2><div class="goal">不存储，不确认。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Stream 与消费者组</h2><div class="goal">读出后进入待确认列表，确认后才算完成。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：消费者崩溃了</h2><div class="goal">组 g 中有 c1、c2 两个消费者。点击操作，看 PEL 的变化。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">观察 Stream 状态。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">开两个 redis-cli 终端。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>终端 1 订阅；终端 2 发布。</p><pre class="cmd">SUBSCRIBE news
+# 终端 2：
+PUBLISH news &quot;hello&quot;</pre><pre class="out">1) &quot;subscribe&quot;
+2) &quot;news&quot;
+3) (integer) 1
+1) &quot;message&quot;
+2) &quot;news&quot;
+3) &quot;hello&quot;</pre></div></div><div class="st"><span class="n">02</span><div><p>添加消息到 Stream。</p><pre class="cmd">XADD orders * id 1001 amt 99
+XADD orders * id 1002 amt 15
+XLEN orders</pre><pre class="out">&quot;1761104210123-0&quot;
+&quot;1761104210456-0&quot;
+(integer) 2</pre></div></div><div class="st"><span class="n">03</span><div><p>创建消费者组，从头开始消费。</p><pre class="cmd">XGROUP CREATE orders g 0
+XREADGROUP GROUP g c1 COUNT 1 STREAMS orders &gt;</pre><pre class="out">OK
+1) 1) &quot;orders&quot;
+   2) 1) 1) &quot;1761104210123-0&quot;
+         2) 1) &quot;id&quot; 2) &quot;1001&quot; 3) &quot;amt&quot; 4) &quot;99&quot;</pre></div></div><div class="st"><span class="n">04</span><div><p>未确认的消息在 PEL 中。</p><pre class="cmd">XPENDING orders g</pre><pre class="out">1) (integer) 1
+2) &quot;1761104210123-0&quot;
+3) &quot;1761104210123-0&quot;
+4) 1) 1) &quot;c1&quot;
+      2) &quot;1&quot;</pre></div></div><div class="st"><span class="n">05</span><div><p>c2 认领空闲超过 0 毫秒的消息（演示用）并确认。</p><pre class="cmd">XAUTOCLAIM orders g c2 0 0-0 COUNT 10
+XACK orders g 1761104210123-0</pre><pre class="out">1) &quot;0-0&quot;
+2) 1) 1) &quot;1761104210123-0&quot;
+      2) …
+3) (empty array)
+(integer) 1</pre></div></div><div class="st"><span class="n">06</span><div><p>裁剪长度。</p><pre class="cmd">XADD orders MAXLEN ~ 1000 * id 1003 amt 7</pre><pre class="out">&quot;1761104211000-0&quot;</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>设计订单事件的可靠消费</h3><p>订单服务每秒写入约 2000 条“已支付”事件，积分服务和通知服务都要各自处理全部事件；处理可能失败，进程可能被重启。用 Stream 设计：键与裁剪、消费者组划分、确认与重试、死信处理、如何保证积分不重复发放。</p><details><summary>查看参考答案</summary><div><ol><li>一个 Stream <code>events:order:paid</code>，<code>XADD … MAXLEN ~ 5000000</code>（约 40 分钟），超出部分以数据库为准。</li><li>两个消费者组 <code>points</code> 和 <code>notify</code>：每个组独立获得全部消息；组内多个实例（消费者名用实例 ID）分摊。</li><li>每个实例循环 <code>XREADGROUP GROUP points &lt;id&gt; COUNT 100 BLOCK 2000 STREAMS … &gt;</code>，处理成功后 <code>XACK</code>。启动时先读 ID 为 <code>0</code> 的自己的待处理消息（重启前没确认的）。</li><li>后台任务每 30 秒 <code>XAUTOCLAIM … 60000</code> 认领空闲超过 60 秒的消息；<code>XPENDING</code> 返回的投递次数超过 5 次的写入 <code>events:order:paid:dead</code> 并 XACK，告警人工处理。</li><li>“至少一次”意味着可能重复：积分发放以订单号做幂等，如数据库唯一约束 <code>(order_id, type)</code>，或 <code>SET points:done:&lt;order&gt; 1 NX EX 86400</code> 成功才发放。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>Pub/Sub</b>：<code>PUBLISH</code> 把消息推给此刻在线的订阅者，不存储。订阅者断线期间的消息永久丢失；订阅者处理太慢，输出缓冲区超过 <code>client-output-buffer-limit pubsub 32mb 8mb 60</code> 会被断开。适合实时通知、缓存失效广播这类可以丢的场景。</li><li>Cluster 中普通 PUBLISH 会广播到所有节点；Redis 7 的 <code>SPUBLISH</code>/<code>SSUBSCRIBE</code>（分片 Pub/Sub）按频道名的槽只发到对应分片，能水平扩展。</li><li><b>List 做队列</b>：<code>LPUSH</code> + <code>BRPOP</code> 简单，但消息被取走后消费者崩溃就丢了；<code>LMOVE</code> 移到“处理中”列表可以补救，但没有多消费者组、没有回放。</li><li><b>Stream</b> 是只追加的日志。<code>XADD</code> 返回形如 <code>1761104210123-0</code>（毫秒时间-序号）的 ID，严格递增。<code>XRANGE</code> 按 ID 范围读，<code>XREAD BLOCK</code> 阻塞等待新消息；<code>MAXLEN ~ 100000</code> 近似裁剪长度。</li><li><b>消费者组</b>：<code>XGROUP CREATE</code> 建组，<code>XREADGROUP … &gt;</code> 让组内多个消费者分摊消息；每条被读出的消息进入该消费者的 <b>PEL</b>（待确认列表），处理完 <code>XACK</code>。消费者崩溃后，其他消费者用 <code>XPENDING</code> 发现超时消息并用 <code>XAUTOCLAIM</code> 认领重试。这提供的是“至少一次”投递，所以处理逻辑要幂等。</li><li>规模更大、需要长期保留或跨数据中心的消息流仍应选 Kafka 等专门系统；Stream 适合已经有 Redis、消息量中等、保留时间短的场景。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 12</div><a class="big" href="l12.html">位图、HyperLogLog 与地理位置 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l11.js"></script>
+</body></html>
