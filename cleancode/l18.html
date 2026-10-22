@@ -54,17 +54,26 @@ def overdue_notices():
             sent += 1
     return sent
 EOF
-python3 -c &quot;import billing; billing.overdue_notices()&quot; 2&gt;&amp;1 | tail -n 1</pre><pre class="out">RuntimeError: 测试中不能真的发邮件</pre></div></div><div class="st"><span class="n">02</span><div><p>参数接缝：加带默认值的参数，现有调用方不受影响。</p><pre class="cmd">python3 - &lt;&lt;&#x27;EOF&#x27;
+python3 -c &quot;import billing; billing.overdue_notices()&quot;</pre><pre class="out">Traceback (most recent call last):
+  File &quot;&lt;string&gt;&quot;, line 1, in &lt;module&gt;
+    import billing; billing.overdue_notices()
+                    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File &quot;billing.py&quot;, line 18, in overdue_notices
+    SmtpClient().send(inv[&quot;email&quot;], f&quot;发票 {inv[&#x27;id&#x27;]} 已逾期&quot;)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File &quot;billing.py&quot;, line 11, in send
+    raise RuntimeError(&quot;测试中不能真的发邮件&quot;)
+RuntimeError: 测试中不能真的发邮件</pre></div></div><div class="st"><span class="n">02</span><div><p>参数接缝：加带默认值的参数，现有调用方不受影响。</p><pre class="cmd">python3 - &lt;&lt;&#x27;EOF&#x27;
 s = open(&quot;billing.py&quot;).read()
 s = s.replace(&quot;def overdue_notices():\n    today = datetime.date.today()&quot;,
-              &quot;def overdue_notices(today=None, invoices=None, mailer=None):\n    today = today or datetime.date.today()\n    invoices = INVOICES if invoices is None else invoices\n    mailer = mailer or SmtpClient()&quot;)
+              &quot;def overdue_notices(today=None, invoices=None, mailer=None):\n    today = datetime.date.today() if today is None else today\n    invoices = INVOICES if invoices is None else invoices\n    mailer = SmtpClient() if mailer is None else mailer&quot;)
 s = s.replace(&quot;for inv in INVOICES:&quot;, &quot;for inv in invoices:&quot;).replace(&quot;SmtpClient().send(&quot;, &quot;mailer.send(&quot;)
 open(&quot;billing.py&quot;, &quot;w&quot;).write(s)
 EOF
 sed -n &quot;/def overdue/,\$p&quot; billing.py</pre><pre class="out">def overdue_notices(today=None, invoices=None, mailer=None):
-    today = today or datetime.date.today()
+    today = datetime.date.today() if today is None else today
     invoices = INVOICES if invoices is None else invoices
-    mailer = mailer or SmtpClient()
+    mailer = SmtpClient() if mailer is None else mailer
     sent = 0
     for inv in invoices:
         if inv[&quot;due&quot;] &lt; today:
@@ -85,20 +94,45 @@ class Characterization(unittest.TestCase):
         self.assertEqual(n, 2)
         self.assertEqual(mail.sent, [(&quot;a@x.com&quot;, &quot;发票 1 已逾期&quot;), (&quot;b@x.com&quot;, &quot;发票 2 已逾期&quot;)])
 
-unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;], exit=False)
+if __name__ == &quot;__main__&quot;:
+    unittest.main(argv=[&quot;x&quot;, &quot;-v&quot;])
 EOF
-python3 test_billing.py 2&gt;&amp;1 | grep -E &quot;ok$|FAIL|Ran&quot;</pre><pre class="out">test_current_behaviour_includes_disputed_invoices (__main__.Characterization.test_current_behaviour_includes_disputed_invoices) ... ok
-Ran 1 test in 0.000s</pre></div></div><div class="st"><span class="n">04</span><div><p>新需求“有争议的发票不提醒”：萌芽方法 + 先修改特征测试为新期望。</p><pre class="cmd">python3 - &lt;&lt;&#x27;EOF&#x27;
-s = open(&quot;billing.py&quot;).read()
-s = s.replace(&#x27;if inv[&quot;due&quot;] &lt; today:&#x27;, &quot;if is_overdue(inv, today):&quot;)
-s += &quot;\n\ndef is_overdue(invoice, today):\n    return invoice[\&quot;due\&quot;] &lt; today and not invoice[\&quot;disputed\&quot;]\n&quot;
-open(&quot;billing.py&quot;, &quot;w&quot;).write(s)
+python3 test_billing.py</pre><pre class="out">test_current_behaviour_includes_disputed_invoices (__main__.Characterization.test_current_behaviour_includes_disputed_invoices) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK</pre></div></div><div class="st"><span class="n">04</span><div><p>新需求：先把特征测试改为“不提醒有争议发票”的新期望并运行。此步应失败，证明旧实现尚不满足新需求。</p><pre class="cmd">python3 - &lt;&lt;&#x27;EOF&#x27;
 t = open(&quot;test_billing.py&quot;).read()
 t = t.replace(&quot;includes_disputed&quot;, &quot;skips_disputed&quot;).replace(&quot;assertEqual(n, 2)&quot;, &quot;assertEqual(n, 1)&quot;).replace(&#x27;, (&quot;b@x.com&quot;, &quot;发票 2 已逾期&quot;)&#x27;, &quot;&quot;)
 open(&quot;test_billing.py&quot;, &quot;w&quot;).write(t)
 EOF
-python3 test_billing.py 2&gt;&amp;1 | grep -E &quot;ok$|FAIL|Ran&quot;</pre><pre class="out">test_current_behaviour_skips_disputed_invoices (__main__.Characterization.test_current_behaviour_skips_disputed_invoices) ... ok
-Ran 1 test in 0.000s</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为这个类找接缝</h3><p><pre class="cmd">class PriceUpdater:
+python3 test_billing.py</pre><pre class="out">test_current_behaviour_skips_disputed_invoices (__main__.Characterization.test_current_behaviour_skips_disputed_invoices) ... FAIL
+
+======================================================================
+FAIL: test_current_behaviour_skips_disputed_invoices (__main__.Characterization.test_current_behaviour_skips_disputed_invoices)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File &quot;test_billing.py&quot;, line 12, in test_current_behaviour_skips_disputed_invoices
+    self.assertEqual(n, 1)
+    ~~~~~~~~~~~~~~~~^^^^^^
+AssertionError: 2 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (failures=1)</pre></div></div><div class="st"><span class="n">05</span><div><p>再用萌芽方法实现新规则，测试应恢复为绿色。</p><pre class="cmd">python3 - &lt;&lt;&#x27;EOF&#x27;
+s = open(&quot;billing.py&quot;).read()
+s = s.replace(&#x27;if inv[&quot;due&quot;] &lt; today:&#x27;, &quot;if is_overdue(inv, today):&quot;)
+s += &quot;\n\ndef is_overdue(invoice, today):\n    return invoice[\&quot;due\&quot;] &lt; today and not invoice[\&quot;disputed\&quot;]\n&quot;
+open(&quot;billing.py&quot;, &quot;w&quot;).write(s)
+EOF
+python3 test_billing.py</pre><pre class="out">test_current_behaviour_skips_disputed_invoices (__main__.Characterization.test_current_behaviour_skips_disputed_invoices) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为这个类找接缝</h3><p><pre class="cmd">class PriceUpdater:
     def run(self):
         rates = requests.get("https://fx.example.com/latest").json()
         for p in Product.objects.all():
