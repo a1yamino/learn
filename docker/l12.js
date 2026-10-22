@@ -31,7 +31,7 @@ Term(document.getElementById('t4'),[
 ['docker stats --no-stream','CONTAINER ID   NAME   CPU %    MEM USAGE / LIMIT   MEM %   PIDS\n5e1d…          api    0.31%    93MiB / 512MiB      18.2%   9','数据来自 cgroup 文件。MEM USAGE 不含页缓存中可以回收的部分。'],
 ['docker inspect -f "{{.State.OOMKilled}} {{.State.ExitCode}} {{.RestartCount}}" api','true 137 4','排查“容器总是重启”时先看这三个值。137 + OOMKilled=true 就是内存不够。注意：容器里的子进程被 OOM 杀死时，主进程可能还活着，OOMKilled 不一定为 true，要看 <code>dmesg</code> 或 memory.events。']]);
 Quiz(document.getElementById('qs'),[
-['本例禁止 swap，内存回收仍不足且主进程被 OOM killer 选中，会怎样？',['变慢','进程被 OOM killer 杀死，退出码 137','写入 swap 后继续正常运行'],1,'不能把一次内存增长等同于容器必然退出：还取决于回收、swap 和被杀的是哪个进程。'],
+['已禁止 swap（--memory-swap 等于 --memory），应用内存持续超过 --memory，通常会怎样？',['变慢','进程被 OOM killer 杀死，退出码 137','写入 swap 后继续正常运行'],1,'不能把一次内存增长等同于容器必然退出：还取决于回收、swap 和被杀的是哪个进程。'],
 ['容器超出 --cpus 限制，会怎样？',['被杀死','被限流，变慢','自动扩容'],1,'CPU 可压缩。'],
 ['--cpus 0.5 在 cgroup v2 里写成了什么？',['cpu.max = 50000 100000','cpu.weight = 50','memory.max = 0.5'],0,'每 100000 微秒周期内最多 50000 微秒。'],
 ['用什么防止容器里的 fork 炸弹拖垮宿主机？',['--memory','--pids-limit','--read-only'],1,'限制进程数。']]);
