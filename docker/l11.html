@@ -26,7 +26,7 @@
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">需要 Linux。Mac / Windows 用户先执行 <code>docker run --rm -it --privileged --pid=host ubuntu:24.04</code>，在这个容器里做（它能看到 Docker Desktop 虚拟机里的进程），并先运行 <code>apt-get update && apt-get install -y util-linux iproute2 procps</code>。</div></div></div>
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本节在已安装 Docker Engine 的 Linux 实验机上执行，当前用户需能运行 docker 和 sudo，并安装 util-linux、iproute2、procps。Mac / Windows 用户请使用这样的 Linux 虚拟机或实验机并通过终端连接，再执行本节全部命令。普通 Ubuntu 工具容器没有 Docker CLI、daemon 访问和宿主机文件系统，不能直接替代这套实验环境。</div></div></div>
 <div class="prac"><div class="st"><span class="n">01</span><div><p>启动一个容器，找到它在宿主机上的 PID。</p><pre class="cmd">docker run -d --name ns-demo nginx:1.27
 PID=$(docker inspect -f &quot;{{.State.Pid}}&quot; ns-demo); echo $PID</pre><pre class="out">48213</pre></div></div><div class="st"><span class="n">02</span><div><p>在宿主机上，它就是一个普通进程。</p><pre class="cmd">ps -o pid,user,cmd -p $PID</pre><pre class="out">    PID USER     CMD
   48213 root     nginx: master process nginx -g daemon off;</pre></div></div><div class="st"><span class="n">03</span><div><p>比较它和你当前 shell 的 namespace。不同的编号说明处于不同的 namespace。</p><pre class="cmd">sudo ls -l /proc/$PID/ns/ | awk &#x27;{print $9,$11}&#x27;
