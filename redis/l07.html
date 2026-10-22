@@ -1,0 +1,82 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Redis 第 7 课 · 过期：惰性删除与定期删除</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Redis</a><span class="crumb">第 7 课</span><span class="sp"></span><a href="l06.html">← 第 6 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Redis · 第 7 课</div><h1>过期：惰性删除与定期删除</h1>
+<p>缓存几乎都带过期时间，但一个键过期后并不会在那一刻被删除。本课讲过期时间存在哪里、Redis 如何组合“访问时检查”和“后台抽样清理”两种策略、为什么过期的键仍可能占着内存、哪些命令会悄悄清除过期时间，以及过期在复制和持久化中的处理方式。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">两种删除方式</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">过期键为什么还占着内存</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：这个键的 TTL 还在吗</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>两种删除方式</h2><div class="goal">访问时检查与后台抽样。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>过期键为什么还占着内存</h2><div class="goal">惰性 + 定期的空档。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：这个键的 TTL 还在吗</h2><div class="goal">键 <code>session:1</code> 设置了 <code>EX 600</code>。选择接下来的操作，看 TTL 的变化。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">设置与观察过期。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在 redis-cli 中执行。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>设置与查看过期时间。</p><pre class="cmd">SET token abc EX 30
+TTL token
+PTTL token
+EXPIRETIME token</pre><pre class="out">OK
+(integer) 30
+(integer) 29712
+(integer) 1761103830</pre></div></div><div class="st"><span class="n">02</span><div><p>SET 会清除 TTL，KEEPTTL 保留。</p><pre class="cmd">SET token def
+TTL token
+EXPIRE token 30
+SET token ghi KEEPTTL
+TTL token</pre><pre class="out">OK
+(integer) -1
+(integer) 1
+OK
+(integer) 27</pre></div></div><div class="st"><span class="n">03</span><div><p>条件过期：只在新的过期时间更长时更新。</p><pre class="cmd">EXPIRE token 10 GT
+TTL token
+EXPIRE token 100 GT
+TTL token</pre><pre class="out">(integer) 0
+(integer) 25
+(integer) 1
+(integer) 100</pre></div></div><div class="st"><span class="n">04</span><div><p>写入 10 万个 1 秒后过期的键，观察主动清理。</p><pre class="cmd">EVAL &quot;for i=1,100000 do redis.call(&#x27;SET&#x27;,&#x27;tmp:&#x27;..i,i,&#x27;EX&#x27;,1) end return 1&quot; 0
+INFO keyspace</pre><pre class="out">(integer) 1
+# Keyspace
+db0:keys=100023,expires=100001,avg_ttl=812,subexpiry=0</pre></div></div><div class="st"><span class="n">05</span><div><p>几秒后再看：已被后台清理。</p><pre class="cmd">INFO keyspace
+INFO stats</pre><pre class="out"># Keyspace
+db0:keys=22,expires=0,avg_ttl=0,subexpiry=0
+…
+expired_keys:100001
+expired_stale_perc:0.00
+expired_time_cap_reached_count:0</pre></div></div><div class="st"><span class="n">06</span><div><p>Hash 字段级过期（Redis 7.4+）。</p><pre class="cmd">HSET sess:1 user 42 csrf x1
+HEXPIRE sess:1 5 FIELDS 1 csrf
+HTTL sess:1 FIELDS 2 user csrf</pre><pre class="out">(integer) 2
+1) (integer) 1
+1) (integer) -1
+2) (integer) 5</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>排查“设了过期时间却永不过期”</h3><p>一个服务把用户的会话存成 <code>SET session:{id} {json} EX 1800</code>，每次请求时更新会话中的最后访问时间：<code>SET session:{id} {新 json}</code>。运行几周后内存不断增长，<code>INFO keyspace</code> 中 <code>expires</code> 远小于 <code>keys</code>。找出原因并修复，说明如何清理存量。</p><details><summary>查看参考答案</summary><div><p>更新时的 <code>SET</code> 没有带过期参数，会<b>清除</b>原有的过期时间：用户第一次请求后，会话就变成了永久键。<code>expires</code> 远小于 <code>keys</code> 正是这个症状。</p><pre class="cmd">SET session:{id} {新 json} EX 1800        # 滑动过期：每次续期 30 分钟
+# 或者只想保留原来的过期时间：
+SET session:{id} {新 json} KEEPTTL
+# 更好的结构：Hash，只更新一个字段，TTL 不受影响
+HSET session:{id} last_seen 1761103900
+EXPIRE session:{id} 1800</pre><p>清理存量：用 SCAN 遍历 <code>session:*</code>，对 <code>TTL</code> 为 -1 的键补设过期时间（例如 <code>EXPIRE key 1800 NX</code>，NX 表示只在没有过期时间时设置），分批执行，避免一次处理太多。之后在监控中加入 keys 与 expires 比例的告警。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>设置了过期时间的键，除了在键空间中，还登记在每个数据库的<b>过期字典</b>（expires）里：键 → 毫秒级的绝对过期时间戳。<code>EXPIRE</code>/<code>PEXPIRE</code> 设置相对时间，<code>EXPIREAT</code> 设置绝对时间；Redis 7 起支持 <code>NX/XX/GT/LT</code> 条件。</li><li><b>惰性删除</b>：每次访问键之前检查是否已过期，过期则删除并当作不存在。只靠它，从不被访问的过期键会永远占着内存。</li><li><b>定期删除</b>：serverCron 中的主动过期循环逐步扫描各数据库的过期字典，删除已过期的键；如果某次扫描中过期键比例较高就继续，并限制总耗时（约占 CPU 的 25%，<code>active-expire-effort</code> 可调）。每轮事件循环之前还有一个耗时很短的快速循环。</li><li>所以过期键会在内存中“滞留”一段时间。大量键在同一时刻过期时，主动清理会占用较多 CPU，同时缓存突然集体失效还会压垮数据库——给过期时间加随机抖动（第 18 课）。</li><li>会<b>清除过期时间</b>的操作：<code>SET</code>（未带 <code>KEEPTTL</code>）、<code>GETSET</code>、<code>PERSIST</code>、对整个键重新赋值的命令。<code>INCR</code>、<code>HSET</code>、<code>LPUSH</code>、<code>RENAME</code>（过期时间随键转移）保留原过期时间。<code>TTL</code> 返回 -1 表示没有过期时间，-2 表示键不存在。</li><li><b>副本</b>不会自己删除过期键，而是等主库删除后通过复制流收到 <code>DEL</code>；但副本上读取逻辑上已过期的键会返回空。AOF 中过期以 <code>PEXPIREAT</code> 绝对时间记录；加载 RDB 时，主库会跳过已过期的键。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 08</div><a class="big" href="l08.html">内存管理与淘汰策略 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l07.js"></script>
+</body></html>
