@@ -1,0 +1,74 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka 第 19 课 · 安全：TLS、SASL 与 ACL</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kafka</a><span class="crumb">第 19 课</span><span class="sp"></span><a href="l18.html">← 第 18 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kafka · 第 19 课</div><h1>安全：TLS、SASL 与 ACL</h1>
+<p>默认安装的 Kafka 不加密、不认证、不授权：任何能连上端口的人都能读写所有主题。本课按“加密—认证—授权—配额”四层讲清楚：监听器与安全协议、TLS 与双向 TLS、SASL 的几种机制（SCRAM、OAUTHBEARER、GSSAPI）、KRaft 下的 StandardAuthorizer 与 ACL 规则，以及按用户限流的配额。约 65 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次带认证的请求</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：ACL 检查</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">配额：限流而不是报错</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次带认证的请求</h2><div class="goal">SASL_SSL 客户端从连接到被授权。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：ACL 检查</h2><div class="goal">用户 alice 有这些 ACL：允许 Write 主题前缀 <code>orders.</code>；允许 Read 主题 <code>orders.created</code>；允许 Read 组 <code>billing</code>；拒绝 Write 主题 <code>orders.audit</code>。选择请求。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:70px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>配额：限流而不是报错</h2><div class="goal">一个客户端超出配额时。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">用户、ACL 与配额管理。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">启动一个带 SCRAM 认证和 ACL 的单节点 Kafka。演示中 Broker 内部监听器使用 PLAINTEXT 且只在容器内可达，生产环境不要这样做。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写 Broker 配置。</p><pre class="cmd">cat &gt; s.properties &lt;&lt;&#x27;X&#x27;
+node.id=1
+process.roles=broker,controller
+listeners=INTERNAL://localhost:19092,CONTROLLER://localhost:9093,SASL://0.0.0.0:9192
+advertised.listeners=INTERNAL://localhost:19092,SASL://localhost:9192
+listener.security.protocol.map=INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,SASL:SASL_PLAINTEXT
+inter.broker.listener.name=INTERNAL
+controller.listener.names=CONTROLLER
+controller.quorum.bootstrap.servers=localhost:9093
+sasl.enabled.mechanisms=SCRAM-SHA-512
+listener.name.sasl.scram-sha-512.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required;
+authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer
+super.users=User:ANONYMOUS
+log.dirs=/tmp/ks
+offsets.topic.replication.factor=1
+transaction.state.log.replication.factor=1
+X</pre><pre class="out">（保存文件）</pre></div></div><div class="st"><span class="n">02</span><div><p>格式化存储并启动。</p><pre class="cmd">docker run -d --name ks -p 9192:9192 -v $PWD/s.properties:/tmp/s.properties apache/kafka:4.4.0 bash -c &quot;/opt/kafka/bin/kafka-storage.sh format -t 4L6g3nShT-eMCtK--X86sw -c /tmp/s.properties --standalone &amp;&amp; /opt/kafka/bin/kafka-server-start.sh /tmp/s.properties&quot;
+docker exec -it ks bash; cd /opt/kafka; A=&quot;--bootstrap-server localhost:19092&quot;</pre><pre class="out">…</pre></div></div><div class="st"><span class="n">03</span><div><p>创建 SCRAM 用户 alice 和主题。</p><pre class="cmd">bin/kafka-configs.sh $A --alter --add-config &#x27;SCRAM-SHA-512=[password=alice-secret]&#x27; --entity-type users --entity-name alice
+bin/kafka-topics.sh $A --create --topic orders.created --partitions 1</pre><pre class="out">Completed updating config for user alice.
+Created topic orders.created.</pre></div></div><div class="st"><span class="n">04</span><div><p>alice 的客户端配置；没有 ACL 时写入被拒绝。</p><pre class="cmd">cat &gt; /tmp/alice.properties &lt;&lt;&#x27;X&#x27;
+security.protocol=SASL_PLAINTEXT
+sasl.mechanism=SCRAM-SHA-512
+sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=&quot;alice&quot; password=&quot;alice-secret&quot;;
+X
+echo hi | bin/kafka-console-producer.sh --bootstrap-server localhost:9192 --topic orders.created --producer.config /tmp/alice.properties</pre><pre class="out">ERROR … org.apache.kafka.common.errors.TopicAuthorizationException: Not authorized to access topics: [orders.created]</pre></div></div><div class="st"><span class="n">05</span><div><p>授予生产者权限后重试。</p><pre class="cmd">bin/kafka-acls.sh $A --add --allow-principal User:alice --producer --topic orders. --resource-pattern-type prefixed
+echo hi | bin/kafka-console-producer.sh --bootstrap-server localhost:9192 --topic orders.created --producer.config /tmp/alice.properties &amp;&amp; echo OK</pre><pre class="out">Adding ACLs for resource `ResourcePattern(resourceType=TOPIC, name=orders., patternType=PREFIXED)`:
+ 	(principal=User:alice, host=*, operation=WRITE, permissionType=ALLOW)
+ 	(principal=User:alice, host=*, operation=DESCRIBE, permissionType=ALLOW)
+ 	(principal=User:alice, host=*, operation=CREATE, permissionType=ALLOW)
+…
+OK</pre></div></div><div class="st"><span class="n">06</span><div><p>错误的密码。</p><pre class="cmd">sed -i &#x27;s/alice-secret/wrong/&#x27; /tmp/alice.properties
+echo hi | bin/kafka-console-producer.sh --bootstrap-server localhost:9192 --topic orders.created --producer.config /tmp/alice.properties</pre><pre class="out">ERROR … SaslAuthenticationException: Authentication failed during authentication due to invalid credentials with SASL mechanism SCRAM-SHA-512</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>为多团队共享集群设计安全方案</h3><p>一个 Kafka 集群给三个团队使用：订单团队（生产 <code>orders.*</code>，使用事务）、风控团队（消费 <code>orders.*</code>，组 <code>risk-*</code>）、数据平台（用 Connect 把所有主题导入数据湖，夜间批量重读）。公司已有 OIDC 身份平台。写出监听器与认证方案、每个团队的 ACL、配额，以及凭据如何轮换。</p><details><summary>查看参考答案</summary><div><ul><li><b>监听器</b>：<code>CLIENT</code> 使用 SASL_SSL + OAUTHBEARER（对接公司 OIDC，服务账号获取短期令牌，自动刷新）；<code>INTERNAL</code>（Broker 间）和 <code>CONTROLLER</code> 使用双向 TLS，证书由内部 CA 签发；所有监听器都加密。<code>allow.everyone.if.no.acl.found=false</code>，<code>super.users</code> 只包含 Broker 和运维账号。</li><li><b>订单团队</b>（<code>User:svc-orders</code>）：<code>--producer --topic orders. --resource-pattern-type prefixed</code>，加上 <code>--transactional-id orders- --resource-pattern-type prefixed</code> 的 Write/Describe；不授予 Read。</li><li><b>风控团队</b>（<code>User:svc-risk</code>）：<code>--consumer --topic orders. --group risk- --resource-pattern-type prefixed</code>。</li><li><b>数据平台</b>（<code>User:svc-connect</code>）：所有业务主题的 Read 与 Describe、组 <code>connect-</code> 前缀的 Read；Connect 内部主题（<code>connect-*</code>）的读写与创建。</li><li><b>配额</b>：<code>svc-connect</code> 的 <code>consumer_byte_rate</code> 限制为如 100 MB/s，防止夜间重读挤占实时流量；对未知 client.id 设置默认配额。</li><li><b>轮换</b>：OAUTHBEARER 令牌本身短期有效，轮换客户端密钥在身份平台完成；TLS 证书提前在 truststore 中加入新 CA，滚动更新 keystore（Broker 支持动态更新 <code>ssl.keystore.location</code>）。若使用 SCRAM，可先为用户添加新密码再更新客户端，最后删除旧密码。</li></ul></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>监听器</b>：一个 Broker 可以有多个监听器（<code>listeners</code>），每个映射到一种安全协议（<code>listener.security.protocol.map</code>）：<code>PLAINTEXT</code>、<code>SSL</code>、<code>SASL_PLAINTEXT</code>、<code>SASL_SSL</code>。常见布局：客户端用 <code>SASL_SSL</code>，Broker 间（<code>inter.broker.listener.name</code>）和控制器（<code>controller.listener.names</code>）用单独的监听器，同样加密和认证。</li><li><b>TLS</b>：Broker 配置 keystore（自己的证书和私钥）和 truststore（信任的 CA）。客户端设置 <code>security.protocol=SSL</code> 和 truststore，默认校验主机名（<code>ssl.endpoint.identification.algorithm=https</code>）。<b>双向 TLS</b>（<code>ssl.client.auth=required</code>）用客户端证书认证，主体名来自证书 DN（可用 <code>ssl.principal.mapping.rules</code> 映射）。</li><li><b>SASL</b> 机制：<code>SCRAM-SHA-256/512</code>（用户名密码，凭据以加盐哈希存在 KRaft 元数据中，用 <code>kafka-configs.sh</code> 管理）；<code>OAUTHBEARER</code>（对接 OIDC 身份提供方，令牌短期有效）；<code>GSSAPI</code>（Kerberos）；<code>PLAIN</code>（明文密码，只能配合 TLS，且需要自定义回调才不必把密码写在配置里）。SASL_PLAINTEXT 不加密，生产中应使用 SASL_SSL。</li><li><b>授权</b>：KRaft 使用 <code>authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer</code>，ACL 存在元数据日志中。一条 ACL：主体（<code>User:alice</code>）、允许/拒绝、操作（Read、Write、Create、Describe、Alter…）、资源类型（Topic、Group、Cluster、TransactionalId）、资源名与匹配方式（LITERAL 或 PREFIXED）、来源主机。拒绝优先于允许；默认没有 ACL 就拒绝（<code>allow.everyone.if.no.acl.found=false</code>）；<code>super.users</code> 不受限制。</li><li>常用组合：生产者需要主题的 Write（和 Describe），幂等/事务还需要 TransactionalId 的 Write；消费者需要主题的 Read 和组的 Read。<code>kafka-acls.sh --producer</code>、<code>--consumer</code> 可以一次添加这些规则。按服务前缀授权（<code>--resource-pattern-type prefixed --topic orders.</code>）便于管理。</li><li><b>配额</b>：按用户或 client.id 限制生产/消费字节速率（<code>producer_byte_rate</code>、<code>consumer_byte_rate</code>）和请求时间占比（<code>request_percentage</code>），超出时 Broker 延迟响应（限流）而不是报错。用于防止一个离线任务或失控的客户端拖垮整个集群。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 20</div><a class="big" href="l20.html">运维：分区重分配、扩容与升级 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l19.js"></script>
+</body></html>
