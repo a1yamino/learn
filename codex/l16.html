@@ -1,0 +1,152 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 16 课 · 压缩与 /compact</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 16 课</span><span class="sp"></span><a href="l15.html">← 第 15 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 16 课</div><h1>压缩与 /compact</h1>
+<p>上下文窗口是有限的。pi 在接近上限时让模型写摘要并替换旧消息（第 14 课）；Codex 也是如此，但多了两条路径：支持远程压缩的 provider（OpenAI）走服务端压缩，其余 provider 走<b>本地压缩</b>——把 <code>prompt.md</code> 作为一条用户消息追加到历史末尾，请模型写“交接摘要”，再用“初始上下文 + 用户消息 + 摘要”重建历史。本课把阈值调到 1500 token，观察一次真实的回合中压缩。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次回合中压缩</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：压缩后剩下什么？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次回合中压缩</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：压缩后剩下什么？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/protocol/src/openai_models.rs#L529-L540" target="_blank" rel="noopener">codex-rs/protocol/src/openai_models.rs  L529–540 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub fn auto_compact_token_limit(&amp;self) -&gt; Option&lt;i64&gt; {
+    let context_limit = self
+        .resolved_context_window()
+        .map(|context_window| (context_window * 9) / 10);
+    let config_limit = self.auto_compact_token_limit;
+    if let Some(context_limit) = context_limit {
+        return Some(
+            config_limit.map_or(context_limit, |limit| std::cmp::min(limit, context_limit)),
+        );
+    }
+    config_limit
+}</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/session/turn.rs#L1552-L1555" target="_blank" rel="noopener">codex-rs/core/src/session/turn.rs  L1552–1555, L1598–1612 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">match turn_context.provider.capabilities().remote_compaction {
+    RemoteCompactionSupport::V2 =&gt; {
+        let has_candidate = candidate.is_some();
+        if !has_candidate {
+  // …
+    Ok(installed)
+}
+RemoteCompactionSupport::Unsupported =&gt; {
+    emit_compact_metric(
+        &amp;sess.services.session_telemetry,
+        &quot;local&quot;,
+        /*manual*/ false,
+    );
+    run_inline_auto_compact_task(
+        Arc::clone(sess),
+        Arc::clone(turn_context),
+        replacement_step_context,
+        world_state,
+        reason,
+        phase,</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/compact.rs#L61-L63" target="_blank" rel="noopener">codex-rs/core/src/compact.rs  L61–63, L697–708 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub use codex_prompts::SUMMARIZATION_PROMPT;
+pub use codex_prompts::SUMMARY_PREFIX;
+const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
+  // …
+pub(crate) fn build_compacted_history(
+    initial_context: Vec&lt;ResponseItemEnvelope&gt;,
+    user_messages: &amp;[CompactedUserMessage&lt;&#x27;_&gt;],
+    summary_text: &amp;str,
+) -&gt; Vec&lt;ResponseItemEnvelope&gt; {
+    build_compacted_history_with_limit(
+        initial_context,
+        user_messages,
+        summary_text,
+        COMPACT_USER_MESSAGE_MAX_TOKENS,
+    )
+}</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/prompts/templates/compact/prompt.md#L1-L9" target="_blank" rel="noopener">codex-rs/prompts/templates/compact/prompt.md  L1–9 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.
+
+Include:
+- Current progress and key decisions made
+- Important context, constraints, or user preferences
+- What remains to be done (clear next steps)
+- Any critical data, examples, or references needed to continue
+
+Be concise, structured, and focused on helping the next LLM seamlessly continue the work.</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l14.html">pi 第 14 课 · 上下文压缩（compaction）</a>。pi 保留最近若干 token 的原始消息；Codex 本地压缩只保留用户消息与摘要。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>剧本：识别压缩请求并回摘要。</p><pre class="cmd">cat &gt; codex/scratch/s_compact.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：压缩请求回一段摘要；普通请求：先调两次工具，再回答
+import json
+def reply(n, body):
+    if &quot;CONTEXT CHECKPOINT COMPACTION&quot; in json.dumps(body, ensure_ascii=False):
+        return [msg(&quot;摘要：用户要数文件；已执行 ls 与 echo；下一步给出结论。&quot;)]
+    if &quot;Another language model&quot; in json.dumps(body, ensure_ascii=False):
+        return [msg(&quot;根据摘要继续：完成，目录里没有文件&quot;)]
+    outs = [i for i in body[&quot;input&quot;] if i.get(&quot;type&quot;) == &quot;function_call_output&quot;]
+    if len(outs) == 0: return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;ls&quot;}, &quot;c1&quot;)]
+    if len(outs) == 1: return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;echo hi&quot;}, &quot;c2&quot;)]
+    return [msg(&quot;完成：目录里没有文件&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>运行并查看请求。</p><pre class="cmd">cat &gt; codex/scratch/l16.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 自动压缩：把阈值调到 1500 token（模拟服务端每次报告 1000×n 个输入 token）
+S=$(pwd); export CODEX_HOME=$(mktemp -d); cd $(mktemp -d)
+EXTRA_CONFIG=&#x27;model_auto_compact_token_limit = 1500&#x27; bash $S/run.sh $S/s_compact.py --json &quot;数文件&quot; 2&gt;/dev/null \
+ | python3 -c &quot;
+import json,sys
+for l in sys.stdin:
+    e=json.loads(l); it=e.get(&#x27;item&#x27;,{})
+    if e[&#x27;type&#x27;]==&#x27;item.completed&#x27;: print(&#x27;  事件&#x27;, it.get(&#x27;type&#x27;), (it.get(&#x27;command&#x27;) or it.get(&#x27;text&#x27;) or &#x27;&#x27;)[:40])&quot;
+python3 $S/show.py $CODEX_HOME/requests 60
+echo &quot;== rollout 中的 compacted 行：$(grep -c &#x27;&quot;type&quot;:&quot;compacted&quot;&#x27; $CODEX_HOME/sessions/*/*/*/*.jsonl)&quot;
+EOF
+cd codex/scratch &amp;&amp; bash l16.sh</pre><pre class="out">  事件 command_execution /bin/bash -lc ls
+  事件 command_execution /bin/bash -lc &#x27;echo hi&#x27;
+  事件 agent_message 根据摘要继续：完成，目录里没有文件
+== req01.json  工具 10 个，input 4 条
+  message                developer You are Codex, a coding agent based on GPT-5. You and the us
+  message                developer &lt;skills_instructions&gt; ⏎ ## Skills ⏎ A skill is a set of loca
+  message                user      &lt;environment_context&gt; ⏎   &lt;cwd&gt;/tmp/tmp.Fp7Z9GJN3Q&lt;/cwd&gt; ⏎  
+  message                user      数文件
+== req02.json  工具 10 个，input 6 条
+  message                developer You are Codex, a coding agent based on GPT-5. You and the us
+  message                developer &lt;skills_instructions&gt; ⏎ ## Skills ⏎ A skill is a set of loca
+  message                user      &lt;environment_context&gt; ⏎   &lt;cwd&gt;/tmp/tmp.Fp7Z9GJN3Q&lt;/cwd&gt; ⏎  
+  message                user      数文件
+  function_call                    exec_command({&quot;cmd&quot;: &quot;ls&quot;})
+  function_call_output             Chunk ID: 72ecee ⏎ Wall time: 0.0000 seconds ⏎ Process exite
+== req03.json  工具 0 个，input 9 条
+  message                developer You are Codex, a coding agent based on GPT-5. You and the us
+  message                developer &lt;skills_instructions&gt; ⏎ ## Skills ⏎ A skill is a set of loca
+  message                user      &lt;environment_context&gt; ⏎   &lt;cwd&gt;/tmp/tmp.Fp7Z9GJN3Q&lt;/cwd&gt; ⏎  
+  message                user      数文件
+  function_call                    exec_command({&quot;cmd&quot;: &quot;ls&quot;})
+  function_call_output             Chunk ID: 72ecee ⏎ Wall time: 0.0000 seconds ⏎ Process exite
+  function_call                    exec_command({&quot;cmd&quot;: &quot;echo hi&quot;})
+  function_call_output             Chunk ID: 89b85c ⏎ Wall time: 0.0000 seconds ⏎ Process exite
+  message                user      You are performing a CONTEXT CHECKPOINT COMPACTION. Create a
+== req04.json  工具 10 个，input 5 条
+  message                developer You are Codex, a coding agent based on GPT-5. You and the us
+  message                developer &lt;skills_instructions&gt; ⏎ ## Skills ⏎ A skill is a set of loca
+  message                user      &lt;environment_context&gt; ⏎   &lt;cwd&gt;/tmp/tmp.Fp7Z9GJN3Q&lt;/cwd&gt; ⏎  
+  message                user      数文件
+  message                user      Another language model started to solve this problem and pro
+== rollout 中的 compacted 行：1</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>无限压缩</h3><p>去掉 <code>s_compact.py</code> 中对 “Another language model” 的判断再运行。为什么会一直压缩下去？真实环境中什么能阻止这种情况？</p><details><summary>查看参考答案</summary><div><p>去掉后，压缩完成的新历史中没有工具输出，剧本又从 <code>ls</code> 开始；而 mock 报告的 input_tokens 是 1000×n，随请求数单调增长，永远超过 1500，于是每两次请求就压缩一次——这正是作者第一次运行时看到的 500 多个请求（用 <code>timeout</code> 中止）。</p><p>真实环境中，压缩后的历史明显变短，服务端报告的 token 数随之下降；另外摘要会告诉模型“已经执行过 ls”，模型不会重来。教训：压缩依赖于“摘要足够好”与“token 统计真实”两个前提。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>触发阈值</b>：<code>ModelInfo::auto_compact_token_limit</code>（<code>protocol/src/openai_models.rs</code>）= min(配置项 <code>model_auto_compact_token_limit</code>, 上下文窗口 × 90%)。</li><li><b>时机</b>：回合前（PreTurn）、回合中（MidTurn，工具调用之间）、回合后（PostTurn）都会检查；实验中第 2 次工具调用之后触发了回合中压缩。换到更小窗口的模型时也会压缩（<code>CompactionReason::ModelDownshift</code>）。</li><li><b>路径选择</b>（<code>session/turn.rs</code>）：<code>provider.capabilities().remote_compaction</code> 为 V2 时走 <code>compact_remote_v2</code>；Unsupported（如本课的 mock）时走本地 <code>compact.rs::run_inline_auto_compact_task</code>。</li><li><b>本地压缩请求</b>：历史 + 一条 user 消息 <code>prompts/templates/compact/prompt.md</code>（“CONTEXT CHECKPOINT COMPACTION…”），工具列表为空（实验 req03 工具 0 个）。</li><li><b>重建历史</b>（<code>build_compacted_history</code>）：初始上下文 + 最近的用户消息（总量上限 <code>COMPACT_USER_MESSAGE_MAX_TOKENS</code> = 20 000）+ 以 <code>summary_prefix.md</code> 开头的摘要。工具调用与输出不再保留（实验 req04 只剩 5 条）。</li><li><b>持久化</b>：rollout 写入一行 <code>compacted</code>，恢复时据此直接还原压缩后的历史。</li><li><b>手动</b>：TUI 的 <code>/compact</code>（<code>tui/src/chatwidget/slash_dispatch.rs</code>），app-server 的 <code>thread/compact/start</code>。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 17</div><a class="big" href="l17.html">MCP：客户端与服务端 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l16.js"></script>
+</body></html>

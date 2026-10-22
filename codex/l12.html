@@ -1,0 +1,117 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 12 课 · 沙箱：Linux（bubblewrap 与 seccomp）</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 12 课</span><span class="sp"></span><a href="l11.html">← 第 11 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 12 课</div><h1>沙箱：Linux（bubblewrap 与 seccomp）</h1>
+<p>在 Linux 上，Codex 通过一个辅助程序 <code>codex-linux-sandbox</code> 运行命令：文件系统隔离交给 <b>bubblewrap</b>（只读绑定整个根目录，再把可写根重新以读写方式绑定；新的用户、PID、IPC 命名空间，按需断网），进程内再加上 <code>no_new_privs</code> 与 <b>seccomp</b> 过滤网络相关系统调用。旧的 Landlock 文件系统实现仍保留，但已是“legacy”模式。本课用 <code>codex sandbox</code> 直接在沙箱中运行命令，逐项验证这些限制。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">bwrap 视角下的文件系统</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：预测结果</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>bwrap 视角下的文件系统</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：预测结果</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/linux-sandbox/src/lib.rs#L1-L5" target="_blank" rel="noopener">codex-rs/linux-sandbox/src/lib.rs  L1–5 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">//! Linux sandbox helper entry point.
+//!
+//! On Linux, `codex-linux-sandbox` applies:
+//! - in-process restrictions (`no_new_privs` + seccomp), and
+//! - bubblewrap for filesystem isolation.</pre><p>bubblewrap 命名空间参数：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/linux-sandbox/src/bwrap.rs#L339-L372" target="_blank" rel="noopener">codex-rs/linux-sandbox/src/bwrap.rs  L339–372 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">let mut args = Vec::new();
+args.push(&quot;--new-session&quot;.to_string());
+args.push(&quot;--die-with-parent&quot;.to_string());
+args.extend(filesystem_args);
+if options.mask_wsl_interop {
+    // WSL&#x27;s Windows-process bridge uses Unix sockets under /run/WSL.
+    // Mask them after all filesystem binds so network access cannot bypass
+    // the Linux filesystem policy by launching an unrestricted Windows process.
+    args.push(&quot;--tmpfs&quot;.to_string());
+    args.push(WSL_INTEROP_DIR.to_string());
+}
+if (options.mask_wsl_interop || options.mask_wslg_distro) &amp;&amp; !options.mount_proc {
+    // Without a fresh procfs, the root bind retains the host procfs.
+    // Hide it so host process roots cannot restore the masked WSL views.
+    args.push(&quot;--tmpfs&quot;.to_string());
+    args.push(&quot;/proc&quot;.to_string());
+}
+// Request a user namespace explicitly rather than relying on bubblewrap&#x27;s
+// auto-enable behavior, which is skipped when the caller runs as uid 0.
+// This also blocks host procfs root/cwd/fd links through ptrace permission
+// checks, including when a container requires retaining the host procfs.
+args.push(&quot;--unshare-user&quot;.to_string());
+if !options.inherit_pid_namespace {
+    args.push(&quot;--unshare-pid&quot;.to_string());
+}
+args.push(&quot;--unshare-ipc&quot;.to_string());
+if options.network_mode.should_unshare_network() {
+    args.push(&quot;--unshare-net&quot;.to_string());
+}
+// Mount a fresh /proc unless the caller explicitly disables it.
+if options.mount_proc {
+    args.push(&quot;--proc&quot;.to_string());
+    args.push(&quot;/proc&quot;.to_string());
+}</pre><p>seccomp 的职责：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/linux-sandbox/src/seccomp.rs#L36-L43" target="_blank" rel="noopener">codex-rs/linux-sandbox/src/seccomp.rs  L36–43 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">/// Apply sandbox policies inside this thread so only the child inherits
+/// them, not the entire CLI process.
+///
+/// This function is responsible for:
+/// - enabling `PR_SET_NO_NEW_PRIVS` when restrictions apply, and
+/// - installing seccomp restrictions for network isolation and VM sockets.
+///
+/// Filesystem restrictions are normally handled by bubblewrap. The legacy</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：pi 的 sandbox 示例扩展同样基于 bubblewrap，但只包裹 bash 工具且需手动启用（<a href="../pi/l19.html">pi 第 19 课 · 信任边界：pi 刻意不做什么</a>）。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课只需要 Linux 与第 1 课构建好的 codex（它自带 bubblewrap，也可使用系统的 bwrap）。<code>codex sandbox</code> 不调用模型。所有写入都发生在临时目录中。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>沙箱实验。</p><pre class="cmd">cat &gt; codex/scratch/l12.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# Linux 沙箱实验：codex sandbox 在本机沙箱中运行命令（不经过模型）
+export CODEX_HOME=$(mktemp -d); W=$(mktemp -d); cd $W; git init -q --template= .
+try() { local mode=$1; shift; printf &quot;  %-16s %-34s → &quot; &quot;$mode&quot; &quot;$*&quot;
+  if codex sandbox -c sandbox_mode=&quot;\&quot;$mode\&quot;&quot; -- bash -c &quot;$*&quot; &gt;/tmp/sbx.out 2&gt;&amp;1; then echo &quot;成功&quot;; else echo &quot;失败：$(tail -1 /tmp/sbx.out | cut -d: -f2- | head -c 60)&quot;; fi; }
+echo &quot;== 只读（默认）&quot;
+try read-only &quot;cat /etc/hostname &gt; /dev/null&quot;
+try read-only &quot;touch a.txt&quot;
+echo &quot;== workspace-write&quot;
+try workspace-write &quot;touch a.txt&quot;
+try workspace-write &quot;touch \$HOME/escape.txt&quot;
+try workspace-write &quot;touch /tmp/t.txt&quot;
+try workspace-write &quot;echo x &gt;&gt; .git/config&quot;
+try workspace-write &quot;curl -sS -m 3 https://example.com -o /dev/null&quot;
+echo &quot;== 沙箱内看到的进程（PID 命名空间）&quot;
+codex sandbox -- bash -c &#x27;ps -e --no-headers | wc -l | xargs echo &quot;  进程数:&quot;&#x27;
+echo &quot;  宿主进程数: $(ps -e --no-headers | wc -l)&quot;
+EOF
+cd codex/scratch &amp;&amp; bash l12.sh</pre><pre class="out">== 只读（默认）
+  read-only        cat /etc/hostname &gt; /dev/null      → 成功
+  read-only        touch a.txt                        → 失败： cannot touch &#x27;a.txt&#x27;: Read-only file system
+== workspace-write
+  workspace-write  touch a.txt                        → 成功
+  workspace-write  touch $HOME/escape.txt             → 失败： cannot touch &#x27;/home/box/escape.txt&#x27;: Read-only file system
+  workspace-write  touch /tmp/t.txt                   → 成功
+  workspace-write  echo x &gt;&gt; .git/config              → 失败： line 1: .git/config: Read-only file system
+  workspace-write  curl -sS -m 3 https://example.com -o /dev/null → 失败： (6) Could not resolve host: example.com
+== 沙箱内看到的进程（PID 命名空间）
+  进程数: 5
+  宿主进程数: 117</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>允许网络</h3><p>在 workspace-write 下让 curl 成功：查找配置项 <code>[sandbox_workspace_write] network_access</code>，用 <code>-c</code> 打开它再试。此时 bwrap 参数会有什么变化？</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">codex sandbox -c sandbox_mode='"workspace-write"' -c sandbox_workspace_write.network_access=true -- curl -sS -m 5 https://example.com -o /dev/null &amp;&amp; echo ok</pre><p>打开 network_access 后网络沙箱策略变为启用，<code>should_unshare_network()</code> 为假，bwrap 不再加 <code>--unshare-net</code>，seccomp 也不再安装网络过滤；如果你的机器本身能访问外网，命令会输出 ok。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>两层</b>（<code>linux-sandbox/src/lib.rs</code>）：进程内限制（no_new_privs + seccomp）与 bubblewrap 文件系统隔离。Landlock 只在 legacy 模式使用。</li><li><b>bwrap 参数</b>（<code>bwrap.rs</code>）：<code>--new-session --die-with-parent</code>、文件系统参数（<code>--ro-bind / /</code> 加可写根的 <code>--bind</code>）、<code>--unshare-user</code>（即使以 root 运行也显式请求）、<code>--unshare-pid</code>、<code>--unshare-ipc</code>、按需 <code>--unshare-net</code>、新的 <code>/proc</code>。</li><li><b>实验结果</b>：read-only 下可以读 /etc，不能写工作目录；workspace-write 下可写工作目录与 /tmp，不能写 $HOME，也不能改 <code>.git/config</code>（受保护的元数据，与 macOS 相同）；网络不可用；沙箱内只看得到 5 个进程（宿主有一百多个）。</li><li><b>seccomp 网络过滤</b>（<code>seccomp.rs</code>）：禁止 connect 等调用，<code>socket</code>/<code>socketpair</code> 只允许 AF_UNIX；启用托管代理时只放行到代理的路由。</li><li><b>错误信息</b>：被拒绝的写入表现为 “Read-only file system”——这正是 bind 挂载为只读的结果。unified exec 用 <code>is_likely_sandbox_denied</code> 识别这类失败，按策略决定是否询问用户以无沙箱重试（下一课）。</li><li><b>codex sandbox</b>：调试用子命令，不经过模型直接在当前平台的沙箱中运行命令，可用 <code>-c sandbox_mode=…</code> 或 <code>-P</code> 权限配置文件选择策略。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 13</div><a class="big" href="l13.html">审批与执行策略 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l12.js"></script>
+</body></html>

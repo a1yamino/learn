@@ -1,0 +1,196 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 13 课 · 审批与执行策略</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 13 课</span><span class="sp"></span><a href="l12.html">← 第 12 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 13 课</div><h1>审批与执行策略</h1>
+<p>沙箱回答“命令能碰到什么”，审批回答“命令要不要先问人”。Codex 把三样东西组合起来：<b>沙箱模式</b>（read-only / workspace-write / danger-full-access）、<b>审批策略</b>（untrusted / on-request / granular / never），以及用户可写的<b>执行策略规则</b>（<code>~/.codex/rules/*.rules</code>，Starlark 语法的 <code>prefix_rule</code>）。本课用 app-server 扮演用户，在一个 turn 里观察四条命令分别走向：沙箱内直接运行、请求提升权限被拒、被规则禁止、被规则要求询问后批准。约 50 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条命令的审批路径</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：这条命令会怎样？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一条命令的审批路径</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：这条命令会怎样？</h2><div class="goal">approval=on-request，sandbox=workspace-write，规则见练习。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/execpolicy/src/decision.rs#L7-L16" target="_blank" rel="noopener">codex-rs/execpolicy/src/decision.rs  L7–16 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = &quot;camelCase&quot;)]
+pub enum Decision {
+    /// Command may run without further approval.
+    Allow,
+    /// Request explicit user approval; rejected outright when running with `approval_policy=&quot;never&quot;`.
+    Prompt,
+    /// Command is blocked without further consideration.
+    Forbidden,
+}</pre><p>决策变成审批要求：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/core/src/exec_policy.rs#L398-L418" target="_blank" rel="noopener">codex-rs/core/src/exec_policy.rs  L398–418, L445–458 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">
+match evaluation.decision {
+    Decision::Forbidden =&gt; ExecApprovalRequirement::Forbidden {
+        reason: derive_forbidden_reason(
+            command,
+            &amp;evaluation,
+            dangerous_command_match_for_heuristics(
+                &amp;evaluation,
+                Decision::Forbidden,
+                command_origin,
+                command_platform,
+            ),
+        ),
+    },
+    Decision::Prompt =&gt; {
+        let prompt_is_rule = evaluation.matched_rules.iter().any(|rule_match| {
+            is_policy_match(rule_match) &amp;&amp; rule_match.decision() == Decision::Prompt
+        });
+        match prompt_is_rejected_by_policy(approval_policy, prompt_is_rule) {
+            Some(reason) if prompt_is_rule =&gt; ExecApprovalRequirement::Forbidden {
+                reason: reason.to_string(),
+  // …
+Decision::Allow =&gt; ExecApprovalRequirement::Skip {
+    // Bypass sandbox only when every parsed command segment is
+    // explicitly allowed by execpolicy.
+    bypass_sandbox: commands.iter().all(|command| {
+        exec_policy
+            .matches_for_command_with_options(
+                command,
+                /*heuristics_fallback*/ None,
+                &amp;match_options,
+            )
+            .iter()
+            .any(|rule_match| {
+                is_policy_match(rule_match) &amp;&amp; rule_match.decision() == Decision::Allow
+            })</pre><p>审批策略：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/protocol/src/protocol.rs#L1097-L1120" target="_blank" rel="noopener">codex-rs/protocol/src/protocol.rs  L1097–1120 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub enum AskForApproval {
+    /// Internal policy for projects marked untrusted. Commands require
+    /// approval unless an explicit exec policy rule allows them.
+    #[serde(rename = &quot;untrusted&quot;)]
+    #[strum(serialize = &quot;untrusted&quot;)]
+    UnlessTrusted,
+
+    /// The model decides when to ask the user for approval.
+    #[serde(alias = &quot;on-failure&quot;)]
+    #[default]
+    OnRequest,
+
+    /// Fine-grained controls for individual approval flows.
+    ///
+    /// When a field is `true`, commands in that category are allowed. When it
+    /// is `false`, those requests are automatically rejected instead of shown
+    /// to the user.
+    #[strum(serialize = &quot;granular&quot;)]
+    Granular(GranularApprovalConfig),
+
+    /// Never ask the user to approve commands. Failures are immediately returned
+    /// to the model, and never escalated to the user for approval.
+    Never,
+}</pre><p>客户端的回答：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/app-server-protocol/src/protocol/v2/item.rs#L68-L87" target="_blank" rel="noopener">codex-rs/app-server-protocol/src/protocol/v2/item.rs  L68–87 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub enum CommandExecutionApprovalDecision {
+    /// User approved the command.
+    Accept,
+    /// User approved the command and future prompts in the same session-scoped
+    /// approval cache should run without prompting.
+    AcceptForSession,
+    /// User approved the command, and wants to apply the proposed execpolicy amendment so future
+    /// matching commands can run without prompting.
+    AcceptWithExecpolicyAmendment {
+        execpolicy_amendment: ExecPolicyAmendment,
+    },
+    /// User chose a persistent network policy rule (allow/deny) for this host.
+    ApplyNetworkPolicyAmendment {
+        network_policy_amendment: NetworkPolicyAmendment,
+    },
+    /// User denied the command. The agent will continue the turn.
+    Decline,
+    /// User denied the command. The turn will also be immediately interrupted.
+    Cancel,
+}</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：pi 的 permission-gate 示例只是一个 tool_call 钩子（<a href="../pi/l15.html">pi 第 15 课 · 扩展系统：工具、命令与事件钩子</a>、<a href="../pi/l19.html">pi 第 19 课 · 信任边界：pi 刻意不做什么</a>）；Codex 把规则、审批、沙箱合成一条内置流水线。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。 使用第 8 课的 <code>apc.py</code>。所有文件都在临时目录中；被拒绝的命令不会执行。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>规则文件。</p><pre class="cmd">cat &gt; codex/scratch/rules.example &lt;&lt;&#x27;EOF&#x27;
+# 执行策略规则（Starlark 语法），放在 $CODEX_HOME/rules/default.rules
+prefix_rule(pattern = [&quot;git&quot;, &quot;reset&quot;, &quot;--hard&quot;], decision = &quot;forbidden&quot;, justification = &quot;破坏性操作&quot;)
+prefix_rule(pattern = [&quot;cp&quot;], decision = &quot;prompt&quot;)
+prefix_rule(pattern = [&quot;ls&quot;], decision = &quot;allow&quot;)
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>剧本：四条命令。</p><pre class="cmd">cat &gt; codex/scratch/s_approve.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：四条命令，分别落在“沙箱内直接运行 / 请求提升权限 / 规则禁止 / 规则要求询问”
+CMDS = [
+    {&quot;cmd&quot;: &quot;touch inside.txt&quot;},
+    {&quot;cmd&quot;: &quot;touch $HOME/outside.txt&quot;, &quot;sandbox_permissions&quot;: &quot;require_escalated&quot;,
+     &quot;justification&quot;: &quot;需要在家目录创建文件&quot;},
+    {&quot;cmd&quot;: &quot;git reset --hard&quot;},
+    {&quot;cmd&quot;: &quot;cp inside.txt copy.txt&quot;},
+]
+def reply(n, body):
+    if n &lt;= len(CMDS): return [call(&quot;exec_command&quot;, CMDS[n - 1], f&quot;c{n}&quot;)]
+    return [msg(&quot;完成&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>扮演用户的客户端与实验脚本。</p><pre class="cmd">cat &gt; codex/scratch/l13.py &lt;&lt;&#x27;EOF&#x27;
+# 审批：app-server 把审批请求发给客户端，由我们（扮演用户）决定
+import os, sys, json; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from apc import AppServer, text
+a = AppServer(cwd=os.getcwd())
+answers = iter([&quot;decline&quot;, &quot;accept&quot;])
+def on_request(method, params):
+    decision = next(answers)
+    print(f&quot;  ← 审批请求 {method}: {params.get(&#x27;command&#x27;)}  理由={params.get(&#x27;reason&#x27;)!r}  → 我们回答 {decision}&quot;)
+    return {&quot;decision&quot;: decision}
+a.on_request = on_request
+a.request(&quot;initialize&quot;, {&quot;clientInfo&quot;: {&quot;name&quot;: &quot;course&quot;, &quot;title&quot;: None, &quot;version&quot;: &quot;0&quot;}}); a.notify(&quot;initialized&quot;)
+tid = a.request(&quot;thread/start&quot;, {&quot;cwd&quot;: os.getcwd(), &quot;approvalPolicy&quot;: &quot;on-request&quot;, &quot;sandbox&quot;: &quot;workspace-write&quot;})[&quot;thread&quot;][&quot;id&quot;]
+a.request(&quot;turn/start&quot;, {&quot;threadId&quot;: tid, &quot;input&quot;: text(&quot;干活&quot;)})
+def show(m):
+    it = m.get(&quot;params&quot;, {}).get(&quot;item&quot;, {})
+    if m[&quot;method&quot;] == &quot;item/completed&quot; and it.get(&quot;type&quot;) == &quot;commandExecution&quot;:
+        print(f&quot;  命令 {it[&#x27;command&#x27;]!r:44} status={it[&#x27;status&#x27;]} exit={it.get(&#x27;exitCode&#x27;)}&quot;)
+a.wait(&quot;turn/completed&quot;, show=show); a.close()
+EOF
+cat &gt; codex/scratch/l13.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+S=$(pwd); export CODEX_HOME=$(mktemp -d); W=$(mktemp -d); cd $W
+mkdir -p $CODEX_HOME/rules; cp $S/rules.example $CODEX_HOME/rules/default.rules
+echo &quot;== 1. 单独检查规则：codex execpolicy check&quot;
+for c in &quot;git reset --hard&quot; &quot;cp a b&quot; &quot;ls -la&quot; &quot;rm -rf /&quot;; do
+  printf &quot;  %-18s → &quot; &quot;$c&quot;; codex execpolicy check -r $CODEX_HOME/rules/default.rules $c | python3 -c &quot;import json,sys;d=json.load(sys.stdin);print(d.get(&#x27;decision&#x27;,&#x27;（无匹配规则）&#x27;))&quot;
+done
+echo &quot;== 2. 一个 turn 中的四条命令（approval=on-request，sandbox=workspace-write）&quot;
+RUN=&quot;python3 $S/l13.py&quot; bash $S/run.sh $S/s_approve.py
+echo &quot;== 模型看到的工具结果&quot;
+python3 $S/show.py $CODEX_HOME/requests 90 | grep function_call_output | tail -4
+echo &quot;== 文件：$(ls $W | tr &#x27;\n&#x27; &#x27; &#x27;)；家目录中的 outside.txt：$(ls $HOME/outside.txt 2&gt;/dev/null || echo 不存在)&quot;
+EOF
+cd codex/scratch &amp;&amp; bash l13.sh</pre><pre class="out">== 1. 单独检查规则：codex execpolicy check
+  git reset --hard   → forbidden
+  cp a b             → prompt
+  ls -la             → allow
+  rm -rf /           → （无匹配规则）
+== 2. 一个 turn 中的四条命令（approval=on-request，sandbox=workspace-write）
+  命令 &quot;/bin/bash -lc &#x27;touch inside.txt&#x27;&quot;           status=completed exit=0
+  ← 审批请求 item/commandExecution/requestApproval: /bin/bash -lc &#x27;touch $HOME/outside.txt&#x27;  理由=&#x27;需要在家目录创建文件&#x27;  → 我们回答 decline
+  命令 &quot;/bin/bash -lc &#x27;touch $HOME/outside.txt&#x27;&quot;    status=declined exit=None
+  ← 审批请求 item/commandExecution/requestApproval: /bin/bash -lc &#x27;cp inside.txt copy.txt&#x27;  理由=&quot;`/bin/bash -lc &#x27;cp inside.txt copy.txt&#x27;` requires approval by policy&quot;  → 我们回答 accept
+  命令 &quot;/bin/bash -lc &#x27;cp inside.txt copy.txt&#x27;&quot;     status=completed exit=0
+== 模型看到的工具结果
+  function_call_output             Chunk ID: 582926 ⏎ Wall time: 0.0001 seconds ⏎ Process exited with code 0 ⏎ Original token
+  function_call_output             exec_command failed: CreateProcess { message: &quot;Rejected(\&quot;rejected by user\&quot;)&quot; }
+  function_call_output             exec_command failed: CreateProcess { message: &quot;Rejected(\&quot;`/bin/bash -lc &#x27;git reset --hard
+  function_call_output             Chunk ID: 7101f3 ⏎ Wall time: 0.0001 seconds ⏎ Process exited with code 0 ⏎ Original token
+== 文件：copy.txt inside.txt ；家目录中的 outside.txt：不存在</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>记住这个决定</h3><p>把客户端对 cp 的回答改为 <code>{"acceptWithExecpolicyAmendment": {"execpolicy_amendment": ["cp"]}}</code>，运行后查看 <code>$CODEX_HOME/rules/default.rules</code>，再用 <code>codex execpolicy check</code> 检查 <code>cp a b</code>。结果出乎意料吗？</p><details><summary>查看参考答案</summary><div><p>文件末尾被追加了一行 <code>prefix_rule(pattern=["cp"], decision="allow")</code>。但 check 的结果仍是 <code>"decision":"prompt"</code>：两条规则都匹配（prompt 与 allow），总决定取<b>最严格</b>的那个（Decision 枚举按 Allow &lt; Prompt &lt; Forbidden 排序）。所以“记住”只在没有更严格规则时生效——要真正放行，需要删掉我们手写的 prompt 规则。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>规则</b>（<code>execpolicy</code> crate）：<code>prefix_rule(pattern=[…], decision="allow"|"prompt"|"forbidden", justification=…)</code>，按命令前缀匹配；还可写 match/not_match 作为自测样例。<code>codex execpolicy check -r 文件 命令…</code> 单独检验。</li><li><b>决策 → 要求</b>（<code>core/src/exec_policy.rs</code>）：Forbidden → 直接拒绝（附理由）；Prompt → 需要审批，但若审批策略不允许询问（如 never）就变成拒绝；Allow → 跳过审批，并且<b>只有当命令的每一段都被规则显式允许时才绕过沙箱</b>。</li><li><b>没有规则匹配时</b>：交给审批策略与内置的安全命令启发式；on-request 下普通命令在沙箱中直接运行，模型可通过 <code>sandbox_permissions: "require_escalated"</code> + justification 主动请求无沙箱执行。</li><li><b>编排器</b>（<code>tools/orchestrator.rs</code>）：审批（跳过 / 缓存 / 询问）→ 选择沙箱 → 运行 → 若被沙箱拒绝且策略允许，询问后以无沙箱重试。</li><li><b>前端看到的审批</b>：app-server 发送服务器→客户端请求 <code>item/commandExecution/requestApproval</code>；客户端回答 accept、acceptForSession、acceptWithExecpolicyAmendment（记住为规则）、decline（继续 turn）或 cancel（同时中断 turn）。</li><li><b>模型看到的结果</b>：被拒绝时工具输出 “exec_command failed: … Rejected("rejected by user")” 或规则给出的理由，turn 继续，由模型决定下一步。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 14</div><a class="big" href="l14.html">系统提示与 AGENTS.md →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l13.js"></script>
+</body></html>

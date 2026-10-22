@@ -1,0 +1,132 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 11 课 · 沙箱：macOS Seatbelt</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 11 课</span><span class="sp"></span><a href="l10.html">← 第 10 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 11 课</div><h1>沙箱：macOS Seatbelt</h1>
+<p>pi 第 19 课的结论是：pi 不内置沙箱，安全来自容器或扩展。Codex 则把操作系统沙箱做进内核——模型发出的每条命令，默认都在沙箱中运行。在 macOS 上，它使用系统自带的 <code>/usr/bin/sandbox-exec</code>（Seatbelt），把一段 SBPL 策略与参数交给它。本课阅读这些策略：从 <code>(deny default)</code> 开始，逐项放开进程、sysctl、读文件，再按配置放开可写根目录与网络。约 40 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条命令如何被包起来</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：workspace-write 下能否成功？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一条命令如何被包起来</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：workspace-write 下能否成功？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/sandboxing/src/seatbelt_base_policy.sbpl#L1-L16" target="_blank" rel="noopener">codex-rs/sandboxing/src/seatbelt_base_policy.sbpl  L1–16 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">(version 1)
+
+; inspired by Chrome&#x27;s sandbox policy:
+; https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/common.sb;l=273-319;drc=7b3962fe2e5fc9e2ee58000dc8fbf3429d84d3bd
+; https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/renderer.sb;l=64;drc=7b3962fe2e5fc9e2ee58000dc8fbf3429d84d3bd
+
+; start with closed-by-default
+(deny default)
+
+; child processes inherit the policy of their parent
+(allow process-exec)
+(allow process-fork)
+(allow signal (target same-sandbox))
+
+; process-info
+(allow process-info* (target same-sandbox))</pre><p>为什么只用 /usr/bin 下的 sandbox-exec：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/sandboxing/src/seatbelt.rs#L58-L62" target="_blank" rel="noopener">codex-rs/sandboxing/src/seatbelt.rs  L58–62 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">/// When working with `sandbox-exec`, only consider `sandbox-exec` in `/usr/bin`
+/// to defend against an attacker trying to inject a malicious version on the
+/// PATH. If /usr/bin/sandbox-exec has been tampered with, then the attacker
+/// already has root access.
+pub const MACOS_PATH_TO_SEATBELT_EXECUTABLE: &amp;str = &quot;/usr/bin/sandbox-exec&quot;;</pre><p>可写根的参数化与防替换：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/sandboxing/src/seatbelt.rs#L516-L527" target="_blank" rel="noopener">codex-rs/sandboxing/src/seatbelt.rs  L516–527 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">let root_param = format!(&quot;{param_prefix}_{index}&quot;);
+params.push((root_param.clone(), root.clone().into_path_buf()));
+if access_kind == SeatbeltAccessKind::Write {
+    // A sandboxed process must not be able to replace an authority
+    // boundary that will be reused to build the next sandbox policy.
+    root_anchor_denies.push(format!(
+        &quot;(deny file-write-unlink (require-all (literal (param \&quot;{root_param}\&quot;)) (vnode-type DIRECTORY)))&quot;
+    ));
+}
+let root_filter = match path_match {
+    SeatbeltPathMatch::Literal =&gt; format!(&quot;(literal (param \&quot;{root_param}\&quot;))&quot;),
+    SeatbeltPathMatch::Subpath =&gt; format!(&quot;(subpath (param \&quot;{root_param}\&quot;))&quot;),</pre><p>组装命令行：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/sandboxing/src/seatbelt.rs#L1095-L1104" target="_blank" rel="noopener">codex-rs/sandboxing/src/seatbelt.rs  L1095–1104 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">let mut seatbelt_args: Vec&lt;String&gt; = vec![&quot;-p&quot;.to_string(), full_policy];
+let definition_args = dir_params
+    .into_iter()
+    .map(|(key, value): (String, PathBuf)| {
+        format!(&quot;-D{key}={value}&quot;, value = value.to_string_lossy())
+    });
+seatbelt_args.extend(definition_args);
+seatbelt_args.push(&quot;--&quot;.to_string());
+seatbelt_args.extend(command);
+Ok(seatbelt_args)</pre><p>受保护的元数据目录：</p><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/protocol/src/permissions.rs#L40-L51" target="_blank" rel="noopener">codex-rs/protocol/src/permissions.rs  L40–51 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">const PROTECTED_METADATA_GIT_PATH_NAME: &amp;str = &quot;.git&quot;;
+const PROTECTED_METADATA_AGENTS_PATH_NAME: &amp;str = &quot;.agents&quot;;
+const PROTECTED_METADATA_CODEX_PATH_NAME: &amp;str = &quot;.codex&quot;;
+const PROTECTED_METADATA_AWS_PATH_NAME: &amp;str = &quot;.aws&quot;;
+
+/// Top-level workspace metadata paths that stay protected under writable roots.
+pub const PROTECTED_METADATA_PATH_NAMES: &amp;[&amp;str] = &amp;[
+    PROTECTED_METADATA_GIT_PATH_NAME,
+    PROTECTED_METADATA_AGENTS_PATH_NAME,
+    PROTECTED_METADATA_CODEX_PATH_NAME,
+    PROTECTED_METADATA_AWS_PATH_NAME,
+];</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l19.html">pi 第 19 课 · 信任边界：pi 刻意不做什么</a>。pi 的 sandbox 示例扩展同样使用 sandbox-exec / bubblewrap，但需要用户主动加载；Codex 默认就开。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">第一步在任何系统上都能运行（只读源码）；第二步需要 macOS。<code>codex sandbox</code> 在 macOS 上使用 Seatbelt，在 Linux 上使用 Linux 沙箱（下一课）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>阅读策略。</p><pre class="cmd">cat &gt; codex/scratch/l11.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 读 Seatbelt 策略：默认拒绝，再逐项放开
+P=../codex-rs/sandboxing/src
+echo &quot;== 策略文件（行数）&quot;; for f in $P/seatbelt_*.sbpl; do printf &quot;  %-42s %4d\n&quot; $(basename $f) $(wc -l &lt; $f); done
+echo &quot;== 基础策略的第一条规则&quot;; grep -m1 -E &#x27;^\(deny|^\(allow&#x27; $P/seatbelt_base_policy.sbpl
+echo &quot;== 基础策略中各类规则出现次数&quot;
+grep -oE &#x27;^\((allow|deny) [a-z*-]+&#x27; $P/seatbelt_base_policy.sbpl | sort | uniq -c | sort -rn | head -8
+echo &quot;== 网络策略（启用网络时追加）&quot;; grep -E &#x27;^\(allow&#x27; $P/seatbelt_network_policy.sbpl | head -5
+echo &quot;== 可写根目录以参数形式传给 sandbox-exec&quot;
+grep -n &#x27;WRITABLE_ROOT&quot;\|format!(&quot;-D&#x27; $P/seatbelt.rs
+echo &quot;== codex sandbox 在本机使用的沙箱&quot;; codex sandbox --help | grep -m1 &#x27;Full command args&#x27;
+EOF
+cd codex/scratch &amp;&amp; bash l11.sh</pre><pre class="out">== 策略文件（行数）
+  seatbelt_base_policy.sbpl                   116
+  seatbelt_network_policy.sbpl                 31
+  seatbelt_preferences_policy.sbpl              8
+  seatbelt_read_only_platform_defaults.sbpl   188
+== 基础策略的第一条规则
+(deny default)
+== 基础策略中各类规则出现次数
+      2 (allow mach-lookup
+      2 (allow file-read*
+      1 (deny default
+      1 (allow sysctl-write
+      1 (allow sysctl-read
+      1 (allow signal
+      1 (allow pseudo-tty
+      1 (allow process-info*
+== 网络策略（启用网络时追加）
+(allow system-socket
+(allow mach-lookup
+(allow sysctl-read
+== 可写根目录以参数形式传给 sandbox-exec
+496:        SeatbeltAccessKind::Write =&gt; (&quot;file-write*&quot;, &quot;WRITABLE_ROOT&quot;),
+1099:            format!(&quot;-D{key}={value}&quot;, value = value.to_string_lossy())
+== codex sandbox 在本机使用的沙箱
+          Full command args to run under the Linux sandbox</pre></div></div><div class="st"><span class="n">02</span><div><p>（仅 macOS）在 Seatbelt 中运行命令：工作目录可写，家目录不可写。</p><pre class="cmd">cd &quot;$(mktemp -d)&quot;
+codex sandbox -c sandbox_mode=&#x27;&quot;workspace-write&quot;&#x27; -- touch ok.txt &amp;&amp; ls
+codex sandbox -c sandbox_mode=&#x27;&quot;workspace-write&quot;&#x27; -- touch ~/codex-sandbox-test.txt</pre><pre class="out">（此步骤需要在 macOS 上运行；本课程的输出在 Linux 上生成，因此这里不显示。第一条应成功并列出 ok.txt，第二条应以 Operation not permitted 失败。）</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>找出放开网络的条件</h3><p>在 <code>seatbelt.rs</code> 中查找 <code>MACOS_SEATBELT_NETWORK_POLICY</code> 被追加到策略的条件，并说明 <code>[sandbox_workspace_write] network_access = true</code> 如何影响它。</p><details><summary>查看参考答案</summary><div><p>用 <code>rg -n "NETWORK_POLICY|network_sandbox_policy" codex/codex-rs/sandboxing/src/seatbelt.rs</code> 查找。网络沙箱策略（NetworkSandboxPolicy）为启用时追加网络策略段；配置中的 <code>network_access</code> 正是决定 workspace-write 模式下该策略取值的开关。此外 Codex 还有托管网络代理（<code>network-proxy</code> crate），可按域名放行；它与沙箱策略的组合方式见 <code>dynamic_network_policy</code>。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>只信任 /usr/bin/sandbox-exec</b>：不在 PATH 中查找，防止攻击者注入假的 sandbox-exec（<code>MACOS_PATH_TO_SEATBELT_EXECUTABLE</code>）。</li><li><b>默认拒绝</b>：<code>seatbelt_base_policy.sbpl</code>（116 行，参考 Chrome 渲染进程策略）第一条就是 <code>(deny default)</code>，然后允许 fork/exec、同沙箱内的信号、必要的 sysctl、伪终端等。</li><li><b>可写根目录参数化</b>：<code>build_seatbelt_access_policy</code> 为每个可写根生成 <code>(subpath (param "WRITABLE_ROOT_0"))</code>，实际路径通过 <code>-DWRITABLE_ROOT_0=/path</code> 传入，避免把路径拼进策略文本带来的转义问题。最终命令：<code>sandbox-exec -p &lt;策略&gt; -D… -- 命令</code>。</li><li><b>可写根之下的保护</b>：即使在可写目录中，顶层的 <code>.git</code>、<code>.agents</code>、<code>.codex</code>、<code>.aws</code> 仍受保护（<code>PROTECTED_METADATA_PATH_NAMES</code>）；可写根目录本身也不能被删除替换（“authority boundary”）。</li><li><b>网络</b>：默认不放开；启用网络时追加 <code>seatbelt_network_policy.sbpl</code>（system-socket、相关 mach-lookup 等），还可以配合 Codex 的网络代理做按域名控制。</li><li><b>沙箱模式</b>：<code>read-only</code>（默认）、<code>workspace-write</code>（工作目录与临时目录可写）、<code>danger-full-access</code>（不加沙箱）。第 13 课把它们与审批策略结合起来。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 12</div><a class="big" href="l12.html">沙箱：Linux（bubblewrap 与 seccomp） →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l11.js"></script>
+</body></html>
