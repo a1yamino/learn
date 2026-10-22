@@ -10,7 +10,7 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
  {t:'推送',p:'合并到 main。CI 构建一次，跑测试和扫描，推送并签名，输出 digest。',set:{...G2,p:[0,0,{cls:'blk sig'}],c:[180,0,{cls:'blk sig'}]}},
  {t:'部署',p:'服务器拿到 digest，<code>up -d --wait</code>：拉取、替换容器、等待健康检查。记下部署的 digest。',d:3600,set:{...G2,r:[360,0,{cls:'blk sig'}],s:[540,0,{cls:'blk sig'}],d1:[540,80],d0:[540,120]}},
  {t:'新版本有问题',p:'健康检查失败，<code>--wait</code> 返回非 0。或者上线后错误率升高。',set:{...G2,s:[540,0],d1:[540,80],bad:[540,-40],d0:[540,120]}},
- {t:'回滚',p:'用上一个 digest 再部署一次。因为镜像不可变、按 digest 引用，回滚的结果是确定的。然后按第 22 课的顺序找原因。',d:3800,set:{...G2,s:[540,0,{cls:'blk sig'}],d0:[540,80,{cls:'pill sig',html:'sha256:91ac…（回滚）'}],n:[0,170,{html:'回滚 = 部署上一个 digest'}]}}]});
+ {t:'回滚',p:'用上一个 digest 再部署一次。digest 只固定镜像内容，不还原数据库、卷或运行时配置。仅在迁移与旧应用兼容、配置也恢复正确时，才能用它恢复旧版服务。然后按第 22 课的顺序找原因。',d:3800,set:{...G2,s:[540,0,{cls:'blk sig'}],d0:[540,80,{cls:'pill sig',html:'sha256:91ac…（回滚）'}],n:[0,170,{html:'回滚 = 部署上一个兼容当前数据库的 digest'}]}}]});
 (()=>{const L=[['services:'],['  web:'],['    image: shop-web:latest','部署用了 latest：无法确定版本，也无法可靠回滚。用 digest。'],['    ports: ["443:443"]'],['  api:'],['    image: ghcr.io/acme/shop-api@sha256:4b1e…'],['    environment:'],['      DB_PASSWORD: Sup3rS3cret!','密码明文写在 Compose 文件里，会进入 git。用 .env（不提交）或 secrets（第 9 课）。'],['    ports: ["3000:3000"]','api 直接发布端口，绕过了 web 反向代理。删除，只在内部网络访问。'],['    deploy: { resources: { limits: { memory: 512M } } }'],['  db:'],['    image: postgres:16'],['    ports: ["5432:5432"]','数据库端口暴露到宿主机所有网卡，可能被公网访问。删除。'],['    healthcheck: { test: ["CMD-SHELL", "pg_isready"] }'],['    volumes: ["./data:/var/lib/postgresql/data"]'],['  worker:'],['    image: ghcr.io/acme/shop-worker@sha256:77d0…'],['    privileged: true','privileged 几乎等于宿主机 root（第 19 课）。worker 不需要，删除并 cap_drop: [ALL]。'],['    depends_on: [db]','只等 db 容器启动，不等就绪。用 condition: service_healthy（第 18 课）。'],['    logging: { driver: json-file }','json-file 没有 max-size，会写满磁盘（第 21 课）。加 options: { max-size: "10m" } 或用 local。']];
  const total=L.filter(x=>x[1]).length,found=new Set();const cf=document.getElementById('cf'),rv=document.getElementById('rv');
  L.forEach(([t,why],i)=>{const d=document.createElement('div');d.textContent=t;d.style.padding='2px 6px';d.style.borderRadius='4px';d.style.transition='background-color 200ms ease';d.addEventListener('click',()=>{
@@ -26,5 +26,5 @@ Term(document.getElementById('t4'),[
 Quiz(document.getElementById('qs'),[
 ['这个架构里，哪个服务需要备份？',['web','api','db','redis'],2,'只有 db 有持久状态。'],
 ['为什么 backend 网络设为 internal？',['更快','数据库和缓存无法访问外网，也不能被外部直接访问','节省 IP'],1,'缩小攻击面。'],
-['新版本健康检查失败，最快的恢复方式？',['在服务器上修改代码','部署上一个 digest','重启服务器'],1,'先恢复服务，再排查原因。'],
+['新版本健康检查失败，最快的恢复方式？',['在服务器上修改代码','部署上一个兼容当前数据库的 digest','重启服务器'],1,'先恢复服务，再排查原因。'],
 ['怎么确认备份有效？',['文件大小大于 0','定期在别处恢复并检查数据','备份脚本没有报错'],1,'没恢复过的备份不算备份。']]);
