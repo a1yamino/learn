@@ -166,8 +166,8 @@ if (msg.role === &quot;assistant&quot;) {
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">启动一个返回固定 SSE 的本地服务器，让 pi-ai 的 openai-completions 适配器连接它。不需要任何真实 API。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本：服务器打印收到的请求，然后流出文本与一个分成两块的工具调用。</p><pre class="cmd">cat &gt; pi-mono/scratch/l05.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">除首次克隆外，以下命令均在 pi-mono 仓库根目录执行，完成一个代码块后仍留在根目录。启动一个返回固定 SSE 的本地服务器，让 pi-ai 的 openai-completions 适配器连接它。不需要任何真实 API。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本：服务器打印收到的请求，然后流出文本与一个分成两块的工具调用。</p><pre class="cmd">cat &gt; scratch/l05.ts &lt;&lt;&#x27;EOF&#x27;
 // 一个假的 Chat Completions 服务器 + pi-ai 的 openai-completions 适配器
 import { createServer } from &quot;node:http&quot;;
 import { createProvider, envApiKeyAuth, InMemoryCredentialStore } from &quot;@earendil-works/pi-ai&quot;;
@@ -194,7 +194,7 @@ const server = createServer((req, res) =&gt; {
     res.end(&quot;data: [DONE]\n\n&quot;);
   });
 });
-await new Promise&lt;void&gt;((r) =&gt; server.listen(0, r));
+await new Promise&lt;void&gt;((r) =&gt; server.listen(0, &quot;127.0.0.1&quot;, r));
 const baseUrl = `http://127.0.0.1:${(server.address() as any).port}/v1`;
 
 const models = builtinModels({ credentials: new InMemoryCredentialStore() });
@@ -218,21 +218,21 @@ console.log(&quot;stopReason=%s rawStopReason=%s&quot;, m.stopReason, m.rawStopR
 console.log(&quot;toolCall:&quot;, JSON.stringify(m.content.find((c) =&gt; c.type === &quot;toolCall&quot;)));
 server.close();
 EOF
-cd pi-mono/scratch &amp;&amp; node l05.ts</pre><pre class="out">[服务器收到] model=tiny stream=true
+node scratch/l05.ts</pre><pre class="out">[服务器收到] model=tiny stream=true
     system    &quot;你是助手&quot;
     user      &quot;a.txt 里有什么？&quot;
     tools: read
-[事件] text_start 
+[事件] text_start
 [事件] text_delta &quot;我看&quot;
 [事件] text_delta &quot;一下。&quot;
-[事件] toolcall_start 
+[事件] toolcall_start
 [事件] toolcall_delta &quot;{\&quot;pa&quot;
 [事件] toolcall_delta &quot;th\&quot;:\&quot;a.txt\&quot;}&quot;
-[事件] text_end 
-[事件] toolcall_end 
-[事件] done 
-stopReason=toolUse rawStopReason=tool_calls 
-toolCall: {&quot;type&quot;:&quot;toolCall&quot;,&quot;id&quot;:&quot;call_1&quot;,&quot;name&quot;:&quot;read&quot;,&quot;arguments&quot;:{&quot;path&quot;:&quot;a.txt&quot;}}</pre></div></div><div class="st"><span class="n">02</span><div><p>让服务器返回 <code>content_filter</code>：</p><pre class="cmd">cd pi-mono/scratch &amp;&amp; node l05.ts content_filter | tail -3</pre><pre class="out">[事件] error 
+[事件] text_end
+[事件] toolcall_end
+[事件] done
+stopReason=toolUse rawStopReason=tool_calls
+toolCall: {&quot;type&quot;:&quot;toolCall&quot;,&quot;id&quot;:&quot;call_1&quot;,&quot;name&quot;:&quot;read&quot;,&quot;arguments&quot;:{&quot;path&quot;:&quot;a.txt&quot;}}</pre></div></div><div class="st"><span class="n">02</span><div><p>让服务器返回 <code>content_filter</code>：</p><pre class="cmd">node scratch/l05.ts content_filter | tail -3</pre><pre class="out">[事件] error
 stopReason=error rawStopReason=content_filter Provider finish_reason: content_filter
 toolCall: {&quot;type&quot;:&quot;toolCall&quot;,&quot;id&quot;:&quot;call_1&quot;,&quot;name&quot;:&quot;read&quot;,&quot;arguments&quot;:{&quot;path&quot;:&quot;a.txt&quot;}}</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>第二轮请求</h3><p>修改脚本：拿到第一条回复后，把它和一条 <code>toolResult</code>（toolCallId <code>call_1</code>，内容“hello”）追加到 messages，再请求一次（服务器第二次返回 <code>finish_reason: "stop"</code> 即可）。服务器会收到什么样的 messages？再试一次：把 toolResult 删掉，只追加 assistant 消息。</p><details><summary>查看参考答案</summary><div><p>完整时服务器收到 4 条：system、user、<code>assistant</code>（content "我看一下。" + <code>tool_calls:[{id:"call_1",function:{name:"read",arguments:"{\"path\":\"a.txt\"}"}}]</code>）、<code>tool</code>（tool_call_id "call_1"，content "hello"）。</p><p>删掉 toolResult 后，服务器仍会收到一条 <code>tool</code> 消息，内容是 “No result provided”——这是 <code>transformMessages</code> 第二遍为孤儿工具调用插入的合成结果。没有它，OpenAI 会以 400 拒绝请求（“tool_calls must be followed by tool messages”）。</p></div></details></div>
 </section>
@@ -242,7 +242,7 @@ toolCall: {&quot;type&quot;:&quot;toolCall&quot;,&quot;id&quot;:&quot;call_1&quo
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>请求方向</b>：<code>transformMessages</code>（所有协议共用）先做跨模型清理，再由各协议的 <code>convertMessages</code> 转成线上格式（如 Chat Completions 的 <code>messages</code>、<code>tools</code>）。</li><li><b>跨模型切换</b>：同一会话中途换模型时，<code>transformMessages</code> 丢弃<b>其他模型</b>的 thinking 块（签名与加密推理只对产生它的模型有效，明文思考又会被新模型误当作可见回复），去掉 Google 的 thoughtSignature，并可按目标 API 规范化工具调用 id。</li><li><b>孤儿工具调用</b>：如果某个工具调用在转录里没有结果（例如被中断），会插入一个合成的 <code>toolResult</code>：“No result provided”，isError=true——许多 API 拒绝不配对的工具调用。</li><li><b>响应方向</b>：逐块读取 SSE；<code>reasoning_content / reasoning / reasoning_text</code> → thinking；<code>content</code> → text；<code>tool_calls</code> 按 index 累积参数片段，用 <code>parseStreamingJson</code> 随时给出“到目前为止”的参数对象（UI 可以在参数还没流完时就显示路径）。</li><li><b>停止原因映射</b>：<code>stop/end→stop</code>、<code>length→length</code>、<code>tool_calls/function_call→toolUse</code>，<code>content_filter</code> 等→error 并带说明。原始值保存在 <code>rawStopReason</code>。没有 finish_reason 的流被视为错误（除非该兼容端点声明不支持 finish_reason）。</li><li><b>错误永不抛出</b>：任何异常都被捕获，转成一条 <code>stopReason=error</code>（或 aborted）的 assistant 消息，并作为 <code>error</code> 事件推送。已流出的内容保留。</li><li><b>兼容性开关</b>：OpenAI 兼容服务各有怪癖，<code>detectCompat</code> 按 provider 与 baseUrl 自动探测（是否支持 developer 角色、usage 放在哪、思考字段格式……），模型的 <code>compat</code> 字段可以覆盖。</li></ol></section>
+<ol class="sum"><li><b>请求方向</b>：<code>transformMessages</code>（所有协议共用）先做跨模型清理，再由各协议的 <code>convertMessages</code> 转成线上格式（如 Chat Completions 的 <code>messages</code>、<code>tools</code>）。</li><li><b>跨模型切换</b>：同一会话中途换模型时，<code>transformMessages</code> 丢弃<b>其他模型</b>的 thinking 块（签名与加密推理只对产生它的模型有效，明文思考又会被新模型误当作可见回复），去掉 Google 的 thoughtSignature，并可按目标 API 规范化工具调用 id。</li><li><b>孤儿工具调用</b>：如果某个工具调用在转录里没有结果（例如被中断），会插入一个合成的 <code>toolResult</code>：“No result provided”，isError=true——许多 API 拒绝不配对的工具调用。</li><li><b>响应方向</b>：逐块读取 SSE；<code>reasoning_content / reasoning / reasoning_text</code> → thinking；<code>content</code> → text；<code>tool_calls</code> 按 index 累积参数片段，用 <code>parseStreamingJson</code> 随时给出“到目前为止”的参数对象（UI 可以在参数还没流完时就显示路径）。</li><li><b>停止原因映射</b>：<code>stop/end→stop</code>、<code>length→length</code>、<code>tool_calls/function_call→toolUse</code>，<code>content_filter</code> 等→error 并带说明。原始值保存在 <code>rawStopReason</code>。没有 finish_reason 的流被视为错误（除非该兼容端点声明不支持 finish_reason）。</li><li><b>区分调用入口与流内失败</b>：该适配器在异步请求/流式解析中捕获异常，转成 <code>stopReason=error</code>（或 aborted）的 assistant 消息，通过 <code>error</code> 事件交付并保留已流出的内容。但直接调用 API 实现的 <code>streamSimple</code> 时，凭据检查位于进入流之前，可同步抛出；调用者仍需保护创建流的入口。<code>Models</code> 的异步准备层另有错误流封装。</li><li><b>兼容性开关</b>：OpenAI 兼容服务各有怪癖，<code>detectCompat</code> 按 provider 与 baseUrl 自动探测（是否支持 developer 角色、usage 放在哪、思考字段格式……），模型的 <code>compat</code> 字段可以覆盖。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 06</div><a class="big" href="l06.html">Agent 循环：runLoop 逐行精读 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
