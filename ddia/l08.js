@@ -13,6 +13,7 @@ Player(document.getElementById('p2'),{els:e2,scenes:[
 (()=>{const C=60,S=[['sum(金额) 全表',1],['按日期、城市统计数量',2],['5 个指标按 3 个维度',8],['SELECT * 取一行',60]];
  const q=document.getElementById('hq'),p=document.getElementById('hp'),m=document.getElementById('hm');
  S.forEach(([t,k])=>{const b=document.createElement('button');b.className='btn';b.textContent=t;b.addEventListener('click',()=>{q.querySelectorAll('.btn').forEach(y=>y.classList.toggle('pri',y===b));
+  if(k===C){p.textContent=`表：10 亿行 × ${C} 列，每列平均 8 字节\n按主键定位 1 行：逻辑结果约 ${C*8} 字节\n行存：取得 1 行；列存：从 ${C} 列中取得该行的值\n实际 I/O 取决于索引、页/列块大小与缓存，不能按十亿行全表扫描计算`;m.className='msg sig';m.innerHTML='按键读取完整记录通常更适合行存；这里比较访问布局，不推算实际磁盘读取量。';return}
   p.textContent=`表：10 亿行 × ${C} 列，每列平均 8 字节\n行存读取：${(1e9*C*8/1e12).toFixed(2)} TB（全部列）\n列存读取：${(1e9*k*8/1e12).toFixed(3)} TB（${k} 列，压缩前）`;
   m.className='msg '+(k<C?'ok':'bad');m.innerHTML=k<C?`列存少读 ${(100-k/C*100).toFixed(0)}%，压缩后更少。`:'按行取完整记录是行存的强项：列存要从 60 个文件里各取一个值。'});q.appendChild(b)});
  m.className='msg';m.innerHTML='选择一个查询。'})();
