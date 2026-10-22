@@ -6,7 +6,7 @@ Player(document.getElementById('p1'),{els:e,scenes:[
 (()=>{const S={'先删缓存 → 更新数据库':[['W','DEL cache'],['R','GET cache → 未命中'],['R','读数据库 → v1（W 还没提交）'],['W','UPDATE db = v2，提交'],['R','SET cache = v1'],['=','数据库 v2，缓存 v1，直到 TTL 过期','bad']],
 '更新数据库 → 删缓存':[['R','GET cache → 未命中'],['R','读数据库 → v1'],['W','UPDATE db = v2，提交'],['W','DEL cache'],['R','SET cache = v1（R 被拖慢了）'],['=','不一致，但需要 R 的“读库+写缓存”跨过整个写操作，罕见','sig']],
 '更新数据库 → 删缓存（常见情况）':[['W','UPDATE db = v2，提交'],['W','DEL cache'],['R','GET cache → 未命中'],['R','读数据库 → v2'],['R','SET cache = v2'],['=','一致','ok']],
-'延迟双删':[['R','GET cache → 未命中'],['R','读数据库 → v1'],['W','UPDATE db = v2，提交'],['W','DEL cache'],['R','SET cache = v1'],['W','500 ms 后再次 DEL cache'],['R','下一次读取 → 未命中 → v2'],['=','不一致窗口被限制在约 500 ms','ok']],
+'延迟双删':[['R','GET cache → 未命中'],['R','读数据库 → v1'],['W','UPDATE db = v2，提交'],['W','DEL cache'],['R','SET cache = v1'],['W','500 ms 后再次 DEL cache'],['R','下一次读取 → 未命中 → v2'],['=','此时间线中第二次删除清除了旧值；500 ms 不是通用上界，慢回填和复制延迟仍可能越过它','ok']],
 '更新数据库 → 更新缓存（两个写）':[['W1','UPDATE db = A'],['W2','UPDATE db = B'],['W2','SET cache = B'],['W1','SET cache = A'],['=','数据库 B，缓存 A，没有任何操作会纠正它（直到 TTL）','bad']]};
  const q=document.getElementById('hq'),p=document.getElementById('hp'),m=document.getElementById('hm');
  Object.keys(S).forEach(k=>{const b=document.createElement('button');b.className='btn';b.textContent=k;b.addEventListener('click',()=>{q.querySelectorAll('.btn').forEach(x=>x.classList.toggle('pri',x===b));const s=S[k],r=s[s.length-1];p.textContent=s.slice(0,-1).map((x,i)=>`${i+1}. [${x[0]}] ${x[1]}`).join('\n');m.className='msg '+r[2];m.innerHTML=r[1]});q.appendChild(b)});
