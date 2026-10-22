@@ -181,8 +181,8 @@ if (hasMoreToolCalls || pendingMessages.length &gt; 0) {</pre><p>turn 结束后�
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">直接调用 <code>runAgentLoop</code>。用 <code>transformContext</code> 统计模型请求次数（它在每次请求前被调用一次）。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行四个场景。</p><pre class="cmd">cat &gt; pi-mono/scratch/l06.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。直接调用 <code>runAgentLoop</code>。用 <code>transformContext</code> 统计模型请求次数（它在每次请求前被调用一次）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行四个场景。</p><pre class="cmd">cat &gt; scratch/l06.ts &lt;&lt;&#x27;EOF&#x27;
 import { Type } from &quot;@earendil-works/pi-ai&quot;;
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, streamSimple } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { runAgentLoop, type AgentLoopConfig } from &quot;@earendil-works/pi-agent-core&quot;;
@@ -225,7 +225,7 @@ await run(&quot;follow-up&quot;, [fauxAssistantMessage(&quot;第一次回答&quo
   getFollowUpMessages: async () =&gt; (once ? ((once = false), [{ role: &quot;user&quot;, content: &quot;再说一次&quot;, timestamp: Date.now() }]) : []),
 });
 EOF
-cd pi-mono/scratch &amp;&amp; node l06.ts</pre><pre class="out">== 两次工具调用：模型请求 3 次
+node scratch/l06.ts</pre><pre class="out">== 两次工具调用：模型请求 3 次
    事件: agent_start → turn_start → tool_execution_end(成功) → turn_end → turn_start → tool_execution_end(成功) → turn_end → turn_start → turn_end → agent_end
    新消息: system, user, assistant(toolUse), toolResult, assistant(toolUse), toolResult, assistant(stop)
 == 输出被截断：模型请求 2 次
@@ -236,7 +236,7 @@ cd pi-mono/scratch &amp;&amp; node l06.ts</pre><pre class="out">== 两次工具�
    新消息: system, user, assistant(toolUse), toolResult
 == follow-up：模型请求 2 次
    事件: agent_start → turn_start → turn_end → turn_start → turn_end → agent_end
-   新消息: system, user, assistant(stop), user, assistant(stop)</pre></div></div><div class="st"><span class="n">02</span><div><p>数一数 runLoop 有多长：</p><pre class="cmd">cd pi-mono &amp;&amp; awk &#x27;/^async function runLoop/{s=NR} s&amp;&amp;/^}/{print &quot;runLoop:&quot;, NR-s+1, &quot;行&quot;; exit}&#x27; packages/agent/src/agent-loop.ts</pre><pre class="out">runLoop: 159 行</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>实现“最多 N 个 turn”</h3><p>用 <code>finishTurn</code> 实现一个上限：第 3 个 turn 结束时停止运行，即使模型还想调用工具。用“无限调用工具”的脚本化模型（准备 10 条工具调用回复）验证模型只被请求 3 次。</p><details><summary>查看参考答案</summary><div><pre>let turns = 0;
+   新消息: system, user, assistant(stop), user, assistant(stop)</pre></div></div><div class="st"><span class="n">02</span><div><p>数一数 runLoop 有多长：</p><pre class="cmd">awk &#x27;/^async function runLoop/{s=NR} s&amp;&amp;/^}/{print &quot;runLoop:&quot;, NR-s+1, &quot;行&quot;; exit}&#x27; packages/agent/src/agent-loop.ts</pre><pre class="out">runLoop: 159 行</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>实现“最多 N 个 turn”</h3><p>用 <code>finishTurn</code> 实现一个上限：第 3 个 turn 结束时停止运行，即使模型还想调用工具。用“无限调用工具”的脚本化模型（准备 10 条工具调用回复）验证模型只被请求 3 次。</p><details><summary>查看参考答案</summary><div><pre>let turns = 0;
 await run("上限 3", Array.from({ length: 10 }, (_, i) => call(String(i))), {
   finishTurn: async () => (++turns >= 3 ? { action: "end" } : undefined),
 });
