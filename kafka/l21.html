@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kafka 第 21 课 · Outbox 模式与 CDC</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Kafka</a><span class="crumb">第 21 课</span><span class="sp"></span><a href="l20.html">← 第 20 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Kafka · 第 21 课</div><h1>Outbox 模式与 CDC</h1>
+<p>一个服务既要写数据库、又要发事件时，两步之间的任何崩溃都会让两边不一致：订单存了但事件没发，或者事件发了但订单回滚了。本课讲为什么“双写”无解，Transactional Outbox 如何把事件和业务数据放进同一个数据库事务，以及用 CDC（Debezium 读取数据库日志）把 outbox 表可靠地转发到 Kafka 的完整做法与注意事项。约 65 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">双写的失败方式</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">Outbox + CDC</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：在哪一步崩溃</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关代码与配置</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>双写的失败方式</h2><div class="goal">先提交后发送与先发送后提交。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>Outbox + CDC</h2><div class="goal">一次下单的数据流。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：在哪一步崩溃</h2><div class="goal">选择崩溃发生的位置，比较双写和 Outbox 的结果。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:90px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关代码与配置</h2><div class="goal">outbox 表、事务与连接器。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">PostgreSQL 与 Debezium Connect 都共享 kafka 容器的网络（localhost 互通）。需要第 18 课之后的单节点 kafka 容器在运行。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>启动 PostgreSQL（开启逻辑复制）。</p><pre class="cmd">docker run -d --name pg --network container:kafka -e POSTGRES_PASSWORD=pw postgres:18 -c wal_level=logical
+sleep 5; docker exec -i pg psql -U postgres &lt;&lt;&#x27;X&#x27;
+CREATE TABLE orders(id bigint PRIMARY KEY, user_id bigint, amount numeric, status text);
+CREATE TABLE outbox(id uuid PRIMARY KEY, aggregatetype text, aggregateid text, type text, payload jsonb, created_at timestamptz DEFAULT now());
+X</pre><pre class="out">CREATE TABLE
+CREATE TABLE</pre></div></div><div class="st"><span class="n">02</span><div><p>启动 Debezium Connect。</p><pre class="cmd">docker run -d --name dbz --network container:kafka -e BOOTSTRAP_SERVERS=localhost:9092 -e GROUP_ID=dbz -e CONFIG_STORAGE_TOPIC=dbz_configs -e OFFSET_STORAGE_TOPIC=dbz_offsets -e STATUS_STORAGE_TOPIC=dbz_status -e CONFIG_STORAGE_REPLICATION_FACTOR=1 -e OFFSET_STORAGE_REPLICATION_FACTOR=1 -e STATUS_STORAGE_REPLICATION_FACTOR=1 quay.io/debezium/connect:latest
+sleep 20; docker exec dbz curl -s localhost:8083/</pre><pre class="out">{&quot;version&quot;:&quot;…&quot;,&quot;commit&quot;:&quot;…&quot;,&quot;kafka_cluster_id&quot;:&quot;…&quot;}</pre></div></div><div class="st"><span class="n">03</span><div><p>注册带 Outbox Event Router 的连接器。</p><pre class="cmd">docker exec -i dbz curl -s -X PUT -H &quot;Content-Type: application/json&quot; localhost:8083/connectors/outbox/config -d @- &lt;&lt;&#x27;X&#x27;
+{&quot;connector.class&quot;:&quot;io.debezium.connector.postgresql.PostgresConnector&quot;,
+ &quot;database.hostname&quot;:&quot;localhost&quot;,&quot;database.port&quot;:&quot;5432&quot;,&quot;database.user&quot;:&quot;postgres&quot;,&quot;database.password&quot;:&quot;pw&quot;,&quot;database.dbname&quot;:&quot;postgres&quot;,
+ &quot;topic.prefix&quot;:&quot;shop&quot;,&quot;plugin.name&quot;:&quot;pgoutput&quot;,&quot;table.include.list&quot;:&quot;public.outbox&quot;,
+ &quot;transforms&quot;:&quot;outbox&quot;,&quot;transforms.outbox.type&quot;:&quot;io.debezium.transforms.outbox.EventRouter&quot;,
+ &quot;transforms.outbox.table.expand.json.payload&quot;:&quot;true&quot;,
+ &quot;value.converter&quot;:&quot;org.apache.kafka.connect.json.JsonConverter&quot;,&quot;value.converter.schemas.enable&quot;:&quot;false&quot;}
+X</pre><pre class="out">{&quot;name&quot;:&quot;outbox&quot;,&quot;config&quot;:{…},&quot;tasks&quot;:[],&quot;type&quot;:&quot;source&quot;}</pre></div></div><div class="st"><span class="n">04</span><div><p>在一个事务中下单并写 outbox。</p><pre class="cmd">docker exec -i pg psql -U postgres &lt;&lt;&#x27;X&#x27;
+BEGIN;
+INSERT INTO orders VALUES (1001, 42, 99.5, &#x27;created&#x27;);
+INSERT INTO outbox(id, aggregatetype, aggregateid, type, payload) VALUES (gen_random_uuid(), &#x27;Order&#x27;, &#x27;1001&#x27;, &#x27;OrderCreated&#x27;, &#x27;{&quot;orderId&quot;:1001,&quot;userId&quot;:42,&quot;amount&quot;:99.5}&#x27;);
+COMMIT;
+X</pre><pre class="out">BEGIN
+INSERT 0 1
+INSERT 0 1
+COMMIT</pre></div></div><div class="st"><span class="n">05</span><div><p>读取路由后的主题。</p><pre class="cmd">docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic outbox.event.Order --from-beginning --property print.key=true --property print.headers=true --timeout-ms 10000</pre><pre class="out">id:6f1c…,id:…	&quot;1001&quot;	{&quot;orderId&quot;:1001,&quot;userId&quot;:42,&quot;amount&quot;:99.5}</pre></div></div><div class="st"><span class="n">06</span><div><p>回滚的事务不会产生事件。</p><pre class="cmd">docker exec -i pg psql -U postgres -c &quot;BEGIN; INSERT INTO outbox(id,aggregatetype,aggregateid,type,payload) VALUES (gen_random_uuid(),&#x27;Order&#x27;,&#x27;1002&#x27;,&#x27;OrderCreated&#x27;,&#x27;{}&#x27;); ROLLBACK;&quot;
+docker exec kafka /opt/kafka/bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic outbox.event.Order</pre><pre class="out">ROLLBACK
+outbox.event.Order:0:1</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>把一个双写服务改造为 Outbox</h3><p>现有代码：<code>orderRepo.save(order); kafka.send("orders", order.id, toJson(order));</code>，在同一个方法里，标注了 <code>@Transactional</code>。线上偶尔出现“订单存在但下游从未收到事件”和“下游收到事件但订单不存在”的情况。① 分别解释这两种现象是怎么产生的；② 写出改造后的代码和表结构；③ 说明下游消费者需要做什么改变。</p><details><summary>查看参考答案</summary><div><ol><li><b>订单存在但没有事件</b>：<code>send()</code> 是异步的，事务提交后进程崩溃或发送最终失败（回调里没有处理），事件丢失。<b>事件存在但订单不存在</b>：<code>send()</code> 在事务内调用，消息很快发出，而后续某一步（或提交本身）失败导致事务回滚。</li><li><b>改造</b>：<pre>@Transactional
+void createOrder(Order o) {
+  orderRepo.save(o);
+  outboxRepo.save(new OutboxEvent(UUID.randomUUID(), "Order", o.id,
+                                  "OrderCreated", toJson(o)));
+}  // 只写数据库，不再直接调用 Kafka</pre>表：<code>outbox(id uuid PK, aggregatetype text, aggregateid text, type text, payload jsonb, created_at timestamptz)</code>。部署 Debezium 连接器 + EventRouter，路由到 <code>outbox.event.Order</code>，key 为订单号；定期删除已过 1 天的 outbox 行（或写入后立即删除）。</li><li><b>下游</b>：主题名和格式可能变化（改为订阅新主题，或用 EventRouter 的 <code>route.topic.replacement</code> 保持原主题名 <code>orders</code>）；按 header 中的事件 ID 幂等处理，因为 CDC 是至少一次；同一订单的事件因 key 相同而有序。</li></ol></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>双写问题</b>：<code>db.commit(); kafka.send(event)</code> —— 提交后、发送前崩溃，事件丢失；反过来先发送再提交，提交失败时下游收到了从未发生的事件。数据库事务与 Kafka 事务是两个系统，没有共同的原子提交（第 11 课）。</li><li><b>Transactional Outbox</b>：在<b>同一个数据库事务</b>中写业务表和一张 <code>outbox</code> 表（<code>id</code>、<code>aggregate_type</code>、<code>aggregate_id</code>、<code>type</code>、<code>payload</code>、<code>created_at</code>）。事务提交则两者都在，回滚则两者都不在。再由一个独立的中继把 outbox 中的行发送到 Kafka。</li><li>中继的两种实现：<b>轮询</b>（定时 <code>SELECT … WHERE sent = false ORDER BY id</code>，发送后标记）简单但有延迟和数据库压力，并发中继时要小心顺序；<b>CDC</b>（变更数据捕获）读取数据库的复制日志（MySQL binlog、PostgreSQL 逻辑复制），延迟低、不需要改应用、不额外查询数据库。Debezium 是最常用的开源 CDC，以 Kafka Connect Source 连接器的形式运行。</li><li>Debezium 的 <b>Outbox Event Router</b>（SMT <code>io.debezium.transforms.outbox.EventRouter</code>）把 outbox 表的插入事件转成干净的业务事件：按 <code>aggregate_type</code> 路由到主题（如 <code>outbox.event.Order</code>），用 <code>aggregate_id</code> 作 key（保证同一订单的事件有序），payload 作 value，<code>id</code> 放入 header 作为事件 ID。</li><li>中继至少一次：Connect 重启时可能重发最后一批，所以<b>消费者必须按事件 ID 幂等</b>。outbox 表只增不改，可以在写入后立即删除（CDC 已经从日志中读到插入），或按时间定期清理。</li><li>也可以直接对业务表做 CDC（不建 outbox 表），但这样表结构就成了对外的事件契约，内部重构会破坏下游；outbox 把“内部数据模型”与“对外发布的事件”分开，是更稳妥的做法。PostgreSQL 注意：复制槽会保留 WAL 直到被消费，连接器长时间停止会让磁盘被 WAL 占满，需要监控复制槽延迟。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 22</div><a class="big" href="l22.html">事件溯源与 CQRS →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l21.js"></script>
+</body></html>
