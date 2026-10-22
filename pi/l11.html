@@ -122,8 +122,8 @@ return { content: [{ type: &quot;text&quot;, text: outputText }], details, struc
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">直接调用 bash 工具：成功、失败、大输出、超时、中止、流式更新。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行（约 3 秒）。</p><pre class="cmd">cat &gt; pi-mono/scratch/l11.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。直接调用 bash 工具：成功、失败、大输出、超时、中止、流式更新。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行（约 3 秒）。</p><pre class="cmd">cat &gt; scratch/l11.ts &lt;&lt;&#x27;EOF&#x27;
 import { mkdtempSync } from &quot;node:fs&quot;;
 import { tmpdir } from &quot;node:os&quot;;
 import { join } from &quot;node:path&quot;;
@@ -157,7 +157,7 @@ await run(&quot;超时&quot;, { command: &quot;echo start; sleep 5&quot;, timeou
 await run(&quot;中止（含子进程）&quot;, { command: &quot;sleep 30 &amp; sleep 30; echo never&quot; }, { abortAfter: 300 });
 await run(&quot;流式更新&quot;, { command: &quot;for i in 1 2 3; do echo $i; sleep 0.3; done&quot; }, { updates: true });
 EOF
-cd pi-mono/scratch &amp;&amp; node l11.ts</pre><pre class="out">== 成功
+node scratch/l11.ts</pre><pre class="out">== 成功
   hi
   err
   
@@ -193,14 +193,15 @@ cd pi-mono/scratch &amp;&amp; node l11.ts</pre><pre class="out">== 成功
   3
   
   structured: exit_code=0 truncated=false
-  用时约 0.9s，收到部分输出更新 多 次</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用 spawnHook 加一层保护</h3><p>使用 <code>createBashTool(dir, { spawnHook })</code>：把每条命令包装成 <code>timeout 60 bash -c &lt;原命令&gt;</code> 并设置环境变量 <code>PI_AGENT=1</code>。再思考：这能算沙箱吗？</p><details><summary>查看参考答案</summary><div><pre>const bash = createBashTool(dir, {
+  用时约 0.9s，收到部分输出更新 多 次</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>用 spawnHook 加一层保护</h3><p>使用 <code>createBashTool(dir, { spawnHook })</code>：把每条命令包装成 <code>timeout 60 bash -c &lt;原命令&gt;</code> 并设置环境变量 <code>PI_AGENT=1</code>。再思考：这能算沙箱吗？</p><details><summary>查看参考答案</summary><div><pre>const shellQuote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
+const bash = createBashTool(dir, {
   spawnHook: (ctx) => ({
     ...ctx,
-    command: `timeout 60 bash -c ${JSON.stringify(ctx.command)}`,
+    command: `timeout 60 bash -c ${shellQuote(ctx.command)}`,
     env: { ...ctx.env, PI_AGENT: "1" },
   }),
 });
-await bash.execute("1", { command: "echo $PI_AGENT" }); // 1</pre><p>这不是沙箱：命令仍以你的用户权限运行，可以读写任何你能访问的文件、访问网络。spawnHook 只是改写“怎么启动”。真正的隔离需要操作系统机制——把命令放进容器（pi 文档 <code>containerization.md</code> 的做法），或像 Codex 那样用 Seatbelt/Landlock 限制文件系统与网络。<code>JSON.stringify</code> 在这里只是演示用的引号处理，并不是可靠的 shell 转义。</p></div></details></div>
+await bash.execute("1", { command: "echo $PI_AGENT" }); // 1</pre><p>这不是沙箱：命令仍以你的用户权限运行，可以读写任何你能访问的文件、访问网络。spawnHook 只是改写“怎么启动”。真正的隔离需要操作系统机制——把命令放进容器（pi 文档 <code>containerization.md</code> 的做法），或像 Codex 那样用 Seatbelt/Landlock 限制文件系统与网络。shellQuote 用单引号保护原命令并转义其中的单引号，避免外层 shell 提前展开变量、反引号或 $()。timeout 是外部命令；Linux 通常需 GNU coreutils，macOS 需安装 coreutils 并按安装结果使用 timeout 或 gtimeout。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
