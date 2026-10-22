@@ -1,10 +1,10 @@
 const B=(t,c,w=300,h=44)=>({w,h,cls:'blk '+c,html:t});
 const base={ctr:[0,0],img:[0,170],lab:[0,-36]};
-Player(document.getElementById('p1'),{els:{ctr:{w:300,h:220,cls:'card',html:'<h6>容器 pg</h6>'},wl:B('可写层 · 数据库文件','hatch',260),img:B('镜像 postgres:16 · 只读','dim'),lab:{w:300,cls:'tag'},
+Player(document.getElementById('p1'),{els:{ctr:{w:300,h:220,cls:'card',html:'<h6>容器 pg</h6>'},wl:B('匿名卷 · 数据库文件','hatch',260),img:B('镜像 postgres:16 · 只读','dim'),lab:{w:300,cls:'tag'},
  mnt:{w:170,cls:'tag'},vol:B('命名卷 pgdata<br><span style="font-size:11px;opacity:.7">/var/lib/docker/volumes/pgdata</span>','',300,64),bind:B('宿主机目录 ./data<br><span style="font-size:11px;opacity:.7">你指定的任意路径</span>','',300,64),tmp:B('内存 tmpfs<br><span style="font-size:11px;opacity:.7">停止即清空</span>','dim',300,64),res:{w:300,cls:'tag'}},
  scenes:[
- {t:'默认：写在可写层',p:'不挂载时，数据库文件写进容器的可写层。',set:{...base,wl:[20,110],lab:[0,-36,{html:'<b>没有挂载</b>'}]}},
- {t:'删除容器，数据一起删除',p:'<code>docker rm</code> 删除可写层。数据库里的数据没了，新建的容器是空的。',set:{...base,wl:[20,110,{cls:'blk dim',html:'可写层（已删除）'}],res:[0,250,{html:'<b style="color:var(--bad)">数据丢失</b>'}]}},
+ {t:'默认：匿名卷',p:'一般文件路径未挂载时写入可写层；但 postgres:16 声明了 VOLUME，数据目录默认挂载匿名卷。',set:{...base,wl:[20,110],lab:[0,-36,{html:'<b>未显式指定卷</b>'}]}},
+ {t:'新容器不会复用匿名卷',p:'<code>docker rm</code> 不带 -v 时旧匿名卷保留；再 run 会创建新卷，所以新容器看不到旧数据。',set:{...base,wl:[20,110,{cls:'blk dim',html:'旧匿名卷（保留）'}],res:[0,250,{html:'<b style="color:var(--bad)">新容器未挂载旧数据</b>'}]}},
  {t:'命名卷',p:'把 <code>/var/lib/postgresql/data</code> 挂到一个命名卷上。卷由 Docker 管理，独立于容器存在，删除容器不影响它。',d:3600,set:{...base,lab:[0,-36,{html:'<b>--mount type=volume</b>'}],wl:[20,110,{cls:'blk',html:'/var/lib/postgresql/data'}],mnt:[340,120,{html:'<div style="text-align:center">挂载<br><span style="font-size:22px;color:var(--ink)">→</span></div>'}],vol:[520,100]}},
  {t:'绑定挂载',p:'把宿主机上你指定的目录映射进去。两边看到的是同一份文件，适合开发时同步代码和配置。',set:{...base,lab:[0,-36,{html:'<b>--mount type=bind</b>'}],wl:[20,110,{cls:'blk',html:'/app'}],mnt:[340,120,{html:'<div style="text-align:center">挂载<br><span style="font-size:22px;color:var(--ink)">→</span></div>'}],bind:[520,100]}},
  {t:'tmpfs',p:'存在内存里，不写磁盘。适合临时文件、敏感的临时数据。容器停止就消失。',set:{...base,lab:[0,-36,{html:'<b>--mount type=tmpfs</b>'}],wl:[20,110,{cls:'blk',html:'/tmp'}],mnt:[340,120,{html:'<div style="text-align:center">挂载<br><span style="font-size:22px;color:var(--ink)">→</span></div>'}],tmp:[520,100]}}]});
@@ -12,13 +12,13 @@ Player(document.getElementById('p1'),{els:{ctr:{w:300,h:220,cls:'card',html:'<h6
 (()=>{let mode='none',exists=false,run=false,layer=false,store={volume:false,bind:false},mem=false;const lg=document.getElementById('lg'),MT=document.getElementById('mt'),AC=document.getElementById('ac');
  const FLAG={none:'',volume:' --mount type=volume,src=pgdata,dst=/var/lib/postgresql/data',bind:' --mount type=bind,src=$PWD/pgdata,dst=/var/lib/postgresql/data',tmpfs:' --mount type=tmpfs,dst=/var/lib/postgresql/data'};
  const out=(c,r,cls)=>{lg.insertAdjacentHTML('beforeend',`<b>$ ${c}</b>\n${cls?`<span class="${cls}">${r}</span>`:r}\n`);lg.scrollTop=lg.scrollHeight};
- [['none','不挂载'],['volume','命名卷'],['bind','绑定挂载'],['tmpfs','tmpfs']].forEach(([v,l])=>{const b=document.createElement('button');b.className='btn';b.textContent=l;b.dataset.v=v;b.addEventListener('click',()=>{if(exists){shake(b);out('# 切换挂载方式','先删除现有容器（挂载在创建时决定，之后不能改）。','e');return}mode=v;paint()});MT.appendChild(b)});
+ [['none','默认匿名卷'],['volume','命名卷'],['bind','绑定挂载'],['tmpfs','tmpfs']].forEach(([v,l])=>{const b=document.createElement('button');b.className='btn';b.textContent=l;b.dataset.v=v;b.addEventListener('click',()=>{if(exists){shake(b);out('# 切换挂载方式','先删除现有容器（挂载在创建时决定，之后不能改）。','e');return}mode=v;paint()});MT.appendChild(b)});
  const has=()=>mode==='none'?layer:mode==='tmpfs'?mem:store[mode];
  const A={'docker run':()=>{if(exists)return out('docker run -d --name pg …','Conflict. The container name "/pg" is already in use.','e');exists=run=true;out('docker run -d --name pg -e POSTGRES_PASSWORD=dev'+FLAG[mode]+' postgres:16','a91c3e…')},
   '写入一行':()=>{if(!run)return out('docker exec pg psql …','Error: No such container: pg','e');if(mode==='none')layer=true;else if(mode==='tmpfs')mem=true;else store[mode]=true;out("docker exec pg psql -U postgres -c \"INSERT INTO t VALUES ('hello')\"",'INSERT 0 1')},
   '查询':()=>{if(!run)return out('docker exec pg psql …','Error: No such container: pg','e');out('docker exec pg psql -U postgres -tc "SELECT x FROM t"',has()?' hello':'(0 rows)',has()?'o':'e')},
   'docker restart':()=>{if(!exists)return out('docker restart pg','Error: No such container: pg','e');mem=false;out('docker restart pg','pg'+(mode==='tmpfs'?'\n<span style="opacity:.7"># tmpfs 在停止时被清空</span>':''))},
-  'docker rm -f':()=>{if(!exists)return out('docker rm -f pg','Error: No such container: pg','e');exists=run=false;layer=false;mem=false;out('docker rm -f pg','pg'+(mode==='none'?'\n<span style="opacity:.7"># 可写层已删除</span>':''))}};
+  'docker rm -f':()=>{if(!exists)return out('docker rm -f pg','Error: No such container: pg','e');exists=run=false;layer=false;mem=false;out('docker rm -f pg','pg'+(mode==='none'?'\n<span style="opacity:.7"># 旧匿名卷保留；再次 run 会创建新卷</span>':''))}};
  Object.keys(A).forEach(k=>{const b=document.createElement('button');b.className='btn';b.textContent=k;b.addEventListener('click',A[k]);AC.appendChild(b)});
  function paint(){[...MT.children].forEach(b=>b.classList.toggle('pri',b.dataset.v===mode))}paint();
  lg.innerHTML='<span style="opacity:.6">建议顺序：docker run → 写入一行 → docker rm -f → docker run → 查询。再换一种挂载方式试试。</span>\n'})();
