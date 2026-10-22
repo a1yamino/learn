@@ -31,7 +31,9 @@
 from confluent_kafka import Producer
 p=Producer({&#x27;bootstrap.servers&#x27;:&#x27;localhost:9092&#x27;,&#x27;transactional.id&#x27;:&#x27;demo-1&#x27;})
 p.init_transactions()
-p.begin_transaction(); p.produce(&#x27;tx-out&#x27;,b&#x27;aborted-1&#x27;); p.abort_transaction()
+p.begin_transaction(); p.produce(&#x27;tx-out&#x27;,b&#x27;aborted-1&#x27;)
+p.flush()  # 确保记录已送到 Broker；abort_transaction 会清理仍排在客户端的消息
+p.abort_transaction()
 p.begin_transaction(); p.produce(&#x27;tx-out&#x27;,b&#x27;committed-1&#x27;); p.commit_transaction()
 X</pre><pre class="out">（无输出）</pre></div></div><div class="st"><span class="n">03</span><div><p>read_uncommitted（默认）看到两条。</p><pre class="cmd">bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic tx-out --from-beginning --timeout-ms 5000</pre><pre class="out">aborted-1
 committed-1</pre></div></div><div class="st"><span class="n">04</span><div><p>read_committed 只看到提交的。</p><pre class="cmd">bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic tx-out --from-beginning --isolation-level read_committed --timeout-ms 5000</pre><pre class="out">committed-1</pre></div></div><div class="st"><span class="n">05</span><div><p>偏移量包含控制标记：两条消息占用了 4 个偏移量。</p><pre class="cmd">bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic tx-out
