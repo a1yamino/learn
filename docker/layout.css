@@ -82,15 +82,6 @@ code { overflow-wrap: anywhere; }
   color: var(--ink2);
 }
 .watch .notes li.on h4 { color: var(--ink); }
-.step-trigger {
-  all: unset;
-  display: block;
-  width: 100%;
-  font: inherit;
-  color: inherit;
-  text-align: inherit;
-  cursor: pointer;
-}
 .watch .pc .btn {
   height: 40px;
   flex-shrink: 0;
@@ -102,18 +93,6 @@ code { overflow-wrap: anywhere; }
   justify-content: center;
 }
 .watch .pc .tl { min-width: 24px; }
-.pv.is-zoomed {
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-color: var(--ink2) var(--bg2);
-  touch-action: pan-x pan-y pinch-zoom;
-}
-.pv.is-zoomed:focus-visible { outline-offset: -4px; }
-.zoom[aria-pressed="true"] {
-  color: var(--sig);
-  border-color: var(--sig);
-  background: var(--sigs);
-}
 .cpu-run > div,
 .cpu-wait > div {
   transform-origin: left center;
@@ -235,4 +214,12 @@ button.blk:focus-visible,
   button.blk:active,
   .df .ln .mv:active { transform: none; }
   .list a:hover .ar { transform: none; }
+}
+
+/* Docker diagrams use a slightly longer move than the shared default. */
+@media (prefers-reduced-motion: no-preference) {
+  .watch > .pv > .board > .el {
+    transition: transform 480ms var(--e-move), opacity 260ms var(--e-out),
+      background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+  }
 }

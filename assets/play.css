@@ -140,3 +140,10 @@ details{border-top:1px solid var(--line);padding-top:12px;margin-top:12px}summar
 .grp{font:500 12px/1 var(--m);letter-spacing:.1em;color:var(--sig);padding:40px 0 14px;border-bottom:1px solid var(--line);list-style:none}
 .blk{flex-direction:column;line-height:1.35}
 .tbl{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0 18px;display:block;overflow-x:auto}.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}.tbl th{font:600 12px var(--m);color:var(--ink2);letter-spacing:.04em}.mis>ul,.mis>p{max-width:760px}
+
+/* Player: step buttons in notes, optional zoom */
+.step-trigger{all:unset;display:block;width:100%;font:inherit;color:inherit;text-align:inherit;cursor:pointer}
+.step-trigger:focus-visible{outline:2px solid var(--sig);outline-offset:4px}
+.pv:focus-visible{outline:2px solid var(--sig);outline-offset:-4px}
+.pv.is-zoomed{overflow:auto;overscroll-behavior:contain;scrollbar-color:var(--ink2) var(--bg2);touch-action:pan-x pan-y pinch-zoom}
+.zoom[aria-pressed="true"]{color:var(--sig);border-color:var(--sig);background:var(--sigs)}
