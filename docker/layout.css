@@ -1,0 +1,13 @@
+/* Keep summary text and inline code together, beside the original number gutter. */
+.sum > li {
+  display: block;
+  position: relative;
+  padding-inline-start: 56px;
+  overflow-wrap: anywhere;
+}
+
+.sum > li::before {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 20px;
+}
