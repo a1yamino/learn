@@ -146,8 +146,8 @@ return sections;</pre><p>收集上下文文件：</p><p class="src" style="font:
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在临时项目中放置全局与项目 AGENTS.md、一个项目技能，查看生成的段落。把 HOME 指向空目录，避免你自己 <code>~/.agents/skills</code> 中的技能混入输出。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l12.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。在临时项目中放置全局与项目 AGENTS.md、一个项目技能，查看生成的段落。把 HOME 指向空目录，避免你自己 <code>~/.agents/skills</code> 中的技能混入输出。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l12.ts &lt;&lt;&#x27;EOF&#x27;
 import { fauxAssistantMessage } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { fauxSession } from &quot;./faux-session.ts&quot;;
 
@@ -178,7 +178,7 @@ const sys2 = s2.session.messages[0] as any;
 console.log(&quot;\n不信任项目时 sections:&quot;, Object.keys(sys2.sections).join(&quot;, &quot;));
 s2.session.dispose();
 EOF
-cd pi-mono/scratch &amp;&amp; HOME=$(mktemp -d) node l12.ts</pre><pre class="out">sections: preamble, tools, rules, docs, project_context, skills, cwd
+HOME=$(mktemp -d) node scratch/l12.ts</pre><pre class="out">sections: preamble, tools, rules, docs, project_context, skills, cwd
 
 ---- project_context ----
 &lt;project_context&gt;
@@ -222,7 +222,7 @@ References are relative to &lt;cwd&gt;/.pi/skills/pdf-tools.
 
 提取 report.pdf 第 3 页
 
-不信任项目时 sections: preamble, tools, rules, docs, project_context, cwd</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>估算上下文成本</h3><p>一个项目有 40 个技能，平均描述 300 字符。①它们在每次请求中大约占多少 token（按 4 字符/token 粗算，加上标签）？②为什么 pi 不把技能正文直接放进系统提示？③如果你有一个只想手动触发的危险技能（例如“发布到生产”），应该怎么配置？</p><details><summary>查看参考答案</summary><div><p>① 每个技能的 name+description+location+标签约 450–500 字符 → 约 120 token；40 个约 5000 token，每次请求都要付出（提示缓存可以降低成本但不能降低占用）。</p><p>② 渐进披露：正文可能有数千 token，且大多数任务用不上；只放描述，让模型在需要时用 read 加载，成本只在使用时发生。这也是描述必须写清楚“何时使用”的原因。</p><p>③ 在 frontmatter 中设置 <code>disable-model-invocation: true</code>：它不会出现在系统提示里，模型不知道它的存在，只有用户输入 <code>/skill:deploy-prod</code> 时才会展开。</p></div></details></div>
+不信任项目时 sections: preamble, tools, rules, docs, project_context, cwd</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>估算上下文成本</h3><p>一个项目有 40 个技能，平均描述 300 字符。①它们在每次请求中大约占多少 token（按 4 字符/token 粗算，加上标签）？②为什么 pi 不把技能正文直接放进系统提示？③如果你有一个只想手动触发的危险技能（例如“发布到生产”），应该怎么配置？</p><details><summary>查看参考答案</summary><div><p>① 每个技能的 name+description+location+标签约 450–500 字符 → 约 120 token；40 个约 5000 token，每次请求都要付出（提示缓存可以降低成本但不能降低占用）。</p><p>② 渐进披露：正文可能有数千 token，且大多数任务用不上；只放描述，让模型在需要时用 read 加载，成本只在使用时发生。这也是描述必须写清楚“何时使用”的原因。</p><p>③ 在 frontmatter 中设置 <code>disable-model-invocation: true</code>：它不会出现在系统提示里，这只影响技能目录的可见性，用户仍可用 <code>/skill:deploy-prod</code> 显式展开；模型若通过其他途径获得路径，仍可能读取正文或执行其中命令。危险操作还需要独立授权与隔离，不能把这个标记当权限控制。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
@@ -230,7 +230,7 @@ References are relative to &lt;cwd&gt;/.pi/skills/pdf-tools.
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>分段的系统提示</b>：<code>buildSystemPromptSections</code> 返回有序的段落；除 preamble 外每段都用同名标签包裹（如 <code>&lt;rules&gt;…&lt;/rules&gt;</code>），这样后续的 system 消息可以按名字替换某一段（第 3 课的 sections 机制），模型也能把更新对应到原文。</li><li><b>tools 与 rules</b>：tools 段列出每个工具的 <code>promptSnippet</code>；rules 段合并各工具的 <code>promptGuidelines</code>、扩展提供的规则，以及固定的“Be concise…”等，去重。只有 bash 而没有 grep/find/ls 时，会加上“Use bash for file operations like ls, rg, find”。</li><li><b>替换与追加</b>：<code>.pi/SYSTEM.md</code> 或全局 <code>SYSTEM.md</code> 替换默认的 preamble、tools、rules、docs 四段（project_context、skills、cwd 仍然保留）；<code>APPEND_SYSTEM.md</code> 作为 addendum 追加。扩展可以强制给出完整的系统提示。</li><li><b>上下文文件</b>：先加载全局目录（<code>~/.pi/agent</code>）中的，再从 cwd 一直向上到根目录，每个目录取第一个存在的 <code>AGENTS.override.md / AGENTS.md / CLAUDE.md</code>，越靠近根的越靠前。每个文件包在 <code>&lt;project_instructions path=…&gt;</code> 中。处理了 git worktree 嵌套时的重复。</li><li><b>技能</b>：遵循 Agent Skills 规范的 <code>SKILL.md</code>（frontmatter 必须有 name 与 description）。系统提示只列出 name、description、location，并告诉模型“任务匹配时用 read 加载”。来源：全局与项目的 <code>skills/</code>、<code>~/.agents/skills</code> 与项目祖先目录的 <code>.agents/skills</code>、pi 包。<code>disable-model-invocation: true</code> 的技能不出现在提示中，只能由用户调用。</li><li><b>/skill:name</b>：用户显式调用时，AgentSession 读取 SKILL.md 正文，包装成 <code>&lt;skill name location&gt;References are relative to …</code> 块放进用户消息。</li><li><b>信任</b>：项目目录中的 <code>.pi/</code> 资源（技能、扩展、设置、SYSTEM.md）只在项目被信任时加载；交互模式首次进入一个项目时会询问。SDK 默认信任。</li></ol></section>
+<ol class="sum"><li><b>分段的系统提示</b>：<code>buildSystemPromptSections</code> 返回有序的段落；除 preamble 外每段都用同名标签包裹（如 <code>&lt;rules&gt;…&lt;/rules&gt;</code>），这样后续的 system 消息可以按名字替换某一段（第 3 课的 sections 机制），模型也能把更新对应到原文。</li><li><b>tools 与 rules</b>：tools 段列出每个工具的 <code>promptSnippet</code>；rules 段合并各工具的 <code>promptGuidelines</code>、扩展提供的规则，以及固定的“Be concise…”等，去重。只有 bash 而没有 grep/find/ls 时，会加上“Use bash for file operations like ls, rg, find”。</li><li><b>替换与追加</b>：<code>.pi/SYSTEM.md</code> 或全局 <code>SYSTEM.md</code> 替换默认的 preamble、tools、rules、docs 四段（project_context、skills、cwd 仍然保留）；<code>APPEND_SYSTEM.md</code> 作为 addendum 追加。扩展可以强制给出完整的系统提示。</li><li><b>上下文文件</b>：先加载全局目录（<code>~/.pi/agent</code>）中的，再从 cwd 一直向上到根目录，每个目录取第一个存在的 <code>AGENTS.override.md / AGENTS.md / CLAUDE.md</code>，越靠近根的越靠前。每个文件包在 <code>&lt;project_instructions path=…&gt;</code> 中。处理了 git worktree 嵌套时的重复。</li><li><b>技能</b>：遵循 Agent Skills 规范的 <code>SKILL.md</code>（frontmatter 必须有 name 与 description）。系统提示只列出 name、description、location，并告诉模型“任务匹配时用 read 加载”。来源：全局与项目的 <code>skills/</code>、<code>~/.agents/skills</code> 与项目祖先目录的 <code>.agents/skills</code>、pi 包。<code>disable-model-invocation: true</code> 的技能不出现在提示中，用户可显式调用；这不是访问控制。</li><li><b>/skill:name</b>：用户显式调用时，AgentSession 读取 SKILL.md 正文，包装成 <code>&lt;skill name location&gt;References are relative to …</code> 块放进用户消息。</li><li><b>信任</b>：项目目录中的 <code>.pi/</code> 资源（技能、扩展、设置、SYSTEM.md）只在项目被信任时加载；交互模式首次进入一个项目时会询问。SDK 默认信任。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 13</div><a class="big" href="l13.html">会话：JSONL 树、分支与恢复 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
