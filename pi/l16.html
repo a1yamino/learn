@@ -100,13 +100,13 @@ function getPlanModeTools(activeToolNames: string[]): string[] {
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">两个模板 + 官方 plan-mode 示例扩展（直接从 pi-mono 复制到临时项目）。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l16.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。两个模板 + 官方 plan-mode 示例扩展（直接从 pi-mono 复制到临时项目）。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l16.ts &lt;&lt;&#x27;EOF&#x27;
 import { readFileSync } from &quot;node:fs&quot;;
 import { fauxAssistantMessage } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { fauxSession } from &quot;./faux-session.ts&quot;;
 
-const ex = &quot;../packages/coding-agent/examples/extensions/plan-mode&quot;;
+const ex = &quot;packages/coding-agent/examples/extensions/plan-mode&quot;;
 const { session } = await fauxSession(Array.from({ length: 6 }, () =&gt; fauxAssistantMessage(&quot;ok&quot;)), {
   files: {
     &quot;.pi/prompts/review.md&quot;: &quot;---\ndescription: 审查改动\nargument-hint: \&quot;[重点]\&quot;\n---\n审查暂存区的改动，重点关注 ${1:-正确性与安全}。其余参数：${@:2}\n&quot;,
@@ -128,7 +128,7 @@ await session.prompt(&quot;/plan&quot;);
 console.log(&quot;/plan 之后的活动工具:&quot;, session.agent.state.tools.map((t) =&gt; t.name).join(&quot;, &quot;));
 session.dispose();
 EOF
-cd pi-mono/scratch &amp;&amp; node l16.ts</pre><pre class="out">/review
+node scratch/l16.ts</pre><pre class="out">/review
    → 审查暂存区的改动，重点关注 正确性与安全。其余参数：
 /review 并发 &quot;API 兼容性&quot; 性能
    → 审查暂存区的改动，重点关注 并发。其余参数：API 兼容性 性能
@@ -138,7 +138,7 @@ cd pi-mono/scratch &amp;&amp; node l16.ts</pre><pre class="out">/review
    → /unknown 你好
 
 /plan 之前的活动工具: read, bash, edit, write
-/plan 之后的活动工具: read, bash, grep, find, ls</pre></div></div><div class="st"><span class="n">02</span><div><p>看看 plan-mode 允许哪些 bash 命令：</p><pre class="cmd">cd pi-mono/packages/coding-agent/examples/extensions/plan-mode &amp;&amp; grep -n -A12 &quot;SAFE_PATTERNS = &quot; utils.ts | head -16</pre><pre class="out">44:const SAFE_PATTERNS = [
+/plan 之后的活动工具: read, bash, grep, find, ls</pre></div></div><div class="st"><span class="n">02</span><div><p>看看 plan-mode 允许哪些 bash 命令：</p><pre class="cmd">grep -n -A12 &quot;SAFE_PATTERNS = &quot; packages/coding-agent/examples/extensions/plan-mode/utils.ts | head -16</pre><pre class="out">44:const SAFE_PATTERNS = [
 45-	/^\s*cat\b/,
 46-	/^\s*head\b/,
 47-	/^\s*tail\b/,
@@ -164,7 +164,7 @@ argument-hint: "[type] [说明…]"
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>内置命令</b>：定义在 <code>core/slash-commands.ts</code>（settings、model、tree、fork、clone、compact、resume、new、reload、login、export、share、trust……），由 <code>interactive-mode.ts</code> 的编辑器提交处理器逐一匹配。它们属于 UI 层，print/RPC 模式有各自的对应方式。</li><li><b>未被界面处理的输入</b>进入 <code>AgentSession.prompt</code>：扩展命令 → input 事件 → <code>/skill:</code> 展开 → 提示模板展开（第 2 课的顺序）。不认识的 <code>/xxx</code> 原样作为文本发给模型。</li><li><b>提示模板</b>：<code>~/.pi/agent/prompts/*.md</code> 或项目 <code>.pi/prompts/*.md</code>，文件名就是命令名；frontmatter 可写 description、argument-hint。参数按类 shell 规则解析（引号内的空格保留）。</li><li><b>占位符</b>：<code>$1</code>、<code>$2</code>…；<code>$@</code> / <code>$ARGUMENTS</code>（全部参数）；<code>${1:-默认}</code>；<code>${@:N}</code>、<code>${@:N:L}</code>（切片）。替换只做一层，参数中的 <code>$1</code> 不会被再次替换。</li><li><b>模板 vs 技能 vs 扩展命令</b>：模板只是可复用的文字；技能是带资源文件、可被模型自主选用的说明书；扩展命令执行代码。</li><li><b>计划模式是扩展</b>：示例 <code>plan-mode</code> 注册 <code>/plan</code> 命令和 <code>--plan</code> 标志，用 <code>setActiveTools</code> 去掉 edit/write、加入 grep/find/ls，并通过 <code>tool_call</code> 钩子只允许白名单内的只读 bash 命令；计划中的步骤从 “Plan:” 段落提取，执行时用 <code>[DONE:n]</code> 标记进度。</li></ol></section>
+<ol class="sum"><li><b>内置命令</b>：定义在 <code>core/slash-commands.ts</code>（settings、model、tree、fork、clone、compact、resume、new、reload、login、export、share、trust……），由 <code>interactive-mode.ts</code> 的编辑器提交处理器逐一匹配。它们属于 UI 层，print/RPC 模式有各自的对应方式。</li><li><b>未被界面处理的输入</b>进入 <code>AgentSession.prompt</code>：扩展命令 → input 事件 → <code>/skill:</code> 展开 → 提示模板展开（第 2 课的顺序）。不认识的 <code>/xxx</code> 原样作为文本发给模型。</li><li><b>提示模板</b>：<code>~/.pi/agent/prompts/*.md</code> 或项目 <code>.pi/prompts/*.md</code>，文件名就是命令名；frontmatter 可写 description、argument-hint。参数按类 shell 规则解析（引号内的空格保留）。</li><li><b>占位符</b>：<code>$1</code>、<code>$2</code>…；<code>$@</code> / <code>$ARGUMENTS</code>（全部参数）；<code>${1:-默认}</code>；<code>${@:N}</code>、<code>${@:N:L}</code>（切片）。替换只做一层，参数中的 <code>$1</code> 不会被再次替换。</li><li><b>模板 vs 技能 vs 扩展命令</b>：模板只是可复用的文字；技能是带资源文件、可被模型自主选用的说明书；扩展命令执行代码。</li><li><b>计划模式是扩展</b>：示例 <code>plan-mode</code> 注册 <code>/plan</code> 命令和 <code>--plan</code> 标志，用 <code>setActiveTools</code> 去掉 edit/write、加入 grep/find/ls，并通过 tool_call 钩子用正则筛选看似只读的 bash 命令；这不是完整 shell 解析或安全边界，例如固定版本的 isSafeCommand("find . -delete") 仍返回 true（仅演示判断，不要实际执行删除）。计划中的步骤从 “Plan:” 段落提取，执行时用 <code>[DONE:n]</code> 标记进度。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 17</div><a class="big" href="l17.html">pi-tui：差分渲染的终端界面 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
