@@ -145,8 +145,8 @@ const diffResult = generateDiffString(baseContent, newContent);</pre><p>模糊�
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">在一个带 BOM 与 CRLF、含弯引号的文件上尝试各种 edit。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l10.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。在一个带 BOM 与 CRLF、含弯引号的文件上尝试各种 edit。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l10.ts &lt;&lt;&#x27;EOF&#x27;
 import { mkdtempSync, readFileSync, writeFileSync } from &quot;node:fs&quot;;
 import { tmpdir } from &quot;node:os&quot;;
 import { join } from &quot;node:path&quot;;
@@ -183,7 +183,7 @@ const out = await runToolCall(
 );
 console.log(&quot;== 旧格式参数，经过 runToolCall\n  &quot;, (out.result.content[0] as any).text);
 EOF
-cd pi-mono/scratch &amp;&amp; node l10.ts</pre><pre class="out">== 精确替换
+node scratch/l10.ts</pre><pre class="out">== 精确替换
   Successfully replaced 1 block(s) in app.ts.
    1 const greeting = “hello”;  
   -2 let n = 1;
