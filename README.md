@@ -18,8 +18,9 @@
 | [DDIA：数据密集型应用设计](https://a1yamino.github.io/learn/ddia/) | 数据模型、分布式故障、一致性与系统权衡 | 使用过数据库，能阅读简单 Python / SQL | 28 / 28 |
 | [Clean Code：代码整洁之道](https://a1yamino.github.io/learn/cleancode/) | 命名、函数、错误处理、测试与设计原则 | 写过代码；练习使用 Python 3.10+ | 20 / 20 |
 | [pi 源码精读：编码 agent 的内核](https://a1yamino.github.io/learn/pi/) | 模型适配、agent 循环、工具、上下文与扩展 | TypeScript / Node.js 基础，能阅读异步代码 | 20 / 20 |
+| [Codex CLI 源码精读：生产级编码 agent](https://a1yamino.github.io/learn/codex/) | turn 循环、工具、沙箱与审批、执行策略、压缩、MCP、/plan 与 /goal | 学完 pi 源码精读；能阅读 Rust 代码 | 24 / 24 |
 
-目前共开放 **194 课**，以各课程目录的入口状态为准。
+目前共开放 **218 课**，以各课程目录的入口状态为准。
 
 ## 建议的学习路线
 
@@ -29,6 +30,7 @@
 - **理解后端数据系统**：PostgreSQL → Redis → Kafka。分别建立持久数据、缓存和事件流的模型；已有相关经验可直接进入需要的课程。
 - **做架构取舍**：有数据库实践后学习 DDIA，并结合 PostgreSQL、Redis、Kafka 的具体实现验证概念。
 - **理解编码 agent**：具备 TypeScript / Node.js 基础后学习 pi 源码精读。按课件固定的源码提交阅读，避免把其他版本的实现混入分析。
+- **深入生产级 agent**：pi → Codex。学完 pi 的内核后，读 Codex CLI 的 Rust 实现：沙箱、审批、执行策略、/plan 与 /goal，每课对照 pi 的对应课程，并用假模型服务器驱动从源码构建的真实 codex 做离线练习。
 - **改进日常代码**：Clean Code 可以独立学习。将原则视为需要权衡的工具，通过重构前后的行为验证理解它们。
 
 每门课程内部按课号渐进展开。中间章节可能沿用前课的容器、数据表或项目文件；跳读前先检查练习前提和清理步骤。
@@ -76,6 +78,7 @@ kafka/           Kafka 课件
 ddia/            DDIA 课件
 cleancode/       Clean Code 课件
 pi/              pi 源码精读课件
+codex/            Codex CLI 源码精读课件
 _src/            部分课程的 Python 生成源、输出记录与辅助脚本
 ```
 
@@ -483,6 +486,60 @@ _src/            部分课程的 Python 生成源、输出记录与辅助脚本
 **综合项目 · 第 20 课**
 
 - **20** [综合项目：用 SDK 构建自己的迷你编码 agent](https://a1yamino.github.io/learn/pi/l20.html)
+
+</details>
+
+<details>
+<summary><strong>Codex CLI 源码精读</strong> · 24 课</summary>
+
+[进入课程目录](https://a1yamino.github.io/learn/codex/)
+
+阅读 [openai/codex](https://github.com/openai/codex/tree/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3) 在提交 c260087 的 Rust 源码；代码摘录均链接到该提交。以 pi 源码精读为基础，每课链接 pi 的对应课程。
+
+**第一部分 · 全景 · 第 01–02 课**
+
+- **01** [Codex 全景：仓库地图与 crate 分层](https://a1yamino.github.io/learn/codex/l01.html)
+- **02** [一次 turn 的生命周期](https://a1yamino.github.io/learn/codex/l02.html)
+
+**第二部分 · 与模型对话 · 第 03–05 课**
+
+- **03** [协议：Op、Event 与 ResponseItem](https://a1yamino.github.io/learn/codex/l03.html)
+- **04** [模型提供方与认证](https://a1yamino.github.io/learn/codex/l04.html)
+- **05** [模型客户端：SSE、WebSocket 与重试](https://a1yamino.github.io/learn/codex/l05.html)
+
+**第三部分 · 循环与工具 · 第 06–10 课**
+
+- **06** [run_turn 循环](https://a1yamino.github.io/learn/codex/l06.html)
+- **07** [工具规格、路由与并行](https://a1yamino.github.io/learn/codex/l07.html)
+- **08** [会话线程、中断与转向](https://a1yamino.github.io/learn/codex/l08.html)
+- **09** [shell 与 unified exec](https://a1yamino.github.io/learn/codex/l09.html)
+- **10** [apply_patch：补丁格式与解析](https://a1yamino.github.io/learn/codex/l10.html)
+
+**第四部分 · 安全边界 · 第 11–13 课**
+
+- **11** [沙箱：macOS Seatbelt](https://a1yamino.github.io/learn/codex/l11.html)
+- **12** [沙箱：Linux（bubblewrap 与 seccomp）](https://a1yamino.github.io/learn/codex/l12.html)
+- **13** [审批与执行策略](https://a1yamino.github.io/learn/codex/l13.html)
+
+**第五部分 · 上下文与会话 · 第 14–16 课**
+
+- **14** [系统提示与 AGENTS.md](https://a1yamino.github.io/learn/codex/l14.html)
+- **15** [rollout：恢复与分叉](https://a1yamino.github.io/learn/codex/l15.html)
+- **16** [压缩与 /compact](https://a1yamino.github.io/learn/codex/l16.html)
+
+**第六部分 · 扩展与交互 · 第 17–23 课**
+
+- **17** [MCP：接入外部工具服务器](https://a1yamino.github.io/learn/codex/l17.html)
+- **18** [斜杠命令](https://a1yamino.github.io/learn/codex/l18.html)
+- **19** [/plan 与 update_plan](https://a1yamino.github.io/learn/codex/l19.html)
+- **20** [/goal：长时间运行的目标](https://a1yamino.github.io/learn/codex/l20.html)
+- **21** [hooks、技能与插件](https://a1yamino.github.io/learn/codex/l21.html)
+- **22** [TUI 与配置](https://a1yamino.github.io/learn/codex/l22.html)
+- **23** [非交互与 app-server](https://a1yamino.github.io/learn/codex/l23.html)
+
+**综合项目 · 第 24 课**
+
+- **24** [毕业项目：在 Codex 上搭一个可审计的修复流程](https://a1yamino.github.io/learn/codex/l24.html)
 
 </details>
 

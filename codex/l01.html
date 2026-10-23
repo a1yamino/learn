@@ -79,13 +79,18 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get(&quot;content-length&quot;, 0))) or b&quot;{}&quot;)
         n = next(counter)
-        json.dump({&quot;path&quot;: self.path, &quot;body&quot;: body}, open(f&quot;{LOG}/req{n:02d}.json&quot;, &quot;w&quot;), ensure_ascii=False, indent=1)
+        json.dump({&quot;path&quot;: self.path, &quot;headers&quot;: dict(self.headers), &quot;body&quot;: body}, open(f&quot;{LOG}/req{n:02d}.json&quot;, &quot;w&quot;), ensure_ascii=False, indent=1)
         items = script.reply(n, body)
+        if isinstance(items, dict) and &quot;http_status&quot; in items:  # 模拟 HTTP 错误
+            self.send_response(items[&quot;http_status&quot;]); self.send_header(&quot;content-type&quot;, &quot;application/json&quot;); self.end_headers()
+            self.wfile.write(json.dumps({&quot;error&quot;: {&quot;message&quot;: items.get(&quot;message&quot;, &quot;mock error&quot;)}}).encode()); return
         self.send_response(200); self.send_header(&quot;content-type&quot;, &quot;text/event-stream&quot;); self.end_headers()
         def ev(d): self.wfile.write(f&quot;event: {d[&#x27;type&#x27;]}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n&quot;.encode())
         rid = f&quot;resp_{n}&quot;
         ev({&quot;type&quot;: &quot;response.created&quot;, &quot;response&quot;: {&quot;id&quot;: rid}})
         for i, it in enumerate(items):
+            if it.get(&quot;type&quot;) == &quot;__drop__&quot;:  # 模拟流中断：不发 response.completed 就断开
+                self.wfile.flush(); self.close_connection = True; return
             it = {&quot;id&quot;: f&quot;item_{n}_{i}&quot;, **it}
             if it[&quot;type&quot;] == &quot;message&quot;:
                 ev({&quot;type&quot;: &quot;response.output_item.added&quot;, &quot;output_index&quot;: i, &quot;item&quot;: {**it, &quot;content&quot;: []}})
@@ -98,7 +103,8 @@ ThreadingHTTPServer((&quot;127.0.0.1&quot;, PORT), H).serve_forever()
 EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>启动脚本：临时 CODEX_HOME + 自定义 provider。</p><pre class="cmd">cat &gt; codex/scratch/run.sh &lt;&lt;&#x27;EOF&#x27;
 #!/bin/bash
 # run.sh &lt;剧本.py&gt; [codex 参数...]：启动假模型，用临时 CODEX_HOME 运行 codex exec
-# 环境变量 KEEP=1 时保留工作目录；W 指定工作目录
+# 可选环境变量：MODEL、EXTRA_CONFIG（追加到顶层配置）、EXTRA_PROVIDER（追加到提供方）、
+#   REQ_RETRIES/STREAM_RETRIES；RUN 设置时运行 &quot;$RUN 参数…&quot; 而不是 codex exec（例如 app-server 客户端）
 MODEL=${MODEL:-gpt-5.5}
 SCRIPT=$(realpath &quot;$1&quot;); shift
 export CODEX_HOME=${CODEX_HOME:-$(mktemp -d)}; mkdir -p $CODEX_HOME; LOG=$CODEX_HOME/requests
@@ -110,14 +116,15 @@ model = &quot;$MODEL&quot;
 model_provider = &quot;mock&quot;
 $EXTRA_CONFIG
 [model_providers.mock]
+$EXTRA_PROVIDER
 name = &quot;Mock&quot;
 base_url = &quot;http://127.0.0.1:$PORT/v1&quot;
 wire_api = &quot;responses&quot;
-request_max_retries = 0
-stream_max_retries = 0
+request_max_retries = ${REQ_RETRIES:-0}
+stream_max_retries = ${STREAM_RETRIES:-0}
 TOML
 sleep 0.5
-codex exec --skip-git-repo-check &quot;$@&quot; &lt;/dev/null
+if [ -n &quot;$RUN&quot; ]; then $RUN &quot;$@&quot;; else codex exec --skip-git-repo-check &quot;$@&quot; &lt;/dev/null; fi
 EOF</pre></div></div><div class="st"><span class="n">04</span><div><p>仓库地图。</p><pre class="cmd">cat &gt; codex/scratch/l01.sh &lt;&lt;&#x27;EOF&#x27;
 #!/bin/bash
 # Codex 仓库地图：crate 数量、各层代码量，以及一次离线运行
