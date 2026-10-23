@@ -1,0 +1,144 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 23 课 · 非交互与 app-server</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 23 课</span><span class="sp"></span><a href="l22.html">← 第 22 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 23 课</div><h1>非交互与 app-server</h1>
+<p>pi 有四种运行模式：交互、print/JSON、RPC 与 SDK（第 18 课）。Codex 的对应物是：<code>codex exec</code>（脚本与 CI）、<code>codex app-server</code>（JSON-RPC，供 IDE 插件与桌面应用使用），而 TUI 与 exec 本身都是 app-server 的<b>进程内客户端</b>——<code>exec/src/lib.rs</code> 直接使用 <code>InProcessAppServerClient</code>，TUI 通过 <code>app_server_session.rs</code> 说同一套协议。所以 app-server 协议就是 Codex 的“SDK”。本课把这几种入口各用一次。约 45 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">同一个内核，三种客户端</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：用哪个入口？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>同一个内核，三种客户端</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：用哪个入口？</h2><div class="goal"></div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/exec/src/exec_events.rs#L11-L23" target="_blank" rel="noopener">codex-rs/exec/src/exec_events.rs  L11–23 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">pub enum ThreadEvent {
+    /// Emitted when a new thread is started as the first event.
+    #[serde(rename = &quot;thread.started&quot;)]
+    ThreadStarted(ThreadStartedEvent),
+    /// Emitted when a turn is started by sending a new prompt to the model.
+    /// A turn encompasses all events that happen while agent is processing the prompt.
+    #[serde(rename = &quot;turn.started&quot;)]
+    TurnStarted(TurnStartedEvent),
+    /// Emitted when a turn is completed. Typically right after the assistant&#x27;s response.
+    #[serde(rename = &quot;turn.completed&quot;)]
+    TurnCompleted(TurnCompletedEvent),
+    /// Indicates that a turn failed with an error.
+    #[serde(rename = &quot;turn.failed&quot;)]</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/exec/src/lib.rs#L19-L23" target="_blank" rel="noopener">codex-rs/exec/src/lib.rs  L19–23 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">use codex_app_server_client::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
+use codex_app_server_client::EnvironmentManager;
+use codex_app_server_client::ExecServerRuntimeOptions;
+use codex_app_server_client::InProcessAppServerClient;
+use codex_app_server_client::InProcessClientStartArgs;</pre><p class="src" style="font:500 12px var(--m);margin:16px 0 6px"><a href="https://github.com/openai/codex/blob/c260087efe8cc6dcc0526e7018ae9e0e3fc134e3/codex-rs/codex-api/src/common.rs#L400-L409" target="_blank" rel="noopener">codex-rs/codex-api/src/common.rs  L400–409 ↗</a></p><pre class="cmd" style="overflow-x:auto;white-space:pre">
+Some(TextControls {
+    verbosity: verbosity.map(std::convert::Into::into),
+    format: output_schema.as_ref().map(|schema| TextFormat {
+        r#type: TextFormatType::JsonSchema,
+        strict: output_schema_strict,
+        schema: schema.clone(),
+        name: &quot;codex_output_schema&quot;.to_string(),
+    }),
+})</pre><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l18.html">pi 第 18 课 · 运行模式：交互、print/JSON、RPC 与 SDK</a>。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>剧本。</p><pre class="cmd">cat &gt; codex/scratch/s_json.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：请求带 text.format（--output-schema）时回 JSON，否则先 ls 再回答
+import json
+def reply(n, body):
+    fmt = body.get(&quot;text&quot;, {}).get(&quot;format&quot;)
+    if fmt:
+        print(f&quot;[mock] text.format.type={fmt[&#x27;type&#x27;]} name={fmt.get(&#x27;name&#x27;)} strict={fmt.get(&#x27;strict&#x27;)}&quot;, flush=True)
+        return [msg(json.dumps({&quot;files&quot;: 0, &quot;ok&quot;: True}))]
+    if n == 1: return [msg(&quot;我先看看&quot;), call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;ls&quot;}, &quot;c1&quot;)]
+    return [msg(&quot;空目录&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>app-server 通知计数。</p><pre class="cmd">cat &gt; codex/scratch/l23.py &lt;&lt;&#x27;EOF&#x27;
+# app-server：一次回合中客户端收到哪些通知（按方法名计数，保持首次出现的顺序）
+import os, sys, collections; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from apc import AppServer, text
+a = AppServer(cwd=os.getcwd()); tid = a.start(os.getcwd())
+a.request(&quot;turn/start&quot;, {&quot;threadId&quot;: tid, &quot;input&quot;: text(&quot;看看目录&quot;)})
+seen = collections.Counter()
+a.wait(&quot;turn/completed&quot;, show=lambda m: seen.update([m[&quot;method&quot;]]))
+for k, v in seen.items(): print(f&quot;  {v:3d}  {k}&quot;)
+a.close()
+EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>五个实验。</p><pre class="cmd">cat &gt; codex/scratch/l23.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+S=$(pwd); export CODEX_HOME=$(mktemp -d); cd $(mktemp -d)
+X() { bash $S/run.sh $S/s_json.py &quot;$@&quot; 2&gt;/dev/null; }
+echo &quot;== 1. exec --json：JSONL 事件类型&quot;
+X --json &quot;看看目录&quot; | python3 -c &quot;
+import json,sys
+for l in sys.stdin:
+    if l.startswith(&#x27;{&#x27;): e=json.loads(l); print(&#x27;  &#x27;, e[&#x27;type&#x27;], e.get(&#x27;item&#x27;,{}).get(&#x27;type&#x27;,&#x27;&#x27;))&quot;
+echo &quot;== 2. --output-schema + -o：结构化最终答案&quot;
+echo &#x27;{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;files&quot;:{&quot;type&quot;:&quot;integer&quot;},&quot;ok&quot;:{&quot;type&quot;:&quot;boolean&quot;}},&quot;required&quot;:[&quot;files&quot;,&quot;ok&quot;],&quot;additionalProperties&quot;:false}&#x27; &gt; schema.json
+X --output-schema schema.json -o last.txt &quot;统计文件数&quot; | grep &#x27;^\[mock\]&#x27;; echo &quot;   last.txt = $(cat last.txt)&quot;
+echo &quot;== 3. --ephemeral：不写 rollout&quot;
+n0=$(find $CODEX_HOME/sessions -name &#x27;*.jsonl&#x27; | wc -l); X --ephemeral &quot;hi&quot; &gt;/dev/null
+echo &quot;   rollout 文件数：之前 $n0，之后 $(find $CODEX_HOME/sessions -name &#x27;*.jsonl&#x27; | wc -l)&quot;
+echo &quot;== 4. app-server：一次回合的通知&quot;
+RUN=&quot;python3 $S/l23.py&quot; bash $S/run.sh $S/s_json.py 2&gt;/dev/null
+echo &quot;== 5. 协议规模：generate-json-schema&quot;
+codex app-server generate-json-schema --out schema_out &gt;/dev/null 2&gt;&amp;1
+python3 - &lt;&lt;&#x27;PY&#x27;
+import json, glob
+for name in (&quot;ClientRequest&quot;, &quot;ServerNotification&quot;, &quot;ServerRequest&quot;):
+    f = glob.glob(f&quot;schema_out/**/{name}.json&quot;, recursive=True)
+    if f: print(f&quot;   {name}: {len(json.load(open(f[0])).get(&#x27;oneOf&#x27;, []))} 种&quot;)
+PY
+EOF
+cd codex/scratch &amp;&amp; bash l23.sh</pre><pre class="out">== 1. exec --json：JSONL 事件类型
+   thread.started 
+   turn.started 
+   item.completed agent_message
+   item.started command_execution
+   item.completed command_execution
+   item.completed agent_message
+   turn.completed 
+== 2. --output-schema + -o：结构化最终答案
+[mock] text.format.type=json_schema name=codex_output_schema strict=True
+   last.txt = {&quot;files&quot;: 0, &quot;ok&quot;: true}
+== 3. --ephemeral：不写 rollout
+   rollout 文件数：之前 2，之后 2
+== 4. app-server：一次回合的通知
+    1  remoteControl/status/changed
+    1  thread/started
+    2  thread/status/changed
+    1  turn/started
+    4  item/started
+    4  item/completed
+    2  item/agentMessage/delta
+    2  thread/tokenUsage/updated
+    2  account/rateLimits/updated
+    1  turn/completed
+== 5. 协议规模：generate-json-schema
+   ClientRequest: 106 种
+   ServerNotification: 85 种
+   ServerRequest: 10 种</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>流式显示</h3><p>修改 <code>l23.py</code>，把 <code>item/agentMessage/delta</code> 的增量实时打印出来（不换行），回合结束时打印换行。增量字段叫什么？</p><details><summary>查看参考答案</summary><div><pre style="white-space:pre-wrap">def show(m):
+    if m["method"] == "item/agentMessage/delta":
+        print(m["params"]["delta"], end="", flush=True)
+a.wait("turn/completed", show=show); print()</pre><p>字段是 <code>delta</code>（同一通知还带 threadId、turnId、itemId）。mock 一次发出整条消息，所以每条消息只有一个增量；真实模型会逐块到达。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>exec 的输出</b>：默认是给人看的文本；<code>--json</code> 输出 JSONL，事件定义在 <code>exec/src/exec_events.rs</code>：thread.started、turn.started/completed/failed、item.started/updated/completed（agent_message、command_execution、mcp_tool_call、file_change、todo_list……）。</li><li><b>结构化答案</b>：<code>--output-schema schema.json</code> 让请求带上 <code>text.format = {type: json_schema, name: "codex_output_schema", strict: true}</code>（<code>codex-api/src/common.rs</code>）；<code>-o 文件</code> 把最后一条助手消息写入文件。</li><li><b>--ephemeral</b>：不写 rollout（实验中文件数不变）；<code>exec resume/fork</code> 见第 15 课。</li><li><b>app-server</b>：stdio（默认）或 <code>--listen</code> 指定的传输上的 JSON-RPC；先 <code>initialize</code>（可声明 <code>experimentalApi</code>）+ <code>initialized</code>，再 <code>thread/start</code>、<code>turn/start</code>。一次带工具调用的回合产生 thread/status、turn/*、item/*、增量、token 用量、限额等通知（实验 4）。</li><li><b>双向</b>：服务器也会向客户端发<b>请求</b>（审批、用户输入、动态工具调用等，第 13 课用过）。<code>generate-json-schema</code> 显示此提交中客户端请求 106 种、服务器通知 85 种、服务器请求 10 种；<code>generate-ts</code> 生成 TypeScript 类型。</li><li><b>选择</b>：一次性任务与 CI 用 exec（加 <code>--json</code>/<code>--output-schema</code>）；需要多轮、审批交互、在自己的界面中显示进度时用 app-server。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 24</div><a class="big" href="l24.html">毕业项目：在 Codex 上搭一个可审计的修复流程 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l23.js"></script>
+</body></html>
