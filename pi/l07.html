@@ -178,8 +178,8 @@ const errors =
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">四个场景：并行、顺序、校验失败与未知工具、钩子拦截与改写。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l07.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。四个场景：并行、顺序、校验失败与未知工具、钩子拦截与改写。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l07.ts &lt;&lt;&#x27;EOF&#x27;
 import { Type } from &quot;@earendil-works/pi-ai&quot;;
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, streamSimple } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { runAgentLoop, type AgentLoopConfig } from &quot;@earendil-works/pi-agent-core&quot;;
@@ -221,7 +221,7 @@ await run(&quot;钩子：拦截与改写&quot;, [[&quot;sh&quot;, { cmd: &quot;r
   afterToolCall: async ({ result }) =&gt; ({ content: [{ type: &quot;text&quot;, text: (result.content[0] as any).text + &quot; [已审计]&quot; }] }),
 });
 EOF
-cd pi-mono/scratch &amp;&amp; node l07.ts</pre><pre class="out">== 并行（默认）
+node scratch/l07.ts</pre><pre class="out">== 并行（默认）
    [0ms] sleep(300) 开始
    [0ms] sleep(200) 开始
    [200ms] sleep(200) 结束
