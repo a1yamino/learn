@@ -3,7 +3,8 @@
 <script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}if(t!=='light')t='dark';document.documentElement.dataset.theme=t})()</script>
 <link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/play.css"></head><body>
+<link rel="stylesheet" href="../assets/play.css">
+<link rel="stylesheet" href="layout.css"></head><body>
 <div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 1 课</span><span class="sp"></span><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
 <main class="wrap">
 <section class="lede"><div class="k">Docker · 第 1 课</div><h1>为什么需要 Docker</h1>
@@ -20,7 +21,7 @@
 
 <section class="mis" id="m3"><div class="mh"><div><div class="k">03</div><h2>镜像和容器</h2><div class="goal">镜像是只读的层，容器在上面加一层可写层。</div></div></div>
 <div id="p3"></div>
-<div class="chal"><p class="task">动手：把镜像拖到主机上，运行 2 个容器。</p><p class="hint">每拖一次执行一次 <code>docker run</code>。</p>
+<div class="chal"><p class="task">动手：把镜像拖到主机上，运行 2 个容器。</p><p class="hint">也可点选镜像，再选择主机；支持 Tab / Enter。每次执行一次 <code>docker run</code>。</p>
 <div class="arena"><div class="zone"><h6>镜像仓库</h6><div class="chips"><button class="chip img" id="img3">镜像 myapp:1.0</button></div></div>
 <div class="zone" id="host3"><h6>主机 · 容器 <span id="n3">0</span>/2</h6><div class="stk"><div class="row" id="ws3"></div><div class="blk dim" style="height:38px">③ COPY app.py .</div><div class="blk dim" style="height:38px">② RUN pip install</div><div class="blk dim" style="height:38px">① FROM python:3.12-slim</div><div class="tag" style="margin-top:4px">只读层 · 磁盘上 1 份</div></div></div></div>
 <div class="msg" id="msg3a" aria-live="polite"></div>
@@ -42,5 +43,6 @@
 <footer class="endnav"><div class="k">下一课 · 02</div><a class="big" href="l02.html">容器生命周期<br>与核心命令 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
+<script src="motion.js"></script>
 <script src="l01.js"></script>
 </body></html>

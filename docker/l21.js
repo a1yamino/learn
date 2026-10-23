@@ -6,10 +6,11 @@ Player(document.getElementById('p1'),{els:{lim:{w:4,h:180,cls:'',html:'<div styl
  {t:'越过上限：OOM',p:'回收不够，内核的 OOM killer 根据 OOM 评分等条件选择受害进程，并非简单固定选择内存最大的那个。主进程被杀，容器退出码 137（128+9，SIGKILL）。',d:3800,set:{lim:[260,0],ll:[220,-40],u3:[0,60],k:[0,110]}},
  {t:'应用要知道上限',p:'有些运行时按<b>宿主机</b>内存决定堆大小。新版 JVM、Node 能读取 cgroup 限制，但最好显式设置（<code>-XX:MaxRAMPercentage=75</code>、<code>--max-old-space-size</code>）。',d:3800,set:{lim:[260,0],ll:[220,-40],u1:[0,60],n:[0,120,{html:'堆上限 < 容器上限，留出非堆内存'}]}}]});
 const seg=(on,w)=>({w,h:28,cls:'',html:`<div style="width:${w}px;height:28px;border-radius:4px;background:${on?'var(--sig)':'transparent'};border:1px solid var(--line)"></div>`});
-const P={};for(let i=0;i<4;i++){P['a'+i]=seg(true,50);P['b'+i]=seg(false,50)}
+const P={};for(let i=0;i<4;i++){P['a'+i]={...seg(true,50),cls:'cpu-run'};P['b'+i]={...seg(false,50),cls:'cpu-wait'}}
+const burst={};for(let i=0;i<4;i++){burst['a'+i]=[i*110,40,{cls:'cpu-run is-burst'}];burst['b'+i]=[i*110+14.5,40,{cls:'cpu-wait is-burst'}]}
 Player(document.getElementById('p2'),{els:{...P,lb:{w:640,cls:'tag'},th:{cls:'pill bad',html:'节流'},n:{w:640,cls:'tag'}},scenes:[
  {t:'周期与配额',p:'<code>--cpus 0.5</code> = 每 100 ms 周期里最多运行 50 ms（<code>cpu.max = 50000 100000</code>）。',d:3600,set:{a0:[0,40],b0:[52,40],a1:[110,40],b1:[162,40],a2:[220,40],b2:[272,40],a3:[330,40],b3:[382,40],lb:[0,0,{html:'每格 50 ms：橙色运行，空白等待'}]}},
- {t:'多线程更快用完',p:'有 4 个线程同时运行时，50 ms 的配额在 12.5 ms 内就用完。剩下的 87.5 ms 全部等待。',d:3800,set:{a0:[0,40,{w:12}],a1:[110,40],a2:[220,40],a3:[330,40],th:[30,80],lb:[0,0,{html:'配额用完，进程被暂停到下一周期'}]}},
+ {t:'多线程更快用完',p:'有 4 个线程同时运行时，50 ms 的配额在 12.5 ms 内就用完。剩下的 87.5 ms 全部等待。',d:3800,set:{...burst,th:[30,80],lb:[0,0,{html:'每周期 100 ms：运行 12.5 ms，等待 87.5 ms'}]}},
  {t:'延迟变高',p:'一个本来 20 ms 完成的请求，碰上节流可能要 100 ms 以上。平均 CPU 使用率看起来不高，P99 延迟却很差。',d:3800,set:{a0:[0,40],b0:[52,40],a1:[110,40],b1:[162,40],th:[30,80],n:[0,120,{html:'查看 cpu.stat：nr_throttled、throttled_usec'}]}},
  {t:'怎么处理',p:'给足突发需要的配额，或改用 <code>--cpu-shares</code>（只在争抢时按比例分配，空闲时可以用满）。延迟敏感的服务用 <code>--cpuset-cpus</code> 固定核心。',d:3800,set:{a0:[0,40],a1:[110,40],a2:[220,40],a3:[330,40]}}]});
 (()=>{let mem='256',cpu='0.5';const M=[['256','256m'],['512','512m'],['2048','2g'],['0','不限制']],C=[['0.5','--cpus 0.5'],['2','--cpus 2'],['0','不限制']];

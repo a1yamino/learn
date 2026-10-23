@@ -39,11 +39,13 @@ Player(document.getElementById('p3'),{els:{
  {t:'删除容器，镜像不变',p:'<code>docker rm</code> 删除容器 3 和它的可写层。要保存的数据放在 <b>Volume</b> 里。',set:{...IMG,W1:W[1],W2:W[2],f1:[308,280]}}]});
 /* ---------- Hands-on ---------- */
 (()=>{const host=document.getElementById('host3'),ws=document.getElementById('ws3'),n=document.getElementById('n3'),ma=document.getElementById('msg3a'),mb=document.getElementById('msg3b'),b3=document.getElementById('b3'),img=document.getElementById('img3');let c=0;
+ host.tabIndex=0;host.setAttribute('role','button');host.setAttribute('aria-label','将选中的镜像运行到主机上');img.setAttribute('aria-controls','host3');
+ host.addEventListener('keydown',e=>{if(e.target===host&&(e.key==='Enter'||e.key===' ')){e.preventDefault();host.click()}});
  dragDrop([img],[host],()=>{if(c>=2)return;c++;n.textContent=c;const d=document.createElement('div');d.className='blk hatch enter';d.style.height='38px';d.textContent=`容器 ${c} · 可写层`;ws.appendChild(d);
   ma.className='msg';ma.textContent=c===1?'docker run：只多了一层可写层。再运行一个。':'两个容器，只读层仍然只有 1 份。';
-  if(c===2){img.classList.add('used');b3.hidden=false;b3.classList.add('enter')}});
+  if(c===2){img.classList.add('used');img.disabled=true;host.tabIndex=-1;host.setAttribute('aria-disabled','true');b3.hidden=false;b3.classList.add('enter')}});
  let solved=false;document.getElementById('pick3').addEventListener('click',e=>{const b=e.target.closest('button');if(!b||solved)return;const a=b.dataset.a;
-  if(a==='ok'){solved=true;b.innerHTML='容器 1 · 可写层 <span class="pill sig" style="margin-left:8px;padding:4px 8px">+ log.txt</span>';b.classList.add('enter');mb.className='msg ok';mb.textContent='对。镜像和容器 2 都看不到这个文件。';}
+  if(a==='ok'){solved=true;b.innerHTML='容器 1 · 可写层 <span class="pill sig" style="padding:4px 8px">+ log.txt</span>';b.classList.add('enter');mb.className='msg ok';mb.textContent='对。镜像和容器 2 都看不到这个文件。';}
   else{shake(b);mb.className='msg bad';mb.textContent=a==='ro'?'镜像层是只读的，不能修改。':'这是容器 2 的可写层。容器 1 写不到这里。'}})})();
 /* ---------- Mission 4: terminal ---------- */
 const T=[['docker run hello-world',`Unable to find image 'hello-world:latest' locally
