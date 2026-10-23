@@ -87,8 +87,8 @@ Use this EXACT format:
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">把 keepRecentTokens 调小，让 faux 模型扮演摘要器，观察压缩的两次请求与压缩后的转录。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l14.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。把 keepRecentTokens 调小，让 faux 模型扮演摘要器，观察压缩的两次请求与压缩后的转录。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l14.ts &lt;&lt;&#x27;EOF&#x27;
 import { fauxAssistantMessage } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { fauxSession } from &quot;./faux-session.ts&quot;;
 
@@ -124,7 +124,7 @@ const types = session.sessionManager.getEntries().map((e) =&gt; e.type);
 console.log(&quot;\n会话文件条目:&quot;, types.join(&quot;, &quot;));
 session.dispose();
 EOF
-cd pi-mono/scratch &amp;&amp; node l14.ts</pre><pre class="out">压缩前发给模型的消息数: 7
+node scratch/l14.ts</pre><pre class="out">压缩前发给模型的消息数: 7
 tokensBefore: 7498 | firstKeptEntryId 存在: true
 摘要请求 1：
   &lt;conversation&gt;
