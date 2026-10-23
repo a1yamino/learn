@@ -1,0 +1,122 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codex CLI 第 24 课 · 毕业项目：在 Codex 上搭一个可审计的修复流程</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"></head><body>
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Codex CLI</a><span class="crumb">第 24 课</span><span class="sp"></span><a href="l23.html">← 第 23 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Codex CLI · 第 24 课</div><h1>毕业项目：在 Codex 上搭一个可审计的修复流程</h1>
+<p>pi 的毕业项目用 SDK 写了一个迷你编码 agent（第 20 课）。Codex 的内核已经完整，我们要做的是在它之上搭<b>流程</b>：用 app-server 协议（第 23 课）启动一个线程，沙箱为 workspace-write、审批为 on-request（第 11–13 课），让模型跑测试、打补丁（第 10 课）、再验证；所有越权请求都交给我们自己的审批策略——只放行白名单；每个条目与每次审批决定都写进 <code>audit.jsonl</code>。整个流程不到 60 行 Python，却用到了本课程的大部分机制。约 60 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一次修复的全过程</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：会经过审批吗？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">读代码</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">真实输出</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>一次修复的全过程</h2><div class="goal"></div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>动手：会经过审批吗？</h2><div class="goal">沙箱 workspace-write，审批 on-request。</div></div></div>
+<div class="chal"><div class="cmds" id="hq"></div><pre class="log" id="hp" style="height:auto;min-height:120px;white-space:pre;overflow-x:auto"></pre><div class="msg" id="hm"></div></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>读代码</h2><div class="goal"></div></div></div>
+<p>本课的代码就是练习中的 <code>fixflow.py</code>；它依赖的内核机制分别在第 10、12、13、23 课读过。</p><div class="card" style="margin:16px 0;font-size:15px;line-height:1.7"><b>与 pi 对照</b>：<a href="../pi/l20.html">pi 第 20 课 · 毕业项目：用 SDK 写一个迷你编码 agent</a>。pi 的项目自己实现循环与工具；这里循环、工具、沙箱都在 Codex 内核中，我们只写策略与审计。</div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>真实输出</h2><div class="goal"></div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">练习使用第 1 课的 <code>mock.py</code>（假的 Responses API 服务器）和 <code>run.sh</code>（以临时 <code>CODEX_HOME</code> 启动它并运行 <code>codex exec</code>）。剧本文件定义 <code>reply(n, body)</code>，返回第 n 次请求的输出项；每次请求的完整 JSON 保存在 <code>$CODEX_HOME/requests/</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>剧本：测试 → 补丁 → 测试 → 越权推送。</p><pre class="cmd">cat &gt; codex/scratch/s_fix.py &lt;&lt;&#x27;EOF&#x27;
+# 剧本：跑测试（失败）→ 打补丁 → 再跑（通过）→ 申请越权 git push → 总结
+FIX = &quot;&quot;&quot;*** Begin Patch
+*** Update File: calc.py
+@@ def mean(xs):
+-    return sum(xs) / len(xs)
++    return sum(xs) / len(xs) if xs else 0.0
+*** End Patch
+&quot;&quot;&quot;
+def reply(n, body):
+    last = body[&quot;input&quot;][-1]
+    if n &gt; 1: print(f&quot;[mock] req{n:02d} 上一步输出：{str(last.get(&#x27;output&#x27;))[-70:]!r}&quot;, flush=True)
+    if n == 1: return [msg(&quot;先跑测试&quot;), call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;python3 -m unittest -q 2&gt;&amp;1 | tail -3&quot;}, &quot;t1&quot;)]
+    if n == 2: return [{&quot;type&quot;: &quot;custom_tool_call&quot;, &quot;name&quot;: &quot;apply_patch&quot;, &quot;call_id&quot;: &quot;p1&quot;, &quot;input&quot;: FIX}]
+    if n == 3: return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;python3 -m unittest -q 2&gt;&amp;1 | tail -1&quot;}, &quot;t2&quot;)]
+    if n == 4: return [call(&quot;exec_command&quot;, {&quot;cmd&quot;: &quot;git push origin main&quot;, &quot;sandbox_permissions&quot;: &quot;require_escalated&quot;,
+                                             &quot;justification&quot;: &quot;推送修复&quot;}, &quot;g1&quot;)]
+    return [msg(&quot;已修复 mean([]) 的除零错误，测试通过；推送被拒绝，留给人工处理。&quot;)]
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>可审计的修复流程。</p><pre class="cmd">cat &gt; codex/scratch/fixflow.py &lt;&lt;&#x27;EOF&#x27;
+# fixflow.py：一个可审计的修复流程（app-server 客户端）
+#  - 沙箱 workspace-write + 审批 on-request：越权操作必须经过我们
+#  - 审批策略：只放行白名单前缀的命令，其余一律拒绝
+#  - 审计：每个完成的条目、每次审批决定都追加到 audit.jsonl
+import json, os, re, shlex, sys, subprocess; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from apc import AppServer, text
+ALLOW = (&quot;python3 -m unittest&quot;,)
+audit = open(&quot;audit.jsonl&quot;, &quot;a&quot;)
+def log(kind, **kw): audit.write(json.dumps({&quot;kind&quot;: kind, **kw}, ensure_ascii=False) + &quot;\n&quot;); audit.flush()
+
+a = AppServer(cwd=os.getcwd())
+def on_request(method, params):
+    cmd = params.get(&quot;command&quot;) or &quot;&quot;
+    m = re.match(r&quot;^\S*bash -lc (.*)$&quot;, cmd)          # 审批里的命令带着 shell 包装：/bin/bash -lc &#x27;…&#x27;
+    inner = shlex.split(m.group(1))[0] if m else cmd
+    ok = inner.startswith(ALLOW)
+    decision = &quot;accept&quot; if ok else &quot;decline&quot;
+    log(&quot;approval&quot;, method=method, command=inner, reason=params.get(&quot;reason&quot;), decision=decision)
+    print(f&quot;  审批 {inner!r} 理由={params.get(&#x27;reason&#x27;)!r} → {decision}&quot;)
+    return {&quot;decision&quot;: decision}
+a.on_request = on_request
+a.request(&quot;initialize&quot;, {&quot;clientInfo&quot;: {&quot;name&quot;: &quot;fixflow&quot;, &quot;title&quot;: None, &quot;version&quot;: &quot;0&quot;}}); a.notify(&quot;initialized&quot;)
+tid = a.request(&quot;thread/start&quot;, {&quot;cwd&quot;: os.getcwd(), &quot;approvalPolicy&quot;: &quot;on-request&quot;, &quot;sandbox&quot;: &quot;workspace-write&quot;})[&quot;thread&quot;][&quot;id&quot;]
+a.request(&quot;turn/start&quot;, {&quot;threadId&quot;: tid, &quot;input&quot;: text(&quot;修复失败的测试&quot;)})
+def show(m):
+    if m[&quot;method&quot;] != &quot;item/completed&quot;: return
+    it = m[&quot;params&quot;][&quot;item&quot;]; t = it[&quot;type&quot;]
+    if t == &quot;commandExecution&quot;:
+        log(&quot;command&quot;, command=it[&quot;command&quot;], exit=it.get(&quot;exitCode&quot;), status=it[&quot;status&quot;])
+        print(f&quot;  命令 {it[&#x27;command&#x27;][:48]!r} status={it[&#x27;status&#x27;]} exit={it.get(&#x27;exitCode&#x27;)}&quot;)
+    elif t == &quot;fileChange&quot;:
+        log(&quot;patch&quot;, files=[c[&quot;path&quot;] for c in it[&quot;changes&quot;]], status=it[&quot;status&quot;])
+        print(f&quot;  补丁 {[os.path.basename(c[&#x27;path&#x27;]) for c in it[&#x27;changes&#x27;]]} status={it[&#x27;status&#x27;]}&quot;)
+    elif t == &quot;agentMessage&quot;:
+        log(&quot;message&quot;, text=it[&quot;text&quot;]); print(f&quot;  消息 {it[&#x27;text&#x27;]}&quot;)
+a.wait(&quot;turn/completed&quot;, show=show); a.close()
+print(&quot;== 审计摘要&quot;, dict(__import__(&quot;collections&quot;).Counter(json.loads(l)[&quot;kind&quot;] for l in open(&quot;audit.jsonl&quot;))))
+print(subprocess.run([&quot;git&quot;, &quot;diff&quot;, &quot;--stat&quot;], capture_output=True, text=True).stdout.rstrip())
+EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>准备有 bug 的仓库并运行。</p><pre class="cmd">cat &gt; codex/scratch/l24.sh &lt;&lt;&#x27;EOF&#x27;
+#!/bin/bash
+# 毕业项目：准备一个有 bug 的仓库，交给 fixflow.py
+S=$(pwd); export CODEX_HOME=$(mktemp -d); R=$(mktemp -d); cd $R; git init -q
+printf &#x27;def mean(xs):\n    return sum(xs) / len(xs)\n&#x27; &gt; calc.py
+printf &#x27;import unittest\nfrom calc import mean\nclass T(unittest.TestCase):\n    def test_mean(self): self.assertEqual(mean([1, 2, 3]), 2)\n    def test_empty(self): self.assertEqual(mean([]), 0.0)\n&#x27; &gt; test_calc.py
+git add . &amp;&amp; git -c user.name=c -c user.email=c@x commit -qm init
+RUN=&quot;python3 $S/fixflow.py&quot; bash $S/run.sh $S/s_fix.py 2&gt;&amp;1
+EOF
+cd codex/scratch &amp;&amp; bash l24.sh</pre><pre class="out">  消息 先跑测试
+  命令 &quot;/bin/bash -lc &#x27;python3 -m unittest -q 2&gt;&amp;1 | tai&quot; status=completed exit=0
+[mock] req02 上一步输出：&#x27;inal token count: 11\nOutput:\nRan 2 tests in 0.000s\n\nFAILED (errors=1)\n&#x27;
+  补丁 [&#x27;calc.py&#x27;] status=completed
+[mock] req03 上一步输出：&#x27;: 0.1 seconds\nOutput:\nSuccess. Updated the following files:\nM calc.py\n&#x27;
+  命令 &quot;/bin/bash -lc &#x27;python3 -m unittest -q 2&gt;&amp;1 | tai&quot; status=completed exit=0
+[mock] req04 上一步输出：&#x27;seconds\nProcess exited with code 0\nOriginal token count: 1\nOutput:\nOK\n&#x27;
+  审批 &#x27;git push origin main&#x27; 理由=&#x27;推送修复&#x27; → decline
+  命令 &quot;/bin/bash -lc &#x27;git push origin main&#x27;&quot; status=declined exit=None
+[mock] req05 上一步输出：&#x27;nd failed: CreateProcess { message: &quot;Rejected(\\&quot;rejected by user\\&quot;)&quot; }&#x27;
+  消息 已修复 mean([]) 的除零错误，测试通过；推送被拒绝，留给人工处理。
+== 审计摘要 {&#x27;message&#x27;: 2, &#x27;command&#x27;: 3, &#x27;patch&#x27;: 1, &#x27;approval&#x27;: 1}
+ calc.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>跑到全绿为止</h3><p>把 fixflow.py 改成：不发 <code>turn/start</code>，而是 <code>thread/goal/set</code>（objective=“让 python3 -m unittest 全部通过”），等待目标变为 complete 或 budgetLimited；剧本在测试通过后调用 <code>update_goal(complete)</code>。审计里还需要记录什么？</p><details><summary>查看参考答案</summary><div><p>流程：<code>tid = thread/start(...)</code> → <code>thread/goal/set {threadId, objective, origin:"user", tokenBudget:20000}</code> → 循环 <code>wait("thread/goal/updated")</code> 直到 status 不是 active（第 20 课的 l20.py）。剧本在看到 “OK” 的工具输出后返回 <code>call("update_goal", {"status": "complete"})</code>。审计中应额外记录每个 <code>turn/started</code>（它们没有用户输入、由 goal 触发）与每次 <code>thread/goal/updated</code> 的状态和 tokensUsed，这样复盘时能区分“人发起的回合”和“自动续跑的回合”，也能看出预算消耗。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li><b>边界由内核保证</b>：沙箱内的命令（跑测试）与工作区内的补丁不需要审批，直接执行；需要越权（<code>sandbox_permissions: "require_escalated"</code>）的 <code>git push</code> 触发一次服务器→客户端的审批请求。</li><li><b>策略由我们决定</b>：<code>on_request</code> 去掉 <code>/bin/bash -lc</code> 包装后按前缀白名单判断——这一点很重要：审批里看到的是包装后的命令，直接 startswith 会全部失败。</li><li><b>拒绝不是失败</b>：被拒绝的命令以 status=declined 结束，模型收到 “rejected by user” 并据此调整，最终总结里如实写出“推送被拒绝，留给人工处理”。</li><li><b>审计</b>：只依赖 app-server 的 <code>item/completed</code> 通知与审批请求本身，不需要解析日志；rollout 文件（第 15 课）是另一份完整记录，可用于复盘。</li><li><b>可扩展</b>：把白名单换成 execpolicy 规则（第 13 课）、加一个 PreToolUse 钩子（第 21 课）、用 <code>thread/goal/set</code> 让它跑到测试全绿为止（第 20 课）、用 <code>--output-schema</code> 输出机器可读的结论（第 23 课）。</li></ol></section>
+<footer class="endnav"><div class="k">课程完成</div><a class="big" href="index.html">课程目录 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
+</main>
+<script src="../assets/play.js"></script>
+<script src="l24.js"></script>
+</body></html>
