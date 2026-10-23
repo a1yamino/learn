@@ -126,8 +126,8 @@ const child = spawn(rgPath, args, { stdio: [&quot;ignore&quot;, &quot;pipe&quot;
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">直接创建工具并调用 <code>execute</code>，观察模型实际看到的文字。首次运行 find 时若系统没有 fd，pi 会把它下载到 <code>~/.pi/agent/bin</code>。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l09.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。直接创建工具并调用 <code>execute</code>，观察模型实际看到的文字。首次运行 find 时若系统没有 fd，pi 会把它下载到 <code>~/.pi/agent/bin</code>。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l09.ts &lt;&lt;&#x27;EOF&#x27;
 import { mkdtempSync, writeFileSync } from &quot;node:fs&quot;;
 import { tmpdir } from &quot;node:os&quot;;
 import { join } from &quot;node:path&quot;;
@@ -161,7 +161,7 @@ await call(find, { pattern: &quot;**/*.ts&quot; });
 console.log(&quot;-- git init 之后 --&quot;);
 await call(grep, { pattern: &quot;add&quot;, path: &quot;.&quot; });
 EOF
-cd pi-mono/scratch &amp;&amp; node l09.ts 2&gt;&amp;1 | sed -E &quot;s#/tmp/l09-[A-Za-z0-9]+#/tmp/l09-XXXX#&quot;</pre><pre class="out">&gt; write({&quot;path&quot;:&quot;src/util/math.ts&quot;,&quot;content&quot;:&quot;export const add = (a: number, b: number) =&gt; a + b;\n&quot;})
+node scratch/l09.ts 2&gt;&amp;1 | sed -E &quot;s#/tmp/l09-[A-Za-z0-9]+#/tmp/l09-XXXX#&quot;</pre><pre class="out">&gt; write({&quot;path&quot;:&quot;src/util/math.ts&quot;,&quot;content&quot;:&quot;export const add = (a: number, b: number) =&gt; a + b;\n&quot;})
   Successfully wrote to src/util/math.ts
 &gt; write({&quot;path&quot;:&quot;build/out.js&quot;,&quot;content&quot;:&quot;const add = 1;\n&quot;})
   Successfully wrote to build/out.js
