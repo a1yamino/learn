@@ -135,8 +135,8 @@ private async runWithLifecycle(executor: (signal: AbortSignal) =&gt; Promise&lt;
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 Agent 类实验两种队列模式、并发 prompt 与 abort。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l08.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。用 Agent 类实验两种队列模式、并发 prompt 与 abort。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l08.ts &lt;&lt;&#x27;EOF&#x27;
 import { Type } from &quot;@earendil-works/pi-ai&quot;;
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider, streamSimple } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { Agent } from &quot;@earendil-works/pi-agent-core&quot;;
@@ -175,7 +175,7 @@ const last = agent.state.messages.at(-1) as any;
 console.log(&quot;== abort 后: 最后一条&quot;, last.role, last.stopReason ?? &quot;&quot;, &quot;| 工具结果:&quot;, text(agent.state.messages.find((m) =&gt; m.role === &quot;toolResult&quot;)));
 console.log(&quot;   isStreaming =&quot;, agent.state.isStreaming);
 EOF
-cd pi-mono/scratch &amp;&amp; node l08.ts</pre><pre class="out">== steeringMode=one-at-a-time
+node scratch/l08.ts</pre><pre class="out">== steeringMode=one-at-a-time
    user:开始 | assistant:&lt;toolCall:wait&gt; | toolResult:done | user:插话A | assistant:回复1 | user:插话B | assistant:回复2
 == steeringMode=all
    user:开始 | assistant:&lt;toolCall:wait&gt; | toolResult:done | user:插话A | user:插话B | assistant:回复1
@@ -189,7 +189,7 @@ cd pi-mono/scratch &amp;&amp; node l08.ts</pre><pre class="out">== steeringMode=
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li><b>AgentState</b>：<code>systemPrompt</code>、<code>model</code>、<code>thinkingLevel</code>、<code>tools</code>、<code>messages</code>，以及运行时字段 <code>isStreaming</code>、<code>streamingMessage</code>（正在流入的消息）、<code>pendingToolCalls</code>、<code>errorMessage</code>。</li><li><b>processEvents</b>：每个循环事件先更新状态（message_end 时把消息加入 <code>messages</code>；tool_execution_start/end 维护 pendingToolCalls），再<b>依次 await</b> 每个订阅者。订阅者变慢，循环就等待——这保证了持久化等副作用的顺序。</li><li><b>两个队列</b>：<code>steer()</code> 进入 steering 队列，在当前 turn 的工具执行完后、下一次模型请求前注入；<code>followUp()</code> 进入 follow-up 队列，只在 agent 本来要停下时注入。正在执行的工具不会被跳过。</li><li><b>队列模式</b>：<code>one-at-a-time</code>（默认）每次只取一条，每条插话都得到一次单独的模型回复；<code>all</code> 一次取出全部。</li><li><b>单一活动运行</b>：运行中调用 <code>prompt()</code> 会抛错并提示使用 steer/followUp；<code>continue()</code> 从现有转录继续（最后一条是 assistant 时，先消费队列）。</li><li><b>中止</b>：<code>abort()</code> 触发当前运行的 AbortSignal；工具与提供方都收到它。运行中的未预期异常被转换为一条 error/aborted 的 assistant 消息，事件序列保持完整。<code>waitForIdle()</code> 在 agent_end 的订阅者全部完成后才 resolve。</li></ol></section>
+<ol class="sum"><li><b>AgentState</b>：<code>systemPrompt</code>、<code>model</code>、<code>thinkingLevel</code>、<code>tools</code>、<code>messages</code>，以及运行时字段 <code>isStreaming</code>、<code>streamingMessage</code>（正在流入的消息）、<code>pendingToolCalls</code>、<code>errorMessage</code>。</li><li><b>processEvents</b>：每个循环事件先更新状态（message_end 时把消息加入 <code>messages</code>；tool_execution_start/end 维护 pendingToolCalls），再<b>依次 await</b> 每个订阅者。订阅者变慢，循环就等待——这保证了持久化等副作用的顺序。</li><li><b>两个队列</b>：<code>steer()</code> 进入 steering 队列，在当前 turn 的工具执行完后、下一次模型请求前注入；<code>followUp()</code> 进入 follow-up 队列，只在 agent 本来要停下时注入。正在执行的工具不会被跳过。</li><li><b>队列模式</b>：<code>one-at-a-time</code>（默认）每次只取一条，两条插话按两次队列读取分别注入；每次读取后都会产生新的模型请求，但期间可能还有工具调用；<code>all</code> 一次取出全部。</li><li><b>单一活动运行</b>：运行中调用 <code>prompt()</code> 会抛错并提示使用 steer/followUp；<code>continue()</code> 从现有转录继续（最后一条是 assistant 时，先消费队列）。</li><li><b>中止</b>：<code>abort()</code> 触发当前运行的 AbortSignal；工具与提供方都收到它。运行中的未预期异常被转换为一条 error/aborted 的 assistant 消息，事件序列保持完整。<code>waitForIdle()</code> 在 agent_end 的订阅者全部完成后才 resolve。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 09</div><a class="big" href="l09.html">编码工具集：read、write、ls、grep、find →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>
