@@ -102,8 +102,8 @@ private async _beforeToolCall(
 <div id="t4"></div>
 </section>
 
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">把扩展写进临时项目的 <code>.pi/extensions/guard.ts</code>，用真实的 AgentSession 加载它。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; pi-mono/scratch/l15.ts &lt;&lt;&#x27;EOF&#x27;
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">本课每个命令块都从第 1 课的 <code>pi-mono</code> 仓库根目录执行；若上一课停在 scratch，先回到仓库根目录。需要已完成依赖安装和构建，并已有 <code>scratch/</code>；下面运行脚本不改变当前 shell 的目录。把扩展写进临时项目的 <code>.pi/extensions/guard.ts</code>，用真实的 AgentSession 加载它。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>写脚本并运行。</p><pre class="cmd">cat &gt; scratch/l15.ts &lt;&lt;&#x27;EOF&#x27;
 import { fauxAssistantMessage, fauxToolCall } from &quot;@earendil-works/pi-ai/compat&quot;;
 import { fauxSession } from &quot;./faux-session.ts&quot;;
 
@@ -147,13 +147,13 @@ console.log(&quot;custom 条目:&quot;, JSON.stringify(custom.map((e: any) =&gt;
 console.log(&quot;/stats 产生了发给模型的消息吗？&quot;, session.messages.some((m: any) =&gt; m.role === &quot;user&quot; &amp;&amp; JSON.stringify(m.content).includes(&quot;stats&quot;)));
 session.dispose();
 EOF
-cd pi-mono/scratch &amp;&amp; node l15.ts</pre><pre class="out">活动工具: read, bash, edit, write, today
+node scratch/l15.ts</pre><pre class="out">活动工具: read, bash, edit, write, today
 user        请用一句话回答：今天几号？顺便清理 build
 toolResult  today  2026-10-22
 toolResult  bash (错误) guard 扩展：禁止 rm -rf
 [/stats] today 被调用 1 次；当前模型 faux-1
 custom 条目: [{&quot;customType&quot;:&quot;guard-stats&quot;,&quot;data&quot;:{&quot;calls&quot;:1}}]
-/stats 产生了发给模型的消息吗？ false</pre></div></div><div class="st"><span class="n">02</span><div><p>pi 自带了大量扩展示例：</p><pre class="cmd">cd pi-mono/packages/coding-agent/examples/extensions &amp;&amp; ls | head -30 &amp;&amp; ls | wc -l</pre><pre class="out">README.md
+/stats 产生了发给模型的消息吗？ false</pre></div></div><div class="st"><span class="n">02</span><div><p>pi 自带了大量扩展示例：</p><pre class="cmd">(cd packages/coding-agent/examples/extensions &amp;&amp; ls | head -30 &amp;&amp; ls | wc -l)</pre><pre class="out">README.md
 auto-commit-on-exit.ts
 bash-spawn-hook.ts
 bookmark.ts
