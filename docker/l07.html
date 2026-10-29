@@ -4,9 +4,10 @@
 <link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/play.css">
-<link rel="stylesheet" href="layout.css"></head><body>
+<link rel="stylesheet" href="layout.css"><link rel="stylesheet" href="course.css"></head><body>
 <div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 7 课</span><span class="sp"></span><a href="l06.html">← 第 6 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
 <main class="wrap">
+<aside class="legacy-note">原第 7 课 · 补充资料。<a href="index.html">查看按原理、实战与面试组织的新主线 →</a></aside>
 <section class="lede"><div class="k">Docker · 第 7 课</div><h1>网络与端口映射</h1>
 <p>容器的 IP 从哪来；端口映射怎样把流量转进容器；自定义网络和按名字访问；容器里的 localhost 指的是什么。约 35 分钟。</p>
 <ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">默认网络</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">自定义网络与 DNS</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：让 api 连上 db</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">网络命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
@@ -39,9 +40,13 @@ docker run -d --name api --network back alpine sleep infinity
 docker network connect front api
 docker run -d --name web --network front alpine sleep infinity
 docker exec api ping -c1 -W1 db | head -2
-docker exec web ping -c1 -W1 db</pre><pre class="out">PING db (172.21.0.2): 56 data bytes
+docker exec web ping -c1 -W1 db
+# 上面只验证名字解析；再固定目的 IP，检查同一个 TCP 服务。
+LAB_DB_IP=$(docker inspect -f &#x27;{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}&#x27; db)
+docker run --rm --network container:api python:3.12-slim python -c &quot;import socket,sys; s=socket.create_connection((sys.argv[1],6379),timeout=2); s.sendall(b&#x27;PING\r\n&#x27;); print(s.recv(128)); s.close()&quot; &quot;$LAB_DB_IP&quot;
+docker run --rm --network container:web python:3.12-slim python -c &quot;import socket,sys; socket.create_connection((sys.argv[1],6379),timeout=2)&quot; &quot;$LAB_DB_IP&quot;</pre><pre class="out">PING db (172.21.0.2): 56 data bytes
 64 bytes from 172.21.0.2: seq=0 ttl=64 time=0.1 ms
-ping: bad address 'db'</pre><p><code>docker network connect</code> 把运行中的容器加入另一个网络，容器会多一块网卡。web 连名字都解析不出来，更访问不到 db。清理：<code>docker rm -f db api web; docker network rm front back</code>。</p></div></details></div>
+ping: bad address 'db'</pre><p><code>docker network connect</code> 把运行中的容器加入另一个网络，容器会多一块网卡。名字解析失败只证明 DNS 视图不同。固定 db IP 后，api 的 TCP 请求应得到 PONG，web 的同端口连接应失败；后者才补上网络隔离证据。工具容器通过 container:api/web 共用各自网络空间。清理：<code>docker rm -f db api web; docker network rm front back</code>。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>

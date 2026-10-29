@@ -31,6 +31,8 @@ Player(document.getElementById('p2'),{els:els2,scenes:[
  document.getElementById('rs').addEventListener('click',()=>{o=[...INIT];draw();bo.innerHTML='';tt.textContent='';bm.textContent=''});
  document.getElementById('bd').addEventListener('click',()=>{bm.className='msg';
   if(o[0]!=='FROM python:3.12-slim'){bo.innerHTML='<span class="e">ERROR: failed to solve: no build stage in current context</span>';tt.textContent='';bm.className='msg bad';bm.textContent='FROM 必须是第一条指令。';return}
+  const workdir=o.indexOf('WORKDIR /app'),firstCopy=Math.min(o.indexOf('COPY requirements.txt .'),o.indexOf('COPY . .'));
+  if(workdir>firstCopy){bo.innerHTML='<span class="e">运行契约不成立：文件复制到了设置 WORKDIR 之前的目录。</span>';tt.textContent='';bm.className='msg bad';bm.textContent='本题要求代码和依赖清单位于 /app。先设置 WORKDIR，再复制文件；最终 CMD 从 /app 查找 app.py。先保证路径正确，再比较缓存。';return}
   const pip=o.indexOf('RUN pip install -r requirements.txt'),req=Math.min(...['COPY requirements.txt .','COPY . .'].map(x=>o.indexOf(x)));
   if(req>pip){bo.innerHTML='<span class="e">ERROR: Could not open requirements file: [Errno 2] No such file or directory: \'requirements.txt\'</span>';tt.textContent='';bm.className='msg bad';bm.textContent='执行 pip install 时，requirements.txt 还没有复制进来。';return}
   let broke=false,t=0,h='';const n=o.length;o.forEach((l,i)=>{if(l==='COPY . .')broke=true;const s=broke?SEC[l]:0;t+=s;h+=`<div class="bl"><span>[${i+1}/${n}] ${l}</span><span class="${broke?'r':'c'}">${broke?s.toFixed(1)+'s':'CACHED'}</span></div>`});

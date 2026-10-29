@@ -1,0 +1,260 @@
+{
+  "number": 12,
+  "title": "多平台与可复现构建：固定的究竟是什么",
+  "summary": "分清平台索引、单平台清单、运行配置和文件层，用实际 digest 与重复构建证据解释可移植、可重部署和可复现。",
+  "minutes": 65,
+  "environment": "Docker Buildx，支持 OCI exporter 的 docker-container 构建器；时间戳重写需 BuildKit 0.13+。宿主机有 Python 3、tar。实验先只构建当前 Linux 目标平台，不依赖 QEMU 或云账号；多平台扩展另列前提。",
+  "sources": [
+    10,
+    13,
+    17
+  ],
+  "objectives": [
+    "区分 index digest、平台 manifest digest 与本地 image ID。",
+    "解析并记录本次真实基础镜像 digest，不把版本标签当不可变输入。",
+    "用两份 OCI 导出比较清单/配置/层，解释相同与不同的证据。"
+  ],
+  "question": "同一个 Git 提交重复构建，应用文件一样，镜像 digest 却变了；同一个 index 在两台机器又运行不同二进制。这是摘要失效了吗？",
+  "model": [
+    {
+      "title": "一个多平台名字可以指向一组内容",
+      "body": [
+        "多平台镜像通常由 index 引用多个平台 manifest；每个 manifest 再引用 config 与层。客户端根据 OS、CPU 架构和可选 variant 选择可运行的平台。index digest 固定整组描述，平台 manifest digest 固定其中一份运行产物，本地 image ID 通常对应 config 的摘要；它们不是同一个哈希的不同写法。",
+        "两个平台共享源码并不证明 ABI、运行库与机器码相同。为 arm64 交叉编译可避免慢速模拟，但输出仍要在目标架构验证。Python 标准库应用也依赖各平台的解释器与系统库；“没有自己的 C 代码”不等于平台完全无关。"
+      ]
+    },
+    {
+      "title": "固定部署内容不等于重建相同内容",
+      "body": [
+        "部署使用已有 digest，可以保证引用不随标签移动；重新执行 Dockerfile 则要重新取得基础镜像、依赖、工具链、源码和时间输入。FROM python:3.12-slim 仍是可移动标签，pip、apt 的间接依赖也可能随仓库变化。",
+        "可复现构建要求定义比较对象和输入边界。本课比较固定平台的镜像 manifest、config 和层，不把签名、来源证明的生成时间或任意归档字节误作应用内容。完整供应链还需记录输入来源、受控更新策略和构建器版本；固定 digest 应配套安全更新，不是永远不升级。"
+      ]
+    },
+    {
+      "title": "找出不确定输入，再验证",
+      "body": [
+        "先固定源码与基础镜像 digest，再固定依赖和工具链。SOURCE_DATE_EPOCH 可以给构建提供确定的时间输入，镜像 exporter 的 rewrite-timestamp 可以规范文件时间戳。它们不能消除程序主动联网取随机内容、编译器嵌入路径、随机数等其他不确定性。",
+        "两次输出不同应沿 index→manifest→config/layers 缩小差异，而不是直接宣称 Docker 不可靠；输出相同则是在本次限定输入和工具链范围内的证据。缓存命中能复用相同结果，不能单独证明一次独立重建可复现。必须至少有一次禁用层缓存的对照。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "从多平台索引到可复现输入",
+    "nodes": [
+      {
+        "id": "inputs",
+        "title": "受控输入",
+        "detail": "源码、base digest、时间",
+        "x": 0,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "builder",
+        "title": "构建器",
+        "detail": "记录版本与目标平台",
+        "x": 340,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "index",
+        "title": "OCI index",
+        "detail": "整组描述的 digest",
+        "x": 680,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "amd",
+        "title": "amd64 manifest",
+        "detail": "config + layers",
+        "x": 340,
+        "y": 220,
+        "w": 220
+      },
+      {
+        "id": "arm",
+        "title": "arm64 manifest",
+        "detail": "config + layers",
+        "x": 680,
+        "y": 220,
+        "w": 220
+      },
+      {
+        "id": "evidence",
+        "title": "比对证据",
+        "detail": "明确比较对象与边界",
+        "x": 510,
+        "y": 440,
+        "w": 220
+      }
+    ],
+    "edges": [
+      {
+        "from": "inputs",
+        "to": "builder",
+        "label": "固定输入"
+      },
+      {
+        "from": "builder",
+        "to": "index",
+        "label": "输出描述"
+      },
+      {
+        "from": "index",
+        "to": "amd",
+        "label": "amd64"
+      },
+      {
+        "from": "index",
+        "to": "arm",
+        "label": "arm64"
+      },
+      {
+        "from": "amd",
+        "to": "evidence",
+        "label": "比较产物"
+      },
+      {
+        "from": "arm",
+        "to": "evidence",
+        "label": "平台验收"
+      }
+    ],
+    "steps": [
+      {
+        "title": "先说明固定对象",
+        "body": "标签可移动；index、平台manifest、config各有自己的摘要，不能只说“镜像哈希”。",
+        "focus": [
+          "index",
+          "amd",
+          "arm"
+        ]
+      },
+      {
+        "title": "限定构建输入",
+        "body": "记录实际base digest、源码、构建器和时间；缓存只是一种加速，不构成输入清单。",
+        "focus": [
+          "inputs",
+          "builder"
+        ]
+      },
+      {
+        "title": "逐平台生成产物",
+        "body": "多平台构建产生各自config与层；交叉编译和模拟只改变构建方法，不替代运行验证。",
+        "focus": [
+          "builder",
+          "index",
+          "amd",
+          "arm"
+        ]
+      },
+      {
+        "title": "比较并解释差异",
+        "body": "固定平台重复构建，先比manifest，再向config与layers定位；证明文件另列比较规则。",
+        "focus": [
+          "amd",
+          "arm",
+          "evidence"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "两次独立构建同一平台，比较真实 OCI 内容",
+    "environment": "从仓库根目录开始，所有命令同一终端。需联网拉取基础镜像与 BuildKit；构建器 learn-u12 必须未被其他任务使用。实验使用共用 app 的副本，不改原文件。",
+    "predict": "基础标签不变是否等于输入固定？加入确定时间后，两次 --no-cache 构建的 manifest 能否相同？先写出你要比较的对象。",
+    "steps": [
+      {
+        "title": "解析基础镜像并记录平台",
+        "code": "U12_DIR=$(mktemp -d)\nBASE_DIGEST=$(docker buildx imagetools inspect python:3.12-slim --format \"{{.Manifest.Digest}}\")\nPYTHON_IMAGE=\"python:3.12-slim@$BASE_DIGEST\"\nPLATFORM=$(docker version --format \"{{.Server.Os}}/{{.Server.Arch}}\")\nprintf \"%s\n%s\n\" \"$PYTHON_IMAGE\" \"$PLATFORM\" | tee \"$U12_DIR/inputs.txt\"\ncp docker/labs/app.py docker/labs/verify.py docker/labs/version.txt \"$U12_DIR/\"",
+        "expect": "记录真实 sha256 引用与 linux/目标架构；若服务器不是 Linux，本实验需选择 Linux engine。",
+        "why": "固定标签当前指向的具体内容，保留实验可追溯输入。"
+      },
+      {
+        "title": "提供确定的应用构建配方",
+        "code": "cat > \"$U12_DIR/Dockerfile\" <<'EOF'\n# syntax=docker/dockerfile:1\nARG PYTHON_IMAGE=python:3.12-slim\nFROM ${PYTHON_IMAGE}\nWORKDIR /app\nCOPY app.py verify.py version.txt ./\nRUN mkdir -p /data && chown 10001:10001 /data\nUSER 10001:10001\nENV DATA_DIR=/data BIND_HOST=0.0.0.0 PORT=8000\nCMD [\"python\",\"app.py\",\"serve\"]\nEOF\nprintf \"*.tar\\ncomparison.json\\ninputs.txt\\n\" > \"$U12_DIR/.dockerignore\"\ndocker buildx create --name learn-u12 --driver docker-container\ndocker buildx inspect learn-u12 --bootstrap",
+        "expect": "记录实际 BuildKit 版本；若不支持 rewrite-timestamp，升级实验构建器或只做摘要差异分析，不声称已规范时间。",
+        "why": "配方没有外部依赖安装；新增机制是固定base、目标平台和时间。"
+      },
+      {
+        "title": "导出第一次构建",
+        "code": "docker buildx build --builder learn-u12 --platform \"$PLATFORM\" --no-cache --build-arg PYTHON_IMAGE=\"$PYTHON_IMAGE\" --build-arg SOURCE_DATE_EPOCH=0 --provenance=false --sbom=false -t learn-u12:check --output \"type=oci,dest=$U12_DIR/first.tar,rewrite-timestamp=true\" \"$U12_DIR\"",
+        "expect": "得到 first.tar；显式关闭本实验不比较的证明，固定标签名称与时间输入。",
+        "why": "禁用层缓存确保执行构建配方，而不是仅复用旧输出。"
+      },
+      {
+        "title": "用同一输入独立构建第二次",
+        "code": "docker buildx build --builder learn-u12 --platform \"$PLATFORM\" --no-cache --build-arg PYTHON_IMAGE=\"$PYTHON_IMAGE\" --build-arg SOURCE_DATE_EPOCH=0 --provenance=false --sbom=false -t learn-u12:check --output \"type=oci,dest=$U12_DIR/second.tar,rewrite-timestamp=true\" \"$U12_DIR\"",
+        "expect": "得到 second.tar；不要求 tar 文件本身的哈希一致，先比较其引用的镜像对象。",
+        "why": "归档封装顺序与镜像内容寻址是不同对象。"
+      },
+      {
+        "title": "逐级比较并留下证据",
+        "code": "python3 - \"$U12_DIR\" <<'PY'\nimport json,sys,tarfile\nfrom pathlib import Path\np=Path(sys.argv[1])\nrows=[]\nfor name in (\"first.tar\",\"second.tar\"):\n    with tarfile.open(p/name) as t:\n        index=json.load(t.extractfile(\"index.json\"))\n        desc=index[\"manifests\"][0]\n        manifest=json.load(t.extractfile(\"blobs/\"+desc[\"digest\"].replace(\":\",\"/\")))\n        rows.append({\"archive\":name,\"manifest\":desc[\"digest\"],\"config\":manifest[\"config\"][\"digest\"],\"layers\":[x[\"digest\"] for x in manifest[\"layers\"]]})\nprint(json.dumps(rows,indent=2))\nresult={k:rows[0][k]==rows[1][k] for k in (\"manifest\",\"config\",\"layers\")}\n(p/\"comparison.json\").write_text(json.dumps({\"objects\":rows,\"equal\":result},indent=2))\nassert all(result.values()), \"存在差异：保留导出并逐级检查，不宣布可复现通过\"\nprint(\"同平台内容比较通过\")\nPY",
+        "expect": "此单平台、无证明的 OCI exporter 示例应能直接解析平台 manifest；通过时三项相等，未通过则保留差异与构建版本。",
+        "why": "有明确对象、断言和证据文件，才可报告限定范围内的可复现结果。"
+      }
+    ],
+    "cleanup": "docker buildx rm learn-u12\n# 先把 inputs.txt 与 comparison.json 复制到学习笔记，再按需删除临时目录\nrm -rf \"$U12_DIR\""
+  },
+  "transfer": {
+    "question": "发布 index 同时含 amd64、arm64 和证明描述。amd64 两次内容相同，整个 index 却变化；arm64 容器启动报 exec format error。请分别解释应检查的对象，不能用一个“缓存坏了”覆盖全部。",
+    "evidence": [
+      "index 中每个 descriptor 的 mediaType、platform 与 digest。",
+      "amd64/arm64 的运行 manifest、config/layers，以及证明对象的差异。",
+      "构建平台、运行主机架构、实际可执行文件与各平台运行验证。"
+    ],
+    "answer": [
+      "先把运行平台与证明描述分开；证明时间或元数据变化可改变 index，而平台运行内容仍不变。明确复现目标后再判断是否失败。",
+      "exec format error 优先核对运行时选择的平台、复制进镜像的二进制架构与解释器路径；交叉构建若给两个镜像装入同一个本机二进制，index存在也无法纠正内容。",
+      "对各平台固定child manifest验证启动和业务，再追踪构建参数；具备目标架构执行环境、原生节点或模拟器是实际验证的前提。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "如何向面试官解释“Docker 保证环境一致”这句话的准确边界，并设计一次可复现构建验证？",
+      "answer": "Docker 可以把文件系统和运行配置封装为按内容寻址的镜像，digest能固定已有产物，但宿主内核、平台、运行配置、卷和外部服务仍影响行为。重建还受基础镜像、依赖仓库、工具链、源码与时间影响。先记录真实base digest、锁定依赖和平台、固定时间输入，做至少两次独立构建；分别比较平台manifest、config与layers，证明元数据另设规则。最后仍需目标平台业务验证，相同摘要不自动意味着应用无缺陷。",
+      "followups": [
+        {
+          "question": "一个 index digest 相同，两台机器可以运行不同内容吗？",
+          "answer": "可以，index固定一组平台描述；不同架构会选不同child manifest，各自内容不同但都属于同一索引。"
+        },
+        {
+          "question": "只固定 Python 顶层依赖版本足够吗？",
+          "answer": "不够，间接依赖、下载工件、基础镜像和工具链也可能变化；需完整锁定及校验，并记录受控更新。"
+        },
+        {
+          "question": "SOURCE_DATE_EPOCH 能消除所有不确定性吗？",
+          "answer": "不能，它处理时间输入的一部分；联网内容、随机数据、构建路径和工具链等仍需独立管理与比较。"
+        }
+      ],
+      "misconception": "“部署同一个digest”“跨平台都能运行”“重新构建得到相同产物”是三种不同保证。"
+    }
+  ],
+  "takeaways": [
+    "index、manifest和config是不同的寻址对象。",
+    "固定标签版本不等于固定基础镜像内容。",
+    "空缓存重建、明确比较对象与保留差异证据是可复现验证的核心。",
+    "每个平台都需要运行验证，证明文件与应用内容可分开定义复现规则。"
+  ],
+  "references": [
+    {
+      "title": "多平台构建",
+      "url": "https://docs.docker.com/build/building/multi-platform/"
+    },
+    {
+      "title": "固定基础镜像版本",
+      "url": "https://docs.docker.com/build/building/best-practices/#pin-base-image-versions"
+    },
+    {
+      "title": "可复现构建与时间输入",
+      "url": "https://docs.docker.com/build/ci/github-actions/reproducible-builds/"
+    },
+    {
+      "title": "BuildKit可复现构建说明",
+      "url": "https://github.com/moby/buildkit/blob/master/docs/build-repro.md"
+    }
+  ]
+}

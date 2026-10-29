@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>未知故障诊断：从症状到可证伪的根因 · Docker 原理与实战</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/play.css"><link rel="stylesheet" href="layout.css"><link rel="stylesheet" href="course.css">
+</head>
+<body class="unit-course">
+<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a href="index.html">Docker</a><span class="crumb">主线第 17 课</span><span class="sp"></span><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div>
+<div class="prog"></div>
+<main class="wrap"><section class="lede"><div class="k">Docker · 主线 17 / 18</div><h1>未知故障诊断：从症状到可证伪的根因</h1><p>面对同一个502或未就绪症状，按DNS、TCP、应用、挂载和资源取得最小证据，修复后证明业务与数据恢复。</p><p class="unit-duration">建议 75 分钟，含实验；按观察结果调整进度。</p><div class="unit-question"><span>先想一想</span><p>用户只说“订单页面打不开”，监控只显示502。你怎样避免一上来重启所有容器，并证明最后一次修改确实修复根因？</p></div><ul><li>对同一症状提出至少两个可区分假设。</li><li>用错误类型、配置、网络与资源证据排除假设，不按固定答案点按钮。</li><li>提交根因、最小修复、业务回归与数据保留证据。</li></ul><aside class="unit-environment"><strong>实验前提</strong><p>Docker Engine或Desktop、Compose v2、宿主Python3。使用独立项目learn-u17和端口18087；故障注入只改本项目配置或网络，不停止系统服务、不清理其他项目。</p><p><a href="labs/README.md">共用应用与接口说明</a> · <a href="labs/app.py" download>应用源码</a></p></aside><nav class="course-jumps" aria-label="本课章节"><a href="#model">原理模型</a><a href="#diagram">分步图解</a><a href="#lab">预测与实验</a><a href="#transfer">独立推理</a><a href="#interview">面试追问</a><a href="#summary">本课验收</a></nav></section><section class="mis unit-section" id="model"><div class="mh"><div><div class="k">01 · MODEL</div><h2>建立因果模型</h2></div></div><article class="unit-concept"><h3>症状不是根因：先画请求与数据路径</h3><p>先确定请求从哪里发起、目标是什么、哪一层产生错误。502说明代理未能得到合适的上游响应，可能涉及名字解析、网络成员、监听地址/端口、应用退出、就绪失败或资源耗尽。它不会自动告诉你“数据库坏了”。</p>
+<p>列出至少两个假设，并为下一条命令写下它能排除什么。例如从back探针解析api区分名称问题，从api网络空间请求localhost区分跨空间与应用本身，从/health和/ready区分存活与数据依赖。不要把取证清单机械执行成一大段无法解释的日志。</p></article><article class="unit-concept"><h3>错误类型与观察位置一起解释</h3><p>名称解析失败发生在TCP之前；connection refused通常指目标端口无监听或主动拒绝；超时需要继续区分丢包、路由和无响应；HTTP 503是应用或代理明确返回的状态。相同错误在不同观察位置可能支持不同假设。</p>
+<p>容器内工具不足时用标准库探针或共享网络空间的工具容器，不为了排障给应用永久装一整套工具。运行中、已退出和反复重启容器能取得的证据不同；exec失败本身也可能是进程数限制或容器未运行的证据。</p></article><article class="unit-concept"><h3>把配置、挂载和资源连成因果链</h3><p>查看实际运行容器而非只读仓库文件：环境变量、启动命令、网络成员、挂载只读标志、用户、内存和进程限制。DATA_DIR指到不可写路径可表现为启动失败；pids限制可能让健康检查无法创建进程；OOM、人工SIGKILL和应用错误不能仅凭一个137混为一谈。</p>
+<p>先保存State、OOMKilled、RestartCount、健康日志、应用日志与cgroup指标，再做最小修复。把--privileged、无限内存、host网络或重启全部服务当默认修复，会改变多个变量并破坏根因验证。必要时先止损，但要明确它是临时恢复。</p></article><article class="unit-concept"><h3>修复需要反事实与业务证据</h3><p>一个好根因应同时解释现象、时间线和受影响范围，并能预测修复后的变化。只让健康标签变绿不够，订单写入、查询和原有数据应按约定仍可用；配置修改后要核对实际实例已经应用。</p>
+<p>保留一份别人可复核的证据包：环境与对象身份、症状、两个假设、区分它们的观测、根因链、最小变更、业务断言和未覆盖边界。重复相同请求成功一次不等于长期稳定，必要的持续观察应按故障机制选取。</p></article></section><section class="mis unit-section" id="diagram"><div class="mh"><div><div class="k">02 · DIAGRAM</div><h2>同一请求失败的分层诊断与回归闭环</h2></div></div><p class="unit-caption">默认停在第一步。先解释当前状态，再点下一步；播放用于复习。图解是教学模型。</p><div id="unit-player"></div></section><section class="mis unit-section" id="lab"><div class="mh"><div><div class="k">03 · EXPERIMENT</div><h2>不告诉你选中了哪种故障的订单现场</h2></div></div><p>从仓库根目录进入docker/labs，使用临时覆盖文件和独立项目learn-u17。故障候选涉及绑定地址、数据路径、网络成员或进程数，代码不输出选择结果；先提交诊断，再看参考推理。所有步骤同一终端。</p><div class="unit-predict"><strong>运行之前，先预测</strong><p>只给症状时写下至少两个假设和第一条区分命令。你需要哪项证据，才会修改网络或资源限制？</p><label for="prediction">记录判断与理由</label><textarea id="prediction" data-draft="prediction" rows="3" placeholder="我预测……，因为……；如果结果不同，我会检查……"></textarea></div><article class="unit-lab-step"><h3>01 · 保存可用基线与订单数据</h3><pre class="cmd"><code>cd docker/labs
+U17_DIR=$(mktemp -d)
+LAB_PORT=18087 docker compose -p learn-u17 up -d --build --wait
+python3 verify.py http://127.0.0.1:18087 &gt; &quot;$U17_DIR/baseline.json&quot;
+LAB_PORT=18087 docker compose -p learn-u17 config &gt; &quot;$U17_DIR/baseline-config.yaml&quot;
+API_ID=$(docker compose -p learn-u17 ps -q api)
+docker inspect &quot;$API_ID&quot; &gt; &quot;$U17_DIR/baseline-container.json&quot;</code></pre><p><strong>观察：</strong>基线业务通过且数据在独立orders卷；证据目录路径稍后打印。</p><p><strong>解释：</strong>没有基线就难判断故障注入是否造成新现象，也无法证明原有数据保留。</p></article><article class="unit-lab-step"><h3>02 · 启动一个未知故障场景</h3><pre class="cmd"><code>python3 - &quot;$U17_DIR&quot; &lt;&lt;&#x27;PY&#x27;
+import json,random,subprocess,sys
+from pathlib import Path
+p=Path(sys.argv[1]); choice=random.SystemRandom().randrange(4)
+configs=[&quot;services:\n  api:\n    environment:\n      BIND_HOST: 127.0.0.1\n&quot;, &quot;services:\n  api:\n    environment:\n      DATA_DIR: /app/blocked-data\n    read_only: true\n&quot;, &quot;services: {}\n&quot;, &quot;services:\n  api:\n    pids_limit: 1\n&quot;]
+(p/&quot;fault.yaml&quot;).write_text(configs[choice])
+(p/&quot;instructor.json&quot;).write_text(json.dumps({&quot;scenario&quot;:choice}))
+subprocess.run([&quot;docker&quot;,&quot;compose&quot;,&quot;-p&quot;,&quot;learn-u17&quot;,&quot;-f&quot;,&quot;compose.yaml&quot;,&quot;-f&quot;,str(p/&quot;fault.yaml&quot;),&quot;up&quot;,&quot;-d&quot;,&quot;--force-recreate&quot;,&quot;--no-deps&quot;,&quot;api&quot;],check=True,env={**__import__(&quot;os&quot;).environ,&quot;LAB_PORT&quot;:&quot;18087&quot;})
+if choice==2:
+    cid=subprocess.check_output([&quot;docker&quot;,&quot;compose&quot;,&quot;-p&quot;,&quot;learn-u17&quot;,&quot;ps&quot;,&quot;-q&quot;,&quot;api&quot;],text=True).strip()
+    subprocess.run([&quot;docker&quot;,&quot;network&quot;,&quot;disconnect&quot;,&quot;learn-u17_back&quot;,cid],check=True)
+print(&quot;已注入一个场景。先诊断，不打开instructor.json。证据目录：&quot;,p)
+PY</code></pre><p><strong>观察：</strong>某个配置或网络条件已改变；不要求四种场景输出完全相同。有的api仍运行，有的无法就绪或退出。</p><p><strong>解释：</strong>保持同一个应用与数据，让相近症状来自不同机制。</p></article><article class="unit-lab-step"><h3>03 · 记录原始入口与状态，不急于修复</h3><pre class="cmd"><code>python3 - &lt;&lt;&#x27;PY&#x27;
+import urllib.request
+for path in (&quot;/health&quot;,&quot;/ready&quot;,&quot;/orders&quot;):
+    try:
+        with urllib.request.urlopen(&quot;http://127.0.0.1:18087&quot;+path,timeout=3) as r:
+            print(path,r.status,r.read().decode())
+    except Exception as e:
+        print(path,type(e).__name__,str(e))
+PY
+LAB_PORT=18087 docker compose -p learn-u17 ps -a &gt; &quot;$U17_DIR/status.txt&quot;
+LAB_PORT=18087 docker compose -p learn-u17 logs --tail 80 &gt; &quot;$U17_DIR/logs.txt&quot; 2&gt;&amp;1
+cat &quot;$U17_DIR/status.txt&quot;
+cat &quot;$U17_DIR/logs.txt&quot;</code></pre><p><strong>观察：</strong>记录真实HTTP结果、退出/重启/健康状态与错误。不能把所有非200都写成“网络超时”。</p><p><strong>解释：</strong>症状范围决定下一步；状态与日志有时已能排除DNS假设。</p></article><article class="unit-lab-step"><h3>04 · 按假设选择最小探针并记录限制</h3><pre class="cmd"><code>API_ID=$(docker compose -p learn-u17 ps -a -q api)
+docker inspect &quot;$API_ID&quot; &gt; &quot;$U17_DIR/fault-container.json&quot;
+docker inspect &quot;$API_ID&quot; --format &quot;{{json .State}} {{json .Config.Env}} {{json .NetworkSettings.Networks}}&quot;
+docker inspect &quot;$API_ID&quot; --format &quot;pids={{.HostConfig.PidsLimit}} memory={{.HostConfig.Memory}} readonly={{.HostConfig.ReadonlyRootfs}} user={{.Config.User}}&quot;
+docker run --rm --network learn-u17_back python:3.12-slim python -c &quot;import socket,urllib.request; print(socket.gethostbyname(&#x27;api&#x27;)); print(urllib.request.urlopen(&#x27;http://api:8000/ready&#x27;,timeout=3).read().decode())&quot;</code></pre><p><strong>观察：</strong>back探针可能在解析、TCP或HTTP阶段失败；逐项记录。若api仍running，可另用--network container:实际ID请求localhost；若exec不能创建进程，记录其错误并检查PidsLimit，而非直接判断镜像缺Python。</p><p><strong>解释：</strong>探针位于不同网络空间才能区分应用自身与跨空间路径；实际配置支持或否定根因。</p></article><article class="unit-lab-step"><h3>05 · 提交根因链后再应用最小修复</h3><pre class="cmd"><code>printf &quot;症状：
+假设A：
+假设B：
+区分证据：
+根因链：
+最小修复：
+预期改变：
+&quot; &gt; &quot;$U17_DIR/diagnosis.txt&quot;
+# 编辑diagnosis.txt写入实际证据，再编辑fault.yaml，仅修复已证实的条件
+# 网络成员故障可用docker network connect --alias api learn-u17_back &quot;$API_ID&quot;恢复；其他场景修改覆盖文件后执行：
+LAB_PORT=18087 docker compose -p learn-u17 -f compose.yaml -f &quot;$U17_DIR/fault.yaml&quot; up -d --wait</code></pre><p><strong>观察：</strong>先有书面预测与修复，再观察结果。网络断开场景只恢复所缺成员；配置场景只移除或修正已定位字段。</p><p><strong>解释：</strong>一次改全部配置虽然可能恢复，却不能说明哪个机制是根因。</p></article><article class="unit-lab-step"><h3>06 · 从原始入口做业务回归并检查数据</h3><pre class="cmd"><code>python3 verify.py http://127.0.0.1:18087 &gt; &quot;$U17_DIR/recovery.json&quot;
+cat &quot;$U17_DIR/recovery.json&quot;
+python3 - &lt;&lt;&#x27;PY&#x27;
+import json,urllib.request
+with urllib.request.urlopen(&quot;http://127.0.0.1:18087/orders&quot;,timeout=3) as r:
+    print(json.dumps(json.load(r),ensure_ascii=False))
+PY
+LAB_PORT=18087 docker compose -p learn-u17 ps -a &gt; &quot;$U17_DIR/recovery-status.txt&quot;
+printf &quot;保留并提交证据目录：%s
+&quot; &quot;$U17_DIR&quot;</code></pre><p><strong>观察：</strong>业务验收通过，人工核对基线订单仍存在。新verify会追加订单，不能以总行数完全不变作断言。</p><p><strong>解释：</strong>恢复健康与恢复业务、保留数据分别验证；把验证命令和证据交给他人复核。</p></article><details><summary>本实验的清理范围与命令</summary><pre class="cmd"><code>LAB_PORT=18087 docker compose -p learn-u17 -f compose.yaml -f &quot;$U17_DIR/fault.yaml&quot; down -v --remove-orphans
+# 保存diagnosis与JSON/日志后再清理
+rm -rf &quot;$U17_DIR&quot;</code></pre></details></section><section class="mis unit-section" id="transfer"><div class="mh"><div><div class="k">04 · TRANSFER</div><h2>换一个条件，还能解释吗</h2></div></div><p>一个新场景：API间歇性重启，出口报502，日志在处理批量请求时突然中断；State.ExitCode曾为137，但现在OOMKilled为false。如何分析，且不直接把内存改成无限？</p><h3>提交这些证据</h3><ul><li>各次实例的状态、重启计数、事件时间线与退出前日志，不能只看当前一次。</li><li>有效内存/进程限制与cgroup memory.events、memory.peak、cpu.stat；读取不到时说明权限或版本限制。</li><li>复现负载、根因判定依据、一次最小调整前后业务成功率/延迟/资源峰值。</li></ul><label for="reasoning">先写假设、观测和排除理由</label><textarea id="reasoning" data-draft="reasoning" rows="5" placeholder="现象 → 假设 → 能区分假设的证据 → 最小修复 → 复验"></textarea><details><summary>对照参考推理</summary><p>137是SIGKILL类结果线索，不唯一证明当前实例因容器内存上限OOM。检查daemon事件、OOM事件、宿主证据与人工操作；重启后State字段的时间范围可能不同。</p>
+<p>若证据指向OOM，先用受控负载测峰值、区分泄漏与合理工作集，再选择限并发、减少工作集或有余量上限；若是CPU节流或进程数失败，就按对应证据处理。</p>
+<p>在相同负载下验证订单成功率、错误窗口、延迟和资源；保留有限边界及主机容量约束，不能用无限资源掩盖问题。</p></details></section><section class="mis unit-section" id="interview"><div class="mh"><div><div class="k">05 · INTERVIEW</div><h2>面试中讲清原理</h2></div></div><p>先用自己的话回答，再打开参考。回答按“结论 → 机制 → 边界 → 证据”组织；追问用来检验理解。</p><article class="unit-interview"><h3>01 · 线上只有一个502告警，你如何在两分钟内描述诊断方法，并说明什么时候可以报告根因已解决？</h3><details><summary>查看参考回答与递进追问</summary><p>先固定请求来源、目标、时间与受影响范围，记录容器状态、日志及实际配置，提出至少两个可区分假设。按DNS、TCP、HTTP/就绪、挂载和资源选最小观察，而非机械执行所有命令；从不同网络空间对照探针。根因要能解释现象与时间线并预测修复后的变化。实施最小变更后，从原入口验证业务、数据和必要负向边界，保存可复核证据；临时重启恢复应标为止损，不伪称根因消失。</p><h4>追问 1：为什么不能只凭137认定内存太小？</h4><p>137提示被SIGKILL，可能OOM也可能人工/其他系统杀进程；要结合OOMKilled、memory.events、事件与宿主时间线，注意字段属于哪次实例。</p><h4>追问 2：容器内localhost可用、网内访问拒绝，你下一步是什么？</h4><p>比较实际绑定地址和端口，核对BIND_HOST/PORT与监听证据；解析正常时不应先换DNS。若只监听回环，修正后从原请求位置复验。</p><h4>追问 3：为什么重启所有容器会降低诊断质量？</h4><p>同时改变进程、网络连接、缓存、时序和资源，可能清掉现场且无法区分因果。止损可必要，但需先尽可能保存证据，并另做根因复现。</p><p class="unit-misconception"><strong>容易混淆：</strong>排障不是命令数量竞赛；能说明每条证据排除了什么，并以业务和数据复验，才构成诊断闭环。</p></details></article></section><section class="mis unit-section" id="summary"><div class="mh"><div><div class="k">06 · EVIDENCE</div><h2>用证据判断是否掌握</h2></div></div><ol><li>同一症状需要多个假设，观察要能区分它们。</li><li>错误类型必须与观察位置、时间和实际对象一起解释。</li><li>不以退出码、健康标签或一条日志替代完整因果链。</li><li>最小修复、原入口回归、数据验证与证据包共同支撑完成结论。</li></ol><div class="unit-completion"><label><input type="checkbox" data-completion="lab"> 我已完成实操，并保存可复核的证据</label><label><input type="checkbox" data-completion="interview"> 我能脱离答案口述，并回答递进追问</label><p class="unit-caption" id="save-state" aria-live="polite">自记进度与草稿只保存在本机浏览器；勾选不代表自动验收。</p></div><h3>核对原始依据</h3><ul><li><a href="https://docs.docker.com/reference/cli/docker/container/logs/">容器日志</a></li><li><a href="https://docs.docker.com/engine/containers/resource_constraints/">容器资源限制</a></li><li><a href="https://docs.docker.com/reference/cli/docker/system/events/">Docker事件</a></li><li><a href="https://docs.docker.com/engine/network/">容器网络排查依据</a></li></ul><details><summary>进一步阅读：原课程相关资料</summary><ul><li><a href="l11.html">原第 11 课</a></li><li><a href="l12.html">原第 12 课</a></li><li><a href="l15.html">原第 15 课</a></li><li><a href="l16.html">原第 16 课</a></li><li><a href="l18.html">原第 18 课</a></li><li><a href="l21.html">原第 21 课</a></li><li><a href="l22.html">原第 22 课</a></li><li><a href="l25.html">原第 25 课</a></li></ul></details></section><footer class="endnav"><div class="unit-next"><a href="u16.html">← 上一课</a><a href="index.html">课程目录</a></div><div class="k">下一课 · 18</div><a class="big" href="u18.html">综合项目与面试毕业验收 →</a></footer></main>
+<script src="../assets/play.js"></script><script src="motion.js"></script><script src="course.js"></script><script type="application/json" id="lesson-data">{"number": 17, "diagram": {"label": "同一请求失败的分层诊断与回归闭环", "nodes": [{"id": "symptom", "title": "入口症状", "detail": "502 / 超时 / 未就绪", "x": 0, "y": 0, "w": 210}, {"id": "dns", "title": "DNS与成员", "detail": "名字是否解析到目标", "x": 300, "y": 0, "w": 210}, {"id": "tcp", "title": "TCP与监听", "detail": "地址、端口、路径", "x": 600, "y": 0, "w": 210}, {"id": "app", "title": "应用与就绪", "detail": "HTTP与数据查询", "x": 600, "y": 180, "w": 210}, {"id": "system", "title": "挂载与资源", "detail": "权限 / cgroup / 状态", "x": 300, "y": 180, "w": 210}, {"id": "proof", "title": "最小修复与回归", "detail": "业务、数据、反例", "x": 0, "y": 180, "w": 210}], "edges": [{"from": "symptom", "to": "dns", "label": "提出假设"}, {"from": "dns", "to": "tcp", "label": "解析成功后"}, {"from": "tcp", "to": "app", "label": "建连后看协议"}, {"from": "app", "to": "system", "label": "沿错误追依赖"}, {"from": "system", "to": "proof", "label": "最小修复"}, {"from": "proof", "to": "symptom", "label": "复验"}], "steps": [{"title": "固定原始症状", "body": "记录请求来源、目标、时间和错误；先提出多个可区分假设。", "focus": ["symptom", "dns"]}, {"title": "逐段缩小范围", "body": "按DNS、TCP和HTTP证据定位失败层；每条命令都应回答一个具体问题。", "focus": ["dns", "tcp", "app"]}, {"title": "向运行条件追因", "body": "应用错误再追到实际配置、挂载和资源；一个退出码不能替代整条因果链。", "focus": ["app", "system"]}, {"title": "最小修复形成闭环", "body": "预测变化、只改必要条件、再次从原始入口完成业务；保存数据与反向验证证据。", "focus": ["system", "proof", "symptom"]}]}}</script><script>DockerCourse.initLesson()</script>
+</body></html>

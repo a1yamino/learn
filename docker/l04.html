@@ -4,9 +4,10 @@
 <link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/play.css">
-<link rel="stylesheet" href="layout.css"></head><body>
+<link rel="stylesheet" href="layout.css"><link rel="stylesheet" href="course.css"></head><body>
 <div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 4 课</span><span class="sp"></span><a href="l03.html">← 第 3 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
 <main class="wrap">
+<aside class="legacy-note">原第 4 课 · 补充资料。<a href="index.html">查看按原理、实战与面试组织的新主线 →</a></aside>
 <section class="lede"><div class="k">Docker · 第 4 课</div><h1>实战：把后端 API 打包成镜像</h1>
 <p>把一个 FastAPI 服务写成可以上线的镜像：监听地址、端口映射、非 root 用户、信号与优雅退出、健康检查。约 35 分钟。</p>
 <ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一个可以上线的 Dockerfile</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">动手：为什么访问不到？</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">PID 1 与优雅退出</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">构建和运行</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
@@ -19,7 +20,7 @@
 <div class="chal"><div class="arena"><div><div class="lab">应用监听地址（uvicorn --host）</div><div class="cmds" id="h2"></div><div class="lab" style="margin-top:18px">端口参数</div><div class="cmds" id="pp2"></div></div><div><div class="lab">网络路径</div><div id="net2"></div></div></div><div class="log" id="o2" style="height:auto;min-height:80px;margin-top:18px"></div></div>
 </section>
 
-<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>PID 1 与优雅退出</h2><div class="goal"><code>docker stop</code> 只把 SIGTERM 发给容器里的 PID 1。谁是 PID 1，决定了应用能不能收到信号。</div></div></div>
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>PID 1 与优雅退出</h2><div class="goal"><code>docker stop</code> 先向 PID 1 发送配置的停止信号；本例未覆盖默认 SIGTERM。入口是否 exec、转发信号和应用的处理逻辑共同决定退出行为。</div></div></div>
 <div id="p3"></div>
 </section>
 
@@ -53,8 +54,8 @@ CMD [&quot;uvicorn&quot;, &quot;main:app&quot;, &quot;--host&quot;, &quot;0.0.0.
 EOF</pre></div></div><div class="st"><span class="n">03</span><div><p>构建并后台运行。</p><pre class="cmd">docker build -t api-demo:1.0 .
 docker run -d --name api -p 8000:8000 api-demo:1.0</pre><pre class="out">[+] Building 18.3s (11/11) FINISHED
 …
-9e2c7d1a…</pre></div></div><div class="st"><span class="n">04</span><div><p>访问健康检查接口。uid 是 10001，说明不是 root。</p><pre class="cmd">curl -s localhost:8000/health</pre><pre class="out">{&quot;ok&quot;:true,&quot;user&quot;:10001}</pre></div></div><div class="st"><span class="n">05</span><div><p>确认 PID 1 是 uvicorn，而不是 sh。</p><pre class="cmd">docker exec api cat /proc/1/cmdline | tr &quot;\0&quot; &quot; &quot;; echo</pre><pre class="out">/usr/local/bin/python /usr/local/bin/uvicorn main:app --host 0.0.0.0 --port 8000</pre></div></div><div class="st"><span class="n">06</span><div><p>计时停止。应用收到 SIGTERM 立刻退出，不到 1 秒。</p><pre class="cmd">time docker stop api</pre><pre class="out">api
-real    0m0.6s</pre></div></div><div class="st"><span class="n">07</span><div><p>对比：改成 shell 形式再试一次。sh 不转发信号，要等满 10 秒被 SIGKILL。</p><pre class="cmd">docker rm api
+9e2c7d1a…</pre></div></div><div class="st"><span class="n">04</span><div><p>访问健康检查接口。uid 是 10001，说明不是 root。</p><pre class="cmd">curl -s localhost:8000/health</pre><pre class="out">{&quot;ok&quot;:true,&quot;user&quot;:10001}</pre></div></div><div class="st"><span class="n">05</span><div><p>确认 PID 1 是 uvicorn，而不是 sh。</p><pre class="cmd">docker exec api cat /proc/1/cmdline | tr &quot;\0&quot; &quot; &quot;; echo</pre><pre class="out">/usr/local/bin/python /usr/local/bin/uvicorn main:app --host 0.0.0.0 --port 8000</pre></div></div><div class="st"><span class="n">06</span><div><p>观察停止耗时和日志。本例空闲时通常较快；耗时本身不能证明进行中的请求或清理工作都完成。主线第 3 课提供带长请求的验收。</p><pre class="cmd">time docker stop api</pre><pre class="out">api
+real    0m0.6s</pre></div></div><div class="st"><span class="n">07</span><div><p>对比：改成 shell 形式再试一次。观察 shell 是否保留为 PID 1、是否转发或优化为 exec。若信号没有到应用，可能等到停止超时；不同 shell 与入口脚本行为有差异。</p><pre class="cmd">docker rm api
 sed -i.bak &#x27;s|^CMD .*|CMD uvicorn main:app --host 0.0.0.0 --port 8000|&#x27; Dockerfile
 docker build -t api-demo:shell . &amp;&amp; docker run -d --name api -p 8000:8000 api-demo:shell
 time docker stop api</pre><pre class="out">api
@@ -71,7 +72,7 @@ sleep 15; docker ps --format "{{.Names}} {{.Status}}"</pre><pre class="out">api 
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li>容器里的服务要监听 <code>0.0.0.0</code>。监听 <code>127.0.0.1</code> 时，只有容器自己能访问。</li><li><code>-p 宿主机端口:容器端口</code> 才真正打开访问通道；<code>EXPOSE</code> 只是文档说明。</li><li>用 exec 形式的 <code>CMD ["..."]</code>，让应用自己成为 PID 1，收到 SIGTERM 后优雅退出。shell 形式会让 sh 当 PID 1，信号传不到应用。</li><li>用 <code>USER</code> 切换到非 root 用户运行。容器被攻破时，损失更小。</li><li><code>PYTHONUNBUFFERED=1</code> 让日志立即输出；<code>HEALTHCHECK</code> 让 Docker 知道服务是否真的可用。</li></ol></section>
+<ol class="sum"><li>容器里的服务要监听 <code>0.0.0.0</code>。监听 <code>127.0.0.1</code> 时，只有容器自己能访问。</li><li><code>-p 宿主机端口:容器端口</code> 才真正打开访问通道；<code>EXPOSE</code> 只是文档说明。</li><li>用 exec 形式的 <code>CMD ["..."]</code>，让应用直接接收配置的停止信号；本例默认是 SIGTERM。入口 shell 若没有 exec 或正确转发信号，可能导致应用收不到停止请求。</li><li>用 <code>USER</code> 切换到非 root 用户运行。容器被攻破时，损失更小。</li><li><code>PYTHONUNBUFFERED=1</code> 让日志立即输出；<code>HEALTHCHECK</code> 让 Docker 知道服务是否真的可用。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 05</div><a class="big" href="l05.html">多阶段构建与镜像瘦身 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>

@@ -1,0 +1,262 @@
+{
+  "number": 1,
+  "title": "快速上手：交付一个 API",
+  "summary": "先完成一次最小闭环，再带着真实现象学习进程、存储、网络和构建原理。",
+  "minutes": 60,
+  "environment": "需要 Git、Python 3、Docker Engine 或 Docker Desktop，以及支持 up --wait 的 Docker Compose v2。命令使用 Bash；Windows 可在 WSL 运行。先克隆或下载本仓库，从仓库根目录开始。8080 端口应空闲；本课的 learn-docker 项目是独立实验环境。",
+  "sources": [
+    1,
+    2,
+    3,
+    4,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "objectives": [
+    "能用提供的应用完成构建、启动、访问和读取日志。",
+    "能区分镜像、容器和数据卷，并验证重建后数据仍然存在。",
+    "能说出下一步应查进程、网络、文件还是构建，而不是盲目重启。"
+  ],
+  "question": "同一份应用代码已经提供。怎样证明它能运行、能访问，并且删除容器后仍保留业务数据？",
+  "model": [
+    {
+      "title": "镜像是输入，容器是被管理的运行实例",
+      "body": [
+        "Dockerfile 描述如何产生镜像。镜像保存用户态文件和默认启动配置；docker run 或 Compose 用它创建容器，建立文件视图、网络和资源约束，再启动进程。",
+        "容器可以处于运行或停止状态；停止不等于删除。重建创建新的容器实例，镜像里的文件相同，也不意味着挂载、环境变量、内核和外部依赖相同。后续课程会逐项验证这些边界。"
+      ]
+    },
+    {
+      "title": "这份应用的三种职责",
+      "body": [
+        "api 是 Python 标准库 HTTP 服务，用 SQLite 保存订单。gateway 是 Nginx，只负责接收 HTTP 并转发给 api；orders 是命名数据卷，挂载在 api 的 /data。业务代码已提供，可以直接阅读 docker/labs/app.py。",
+        "浏览器访问的是本机 8080，Docker 将它映射到 gateway 的 80；gateway 通过 back 网络中的服务名 api 访问 8000。api 没有直接发布到宿主机。每一段连接都有自己的地址与端口。"
+      ]
+    },
+    {
+      "title": "运行、就绪与业务正确是不同证据",
+      "body": [
+        "容器 running 表示主进程还活着；/health 检查 HTTP 服务存活；/ready 会连接 SQLite 并查询订单表。Compose 等 api 健康后再启动 gateway，这能帮助初次启动。",
+        "健康检查不会替应用处理所有运行中故障。verify.py 会真正创建订单并查回内容，检验完整业务路径；它的 JSON 结果可以作为后续对比的证据。"
+      ]
+    },
+    {
+      "title": "数据的身份属于卷",
+      "body": [
+        "本课把数据库放在命名卷 orders 中，而不是依赖容器的可写层。Compose 项目名参与卷的实际名称；同一项目重建容器，仍会挂载同一个卷。换项目名可能得到另一个新卷。",
+        "docker compose down 删除本项目容器和网络，默认保留命名卷。down -v 还会删除卷中的实验数据。清理前先明确你要结束进程，还是要丢弃数据。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "从源码到可访问且有数据的服务",
+    "nodes": [
+      {
+        "id": "source",
+        "title": "源码与 Dockerfile",
+        "detail": "构建上下文",
+        "x": 0,
+        "y": 0,
+        "w": 200
+      },
+      {
+        "id": "image",
+        "title": "API 镜像",
+        "detail": "用户态文件与启动配置",
+        "x": 320,
+        "y": 0,
+        "w": 200
+      },
+      {
+        "id": "api",
+        "title": "api 容器",
+        "detail": "监听 8000",
+        "x": 640,
+        "y": 0,
+        "w": 200
+      },
+      {
+        "id": "volume",
+        "title": "orders 卷",
+        "detail": "/data/orders.db",
+        "x": 640,
+        "y": 210,
+        "w": 200
+      },
+      {
+        "id": "gateway",
+        "title": "gateway 容器",
+        "detail": "80 → api:8000",
+        "x": 320,
+        "y": 210,
+        "w": 200
+      },
+      {
+        "id": "client",
+        "title": "本机客户端",
+        "detail": "127.0.0.1:8080",
+        "x": 0,
+        "y": 210,
+        "w": 200
+      }
+    ],
+    "edges": [
+      {
+        "from": "source",
+        "to": "image",
+        "label": "build"
+      },
+      {
+        "from": "image",
+        "to": "api",
+        "label": "create/start"
+      },
+      {
+        "from": "api",
+        "to": "volume",
+        "label": "挂载读写"
+      },
+      {
+        "from": "client",
+        "to": "gateway",
+        "label": "发布端口"
+      },
+      {
+        "from": "gateway",
+        "to": "api",
+        "label": "HTTP"
+      }
+    ],
+    "steps": [
+      {
+        "title": "先产生不可变输入",
+        "body": "构建器读取源码与 Dockerfile，生成 API 镜像；修改源码不会自动改变已经运行的容器。",
+        "focus": [
+          "source",
+          "image"
+        ]
+      },
+      {
+        "title": "再创建运行实例",
+        "body": "Compose 按声明创建 api。镜像只说明默认配置，运行时还要加入网络、环境与挂载。",
+        "focus": [
+          "image",
+          "api"
+        ]
+      },
+      {
+        "title": "把数据放在独立身份中",
+        "body": "api 对 /data 的写入进入 orders 卷。重建 api 后仍挂载同一个卷，数据库才能继续使用。",
+        "focus": [
+          "api",
+          "volume"
+        ]
+      },
+      {
+        "title": "沿真实路径验收",
+        "body": "请求先到 gateway，再到 api，最后完成数据库读写。单独看到 running 还没有验证整个路径。",
+        "focus": [
+          "client",
+          "gateway",
+          "api",
+          "volume"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "构建、访问，再重建",
+    "environment": "从仓库根目录开始。所有命令在同一个 Bash 终端运行；默认使用 learn-docker 项目。若已有同名项目，先换独立项目名并在后续命令保持一致。",
+    "predict": "up、stop、down、重建、down -v 分别会改变哪些对象？先写出一次重建后订单是否还在，以及依据是什么。",
+    "steps": [
+      {
+        "title": "确认客户端与执行环境",
+        "code": "cd docker/labs\ndocker version\ndocker compose version\ndocker info --format '{{.OSType}} {{.Architecture}} {{.Driver}}'",
+        "expect": "客户端与服务端都能连接，记录操作系统、架构和存储后端；Desktop 的 Linux 服务端位于虚拟机。",
+        "why": "CLI 能运行不代表 Engine 已启动。记录环境能解释后续宿主路径或镜像平台差异。"
+      },
+      {
+        "title": "构建并等到服务就绪",
+        "code": "docker compose up -d --build --wait\ndocker compose ps",
+        "expect": "api 健康、gateway 运行；首次可能需要下载镜像。若失败，先查看具体服务日志。",
+        "why": "--build 根据当前源码构建，--wait 等待运行或健康条件。命令成功仍需业务验收。"
+      },
+      {
+        "title": "验证完整业务路径",
+        "code": "python3 verify.py http://127.0.0.1:8080 --output evidence/u01.json\ncurl -fsS http://127.0.0.1:8080/orders\ndocker compose logs --tail=20 api gateway",
+        "expect": "JSON 验收 passed 为 true，创建的 verify- 订单能查回；日志有订单创建和 HTTP 访问记录。",
+        "why": "这同时验证发布端口、代理、服务名解析、应用与数据库。脚本创建的订单只属于本实验。"
+      },
+      {
+        "title": "记录容器身份，再重建",
+        "code": "docker compose ps -q api\ndocker compose up -d --force-recreate --wait\ndocker compose ps -q api\ncurl -fsS http://127.0.0.1:8080/orders",
+        "expect": "容器 ID 改变，订单仍在。若数据不同，核对项目名、卷挂载与 DATA_DIR。",
+        "why": "实例身份与数据身份分离。重建没有把旧容器可写层带过来，保留数据依赖同一卷。"
+      },
+      {
+        "title": "观察运行身份和挂载",
+        "code": "docker compose exec api id\ndocker compose exec api python -c \"import os; print(os.environ['DATA_DIR'])\"\ndocker volume inspect learn-docker_orders",
+        "expect": "应用身份为 10001:10001，数据目录为 /data；卷名含项目名前缀。Desktop 的卷路径属于虚拟机。",
+        "why": "运行成功只是起点。身份、目录和挂载证据能帮助解释权限与数据问题。"
+      }
+    ],
+    "cleanup": "docker compose down\n# 上面保留 orders 数据卷。只有确认要丢弃本项目实验数据时才运行：\n# docker compose down -v"
+  },
+  "transfer": {
+    "question": "你改了 version.txt，执行 docker compose restart 后，/version 仍显示旧版本。先不用任何清理命令，解释哪一层还没有改变，并给出最小修复。",
+    "evidence": [
+      "修改后的文件内容、当前镜像 ID 与容器 ID。",
+      "restart 前后的 /version，修复后的 /version。",
+      "说明为什么不用删除数据卷。"
+    ],
+    "answer": [
+      "version.txt 在构建时 COPY 进镜像。修改主机源码并不会改变镜像；restart 只重启已有容器的进程。",
+      "先用 docker compose config 确认构建上下文，再执行 docker compose up -d --build --wait，让新镜像对应新的容器。核对 /version 与订单仍保留。",
+      "此故障发生在源码→镜像→实例的更新链中。数据卷不需要改变，删除它不能修复镜像版本，反而会丢数据。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "请用一个请求解释镜像、容器、网络和数据卷各自负责什么。",
+      "answer": "镜像提供用户态文件和启动配置，容器提供隔离与约束下的运行实例，网络把客户端请求送到应用，数据卷保存独立于容器实例的数据。在本项目中，请求从本机8080进入Nginx，再访问api:8000，SQLite写入/data对应的orders卷。每一层都需要不同证据验证。",
+      "followups": [
+        {
+          "question": "为什么同一个镜像在两台机器上还可能表现不同？",
+          "answer": "镜像没有封装任意宿主内核、CPU架构、运行时配置、挂载和外部服务。先核对平台与内核环境，再比较环境变量、网络、数据和资源约束；不能只根据tag相同就认定环境相同。"
+        },
+        {
+          "question": "容器重启与重建有什么区别？",
+          "answer": "重启保留容器对象、可写层和配置；重建用选定镜像创建新对象，旧可写层不会作为数据自动继承。显式挂载同一卷可以继续使用数据。"
+        },
+        {
+          "question": "running 和健康检查通过能证明业务正确吗？",
+          "answer": "running只证明主进程存活，健康检查只覆盖其配置的断言。必须沿真实入口做一次订单写入和查询，并核对错误路径与恢复结果，才能支持对应的业务保证。"
+        }
+      ],
+      "misconception": "把Docker当成“环境完全一致”的保证。正确的表达是固定镜像内容，同时显式描述和验证运行环境的边界。"
+    }
+  ],
+  "takeaways": [
+    "构建产生镜像，创建产生容器，重启不会自动换镜像。",
+    "一次成功请求跨越发布端口、代理、网络、应用与数据。",
+    "容器身份与卷身份不同，数据保留依赖明确的挂载。",
+    "先记录可观察事实，再选择与根因对应的最小动作。"
+  ],
+  "references": [
+    {
+      "title": "Docker Compose up",
+      "url": "https://docs.docker.com/reference/cli/docker/compose/up/"
+    },
+    {
+      "title": "Docker 存储",
+      "url": "https://docs.docker.com/engine/storage/"
+    },
+    {
+      "title": "Docker Desktop 网络与 Linux VM",
+      "url": "https://docs.docker.com/desktop/features/networking/"
+    }
+  ]
+}

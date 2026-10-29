@@ -1,0 +1,250 @@
+{
+  "number": 13,
+  "title": "Compose：期望状态、就绪与运行中恢复",
+  "summary": "分清创建依赖、健康状态、进程重启和应用重连，理解一次 up 成功之后系统还需要什么恢复能力。",
+  "minutes": 60,
+  "environment": "Docker Compose v2，支持 up --wait；Docker Engine 或 Desktop，宿主机 Python 3。使用共用标准库API/SQLite/Nginx，不引入外部数据库。",
+  "sources": [
+    8,
+    18,
+    25
+  ],
+  "objectives": [
+    "区分容器运行、存活接口和依赖可用的就绪接口。",
+    "解释 depends_on 的启动条件与运行中故障的不同边界。",
+    "用实际健康、PID和RestartCount证据判断是谁完成了恢复。"
+  ],
+  "question": "api 显示 Up，但 gateway 返回 502；另一次 api 已 unhealthy，restart: unless-stopped 却没有重启它。Compose 为什么没有按你预期“自愈”？",
+  "model": [
+    {
+      "title": "up 使声明与当前资源趋于一致",
+      "body": [
+        "Compose 根据项目名和配置创建、重建或启动容器、网络、卷。修改镜像或环境变量后需要重新应用配置；仅编辑 compose.yaml 不会让运行中的进程自动读取变化。docker compose config 展示合并和插值后的声明，inspect 则观察实际容器，两者应对照。",
+        "Compose 的 up 不是常驻集群控制器；它退出后并不持续按副本声明监测和重新调度。Engine 的 restart policy 在容器进程退出等条件下作用，应用本身还要处理请求失败、资源暂时不可用和连接重建。"
+      ]
+    },
+    {
+      "title": "started、healthy 与业务成功是不同条件",
+      "body": [
+        "service_started 只要求依赖已启动。service_healthy 要求健康检查通过，service_completed_successfully 适合成功结束的一次性任务；长期服务不会自然满足成功结束条件。对本课API，/health表示进程存活，/ready执行数据库查询，所以存活成功时仍可能未就绪。",
+        "健康检查必须覆盖该服务对外承诺，不能只 curl 一个永远返回200的接口。up --wait 的成功仅针对本次检查窗口，不证明未来一直可用；健康探测也是应用进程执行的命令，会消耗资源并受超时、起始宽限期和权限影响。"
+      ]
+    },
+    {
+      "title": "运行中恢复必须区分四层责任",
+      "body": [
+        "依赖在启动后故障，depends_on 不会自动给应用增加重试，也不会因 unhealthy 自动重启它。Engine restart policy 主要响应主进程退出，不把所有健康变化都当退出。Compose depends_on 的 restart: true 关联显式Compose操作，不等于任意运行中故障都会级联重启。",
+        "应用层恢复包含适当超时、有限退避、重新解析/重连以及写入操作的幂等约束。反向代理也可能缓存旧地址，服务重建后是否重解析要依据其配置验证。本课用SQLite数据文件制造就绪变化，避免把远端数据库重连演示伪装成已存在的共用应用能力。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "声明启动与运行中健康是不同控制关系",
+    "nodes": [
+      {
+        "id": "config",
+        "title": "Compose 声明",
+        "detail": "项目与合并后的配置",
+        "x": 0,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "up",
+        "title": "一次 up 操作",
+        "detail": "创建 / 重建 / 等待",
+        "x": 340,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "api",
+        "title": "api 主进程",
+        "detail": "存活与实际请求",
+        "x": 340,
+        "y": 220,
+        "w": 220
+      },
+      {
+        "id": "health",
+        "title": "健康检查",
+        "detail": "/ready 数据库查询",
+        "x": 680,
+        "y": 220,
+        "w": 220
+      },
+      {
+        "id": "engine",
+        "title": "Engine 重启策略",
+        "detail": "进程退出后按策略判断重启",
+        "x": 0,
+        "y": 220,
+        "w": 220
+      },
+      {
+        "id": "gateway",
+        "title": "gateway 请求",
+        "detail": "超时、失败与恢复",
+        "x": 0,
+        "y": 440,
+        "w": 220
+      }
+    ],
+    "edges": [
+      {
+        "from": "config",
+        "to": "up",
+        "label": "应用声明"
+      },
+      {
+        "from": "up",
+        "to": "api",
+        "label": "启动并等待"
+      },
+      {
+        "from": "api",
+        "to": "health",
+        "label": "被探测"
+      },
+      {
+        "from": "api",
+        "to": "engine",
+        "label": "退出事件"
+      },
+      {
+        "from": "gateway",
+        "to": "api",
+        "label": "应用请求"
+      }
+    ],
+    "steps": [
+      {
+        "title": "应用配置",
+        "body": "config是期望，up负责一次应用；先核对声明与实际实例，不能把改文件当运行状态改变。",
+        "focus": [
+          "config",
+          "up",
+          "api"
+        ]
+      },
+      {
+        "title": "判断是否就绪",
+        "body": "健康检查执行/ready，数据库查询失败可使容器unhealthy，而进程仍运行。",
+        "focus": [
+          "api",
+          "health"
+        ]
+      },
+      {
+        "title": "决定谁恢复",
+        "body": "单纯unhealthy不是进程退出；Engine不因此自动套用重启策略，应用或运维须针对根因恢复。",
+        "focus": [
+          "health",
+          "engine",
+          "api"
+        ]
+      },
+      {
+        "title": "验证业务恢复",
+        "body": "恢复依赖后检查健康变化和真实请求；不能只看容器重新变成Up。",
+        "focus": [
+          "api",
+          "health",
+          "gateway"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "不结束进程，让就绪失败再恢复",
+    "environment": "从仓库根目录进入docker/labs；项目learn-u13的数据只供本实验使用。故障注入将数据库文件临时移动并用同名目录制造不可用路径；共用应用的/ready每次新建SQLite连接并查询，异常返回503，/health独立返回200。所有步骤同一终端。",
+    "predict": "预测 /health、/ready、容器状态与 RestartCount 是否同步变化；restart policy 是否会仅因 unhealthy 重启进程？",
+    "steps": [
+      {
+        "title": "建立明确的健康检查基线",
+        "code": "cd docker/labs\nU13_CFG=$(mktemp)\ncat > \"$U13_CFG\" <<'EOF'\nservices:\n  api:\n    restart: unless-stopped\n    healthcheck:\n      test: [\"CMD\", \"python\", \"-c\", \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2).read()\"]\n      interval: 2s\n      timeout: 3s\n      retries: 2\n      start_period: 1s\nEOF\ndocker compose -p learn-u13 -f compose.yaml -f \"$U13_CFG\" up -d --build --wait\nAPI_ID=$(docker compose -p learn-u13 -f compose.yaml -f \"$U13_CFG\" ps -q api)\ndocker inspect \"$API_ID\" --format \"{{.State.Status}} {{.State.Health.Status}} {{.RestartCount}}\"",
+        "expect": "记录running/healthy及实际重启次数；实验覆盖文件明确探测的是/ready。",
+        "why": "把探测定义与观察指标放在同一份配置，避免默认健康接口不同导致误判。"
+      },
+      {
+        "title": "不结束主进程，制造数据库路径故障",
+        "code": "docker inspect \"$API_ID\" --format \"{{.State.Pid}} {{.RestartCount}}\"\ndocker compose -p learn-u13 -f compose.yaml -f \"$U13_CFG\" exec -T api python -c \"from pathlib import Path; p=Path('/data/orders.db'); p.rename('/data/orders.saved.db'); p.mkdir()\"",
+        "expect": "orders.db路径由数据库文件变成目录。若应用因当前连接仍可用而短暂继续就绪，后续轮询记录，不假定立刻失败。",
+        "why": "这是文件路径故障，不是kill进程；同时展示文件句柄与路径名字并非完全相同。"
+      },
+      {
+        "title": "轮询实际健康状态而不是固定猜秒数",
+        "code": "python3 - \"$API_ID\" <<'PY'\nimport subprocess,sys,time\nfor _ in range(15):\n    text=subprocess.check_output([\"docker\",\"inspect\",sys.argv[1],\"--format\",\"{{.State.Status}} {{.State.Health.Status}} {{.RestartCount}}\"],text=True).strip()\n    print(text)\n    if \"unhealthy\" in text:\n        break\n    time.sleep(2)\nelse:\n    raise SystemExit(\"未观察到预期状态：保留证据，核对应用是否为每次ready重新查询路径\")\nPY\ndocker compose -p learn-u13 -f compose.yaml -f \"$U13_CFG\" exec -T api python -c \"import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2).read().decode())\"",
+        "expect": "应观察到进程仍running而健康变unhealthy；/health仍响应。若应用实现未采用每次打开数据库的方式，应根据实际契约调整故障注入，不能宣布本实验通过。",
+        "why": "比较三层状态，证明健康失败与进程退出并不等价。"
+      },
+      {
+        "title": "查看健康日志与重启计数",
+        "code": "docker inspect \"$API_ID\" --format \"{{json .State.Health}}\"\ndocker inspect \"$API_ID\" --format \"{{.State.StartedAt}} {{.RestartCount}}\"\ndocker compose -p learn-u13 -f compose.yaml -f \"$U13_CFG\" logs --tail 30 api",
+        "expect": "健康探测有失败输出；重启计数应与故障前相同。应用日志可出现数据库路径异常。",
+        "why": "先解释探测失败原因，不能因为unhealthy就盲目增加restart策略。"
+      },
+      {
+        "title": "修复路径并验证业务",
+        "code": "docker compose -p learn-u13 -f compose.yaml -f \"$U13_CFG\" exec -T api python -c \"from pathlib import Path; p=Path('/data/orders.db'); p.rmdir(); Path('/data/orders.saved.db').rename(p)\"\ndocker compose -p learn-u13 -f compose.yaml -f \"$U13_CFG\" up -d --wait\npython3 verify.py http://127.0.0.1:8080",
+        "expect": "就绪恢复且verify输出业务验收JSON；检查RestartCount和StartedAt判断是否靠重启恢复，不把up成功等同于原进程自动恢复。",
+        "why": "修复后必须通过实际读写证据，状态标签本身不足以证明数据路径可用。"
+      }
+    ],
+    "cleanup": "docker compose -p learn-u13 -f compose.yaml -f \"$U13_CFG\" down -v --remove-orphans\nrm -f \"$U13_CFG\""
+  },
+  "transfer": {
+    "question": "部署时所有依赖都曾healthy，十分钟后依赖短暂不可用，API开始连续报错，Compose ps仍显示Up。你会检查哪些责任边界，如何验证恢复方案？",
+    "evidence": [
+      "故障前后存活/就绪结果、错误类型和时间线。",
+      "depends_on条件、restart policy、健康探测实际命令与超时。",
+      "依赖恢复后应用是否重连，失败写请求是否被重复执行。"
+    ],
+    "answer": [
+      "Up只表示进程运行，先查/ready及业务错误，再检查依赖当前状态；启动时通过的条件不能证明十分钟后的可用性。",
+      "确认应用是否有超时、有限退避与重连；不要假设depends_on会持续管理依赖。若重试写操作，必须定义重复提交的幂等或错误响应契约。",
+      "再次注入短暂不可用，记录错误窗口和恢复后的业务断言；如依靠重启恢复，要说明重启策略触发条件与根因是否真正消除。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "Compose里depends_on、healthcheck、restart和up --wait分别解决什么，为什么组合起来仍不等于高可用？",
+      "answer": "depends_on描述创建启动时的依赖条件；healthcheck周期运行探测并报告状态；Engine restart policy主要在容器进程退出后按策略尝试重启；up --wait让本次命令等待服务达到running或healthy。它们不能替应用实现所有超时、重试、幂等和运行中依赖恢复，也不提供跨主机调度。要根据实际故障用健康日志、RestartCount、StartedAt和业务请求区分探测、进程和应用层，再验证修复。",
+      "followups": [
+        {
+          "question": "unhealthy一定自动重启吗？",
+          "answer": "不会，普通Compose/Engine重启策略不把单纯健康失败当主进程退出。需针对根因设计恢复，不应靠无限重启掩盖错误。"
+        },
+        {
+          "question": "depends_on.restart: true等于任何依赖故障都重启应用吗？",
+          "answer": "不是，它关联Compose显式操作导致的依赖更新或重启，不等于运行时任意健康变化的级联恢复机制。"
+        },
+        {
+          "question": "为什么/health成功而/ready失败是有价值的状态？",
+          "answer": "它区分进程可响应与服务承诺依赖可用。可据此停止向未就绪实例送业务，同时保留诊断入口；探测含义需要应用明确实现。"
+        }
+      ],
+      "misconception": "“已经启动过”“当前健康”“业务成功”和“以后会自行恢复”是四个不同命题。"
+    }
+  ],
+  "takeaways": [
+    "一次up成功是一个时间窗口内的结果。",
+    "健康失败与进程退出应分别观察。",
+    "运行中恢复需要应用、代理、Engine和运维各自明确责任。",
+    "修复的最终证据是业务恢复和数据正确，而非只显示Up。"
+  ],
+  "references": [
+    {
+      "title": "Compose启动依赖顺序",
+      "url": "https://docs.docker.com/compose/how-tos/startup-order/"
+    },
+    {
+      "title": "Compose depends_on定义",
+      "url": "https://docs.docker.com/reference/compose-file/services/#depends_on"
+    },
+    {
+      "title": "容器自动重启策略",
+      "url": "https://docs.docker.com/engine/containers/start-containers-automatically/"
+    }
+  ]
+}

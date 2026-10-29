@@ -6,7 +6,7 @@ Player(document.getElementById('p1'),{els,scenes:[
  {t:'七步',p:'每次推送触发。每一步都是一个门禁：失败就停下，后面的不执行。',set:G},
  {t:'构建一次',p:'理想目标是测试、扫描、部署同一份产物。下面的入门 workflow 使用独立 test 阶段再构建多平台发布镜像，共享缓存不等于产物相同；发布前还应对最终 digest 的每个目标平台做冒烟验证。',d:3600,set:on('sig','ck','bd')},
  {t:'测试失败',p:'测试不通过，扫描、推送、部署都不会执行。仓库里不会出现坏镜像。',d:3600,set:{...on('sig','ck','bd'),ts:[250,0,{cls:'blk',html:'测试<br><span style="font-size:11px">✗ 1 failed</span>'}],sc:[375,0,{cls:'blk dim'}],ps:[500,0,{cls:'blk dim'}],sg:[625,0,{cls:'blk dim'}],dp:[750,0,{cls:'blk dim'}]}},
- {t:'全部通过',p:'推送后对 digest 签名，部署步骤拿到这个 digest。部署的就是刚测试过、扫描过、签过名的那个镜像。',d:3800,set:{...on('sig','ck','bd','ts','sc','ps','sg','dp'),n:[0,80,{html:'build → digest sha256:4b1e… → deploy'}]}}]});
+ {t:'全部通过',p:'推送后对 digest 签名，部署步骤拿到这个 digest。这个引用固定发布内容。它是否经过测试、扫描和受信身份验证，需要对最终平台产物分别保存证据并设置门禁。',d:3800,set:{...on('sig','ck','bd','ts','sc','ps','sg','dp'),n:[0,80,{html:'build → digest sha256:4b1e… → deploy'}]}}]});
 Player(document.getElementById('p2'),{els:{d:{w:260,h:52,cls:'blk sig',html:'sha256:4b1e…<br><span style="font-size:11px;opacity:.7">镜像内容</span>'},t1:{cls:'pill ok',html:'sha-a1b2c3d'},t2:{cls:'pill mute',html:'1.4.2'},t3:{cls:'pill mute',html:'1.4'},t4:{cls:'pill bad',html:'latest'},t5:{cls:'pill mute',html:'main'},n:{w:640,cls:'tag'}},scenes:[
  {t:'一个镜像',p:'内容由 digest 唯一确定。标签只是指向它的名字，可以有多个。',set:{d:[0,60]}},
  {t:'每个提交',p:'<code>sha-a1b2c3d</code>：对应 git 提交，便于追溯；它仍是可覆盖的普通镜像标签。需仓库不可变策略或 digest 才能固定内容。<code>main</code>：分支最新一次构建，会移动。',d:3600,set:{d:[0,60],t1:[320,30],t5:[320,90]}},
@@ -34,5 +34,5 @@ Term(document.getElementById('t4'),[
 Quiz(document.getElementById('qs'),[
 ['CI 每次构建都要很久，因为？',['机器太慢','每次都是新机器，本地没有构建缓存','Dockerfile 写错了'],1,'用 cache-to/cache-from。'],
 ['推送镜像的凭证应该放在？',['workflow 文件里','CI 平台的 secrets 或 GITHUB_TOKEN','Dockerfile 里'],1,'不要提交到仓库。'],
-['部署时为什么按 digest 而不是 latest？',['digest 更短','保证部署的就是测试过的那个镜像','latest 不能拉取'],1,'标签会移动。'],
+['部署时为什么按 digest 而不是 latest？',['digest 更短','固定镜像内容，避免标签移动','latest 不能拉取'],1,'digest 固定内容身份；是否测过、扫过和可信，需要另外的验证证据。'],
 ['PR 触发的流水线通常？',['构建并推送','只构建和测试，不推送','直接部署'],1,'外部贡献者的代码不应获得写权限。']]);

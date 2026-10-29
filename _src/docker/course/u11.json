@@ -1,0 +1,260 @@
+{
+  "number": 11,
+  "title": "构建上下文、依赖图与缓存正确性",
+  "summary": "从构建输入和依赖关系预测哪些步骤会重建，区分镜像层缓存、缓存挂载与真正的发布测试。",
+  "minutes": 60,
+  "environment": "Docker Engine 或 Desktop，启用 BuildKit，Docker Compose v2；在仓库根目录执行。实验复用 docker/labs 的标准库应用，不需要安装 Python 第三方依赖。",
+  "sources": [
+    3,
+    5,
+    9,
+    17
+  ],
+  "objectives": [
+    "根据 COPY 范围与 DAG 预测缓存失效传播。",
+    "解释 BuildKit 为什么跳过独立 test 阶段。",
+    "用修改单个输入的实验区分层缓存与运行时内容。"
+  ],
+  "question": "改 README 后镜像重建了，改远端软件包后反而仍显示 CACHED；Dockerfile 明明有 test 阶段，发布镜像时测试却没执行。这些都可能符合缓存规则吗？",
+  "model": [
+    {
+      "title": "构建上下文是可访问输入边界",
+      "body": [
+        "构建器只能读取所选上下文、显式命名上下文和挂载等授权输入。COPY 的源相对于上下文根，不是 Dockerfile 所在目录；-f 只选择 Dockerfile，不会自动改变上下文。把仓库根作为上下文又 COPY . .，会把与应用无关的文件变化引入缓存键，也可能送入敏感文件。",
+        "文件是否参与某步缓存取决于该步读取的输入。COPY app.py version.txt 比 COPY . . 的输入范围更窄。.dockerignore 在发送上下文前排除内容，不能用它代替运行时保密。单纯修改文件 mtime 不必导致 COPY 缓存失效，文件内容和相关元数据才是要分析的输入。"
+      ]
+    },
+    {
+      "title": "多阶段是依赖图，不是待办清单",
+      "body": [
+        "BuildKit 从目标阶段向前寻找依赖。FROM 某阶段、COPY --from=某阶段建立依赖关系；独立 test 阶段不在 final 的依赖路径上时，构建 final 可以跳过 test。这是按图裁剪，不是漏执行。",
+        "因此“Dockerfile 里存在测试”不等于“每次发布都测试”。CI 应显式构建 test 目标并执行最终运行时验证，或设计可审计的依赖/门禁。为了把 pytest 装进镜像而让发布产物依赖整个测试阶段，会扩大运行时镜像；测试环境与运行环境应各自明确。"
+      ]
+    },
+    {
+      "title": "缓存复用的是已知输入的结果",
+      "body": [
+        "层缓存命中意味着本步已知输入与之前匹配，不意味着互联网上的所有依赖都没变化。RUN apt-get update 或访问网络的命令不会因为远端仓库更新而自动失效；固定依赖输入、主动更新与 --no-cache/--pull 解决的是不同问题。",
+        "RUN --mount=type=cache 提供可丢弃的加速目录，层重建时仍可复用下载或编译缓存。正确构建不应依赖缓存里恰巧存在的私有文件；清缓存后也应得到功能正确的结果。secret 的内容不参与缓存失效，换 token 不保证该 RUN 重执行；不应把 token 本身作为 ARG 来“解决”缓存问题。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "从上下文到test与final的BuildKit依赖图",
+    "nodes": [
+      {
+        "id": "ctx",
+        "title": "构建上下文",
+        "detail": "app.py、version.txt",
+        "x": 0,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "base",
+        "title": "runtime",
+        "detail": "Python + 应用代码",
+        "x": 300,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "test",
+        "title": "test 目标",
+        "detail": "语法与业务测试",
+        "x": 600,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "final",
+        "title": "final 目标",
+        "detail": "仅继承 runtime",
+        "x": 300,
+        "y": 180,
+        "w": 210
+      },
+      {
+        "id": "cache",
+        "title": "构建缓存",
+        "detail": "按步骤输入寻址",
+        "x": 0,
+        "y": 180,
+        "w": 210
+      },
+      {
+        "id": "ci",
+        "title": "发布门禁",
+        "detail": "显式 test + 运行验证",
+        "x": 600,
+        "y": 180,
+        "w": 210
+      }
+    ],
+    "edges": [
+      {
+        "from": "ctx",
+        "to": "base",
+        "label": "复制输入"
+      },
+      {
+        "from": "base",
+        "to": "test",
+        "label": "继承"
+      },
+      {
+        "from": "base",
+        "to": "final",
+        "label": "继承"
+      },
+      {
+        "from": "cache",
+        "to": "base",
+        "label": "匹配则复用"
+      },
+      {
+        "from": "test",
+        "to": "ci",
+        "label": "测试结果"
+      },
+      {
+        "from": "final",
+        "to": "ci",
+        "label": "运行验证"
+      }
+    ],
+    "steps": [
+      {
+        "title": "先找实际输入",
+        "body": "上下文范围和 COPY 列表决定哪些变化影响 runtime；Dockerfile 路径不能代替上下文分析。",
+        "focus": [
+          "ctx",
+          "base"
+        ]
+      },
+      {
+        "title": "选择 final",
+        "body": "BuildKit 只遍历 final 的依赖；与其并列的 test 不会因写在前面就自动执行。",
+        "focus": [
+          "base",
+          "final"
+        ]
+      },
+      {
+        "title": "改变一个输入",
+        "body": "输入未变可复用缓存；修改 version.txt 使相关 COPY 和后续依赖重建。",
+        "focus": [
+          "ctx",
+          "cache",
+          "base",
+          "final"
+        ]
+      },
+      {
+        "title": "门禁明确收集证据",
+        "body": "CI 要显式取得 test 结果与最终运行产物证据；两个阶段共享缓存不等于它们是同一个镜像。",
+        "focus": [
+          "test",
+          "final",
+          "ci"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "用共用应用观察DAG裁剪与单输入变化",
+    "environment": "在仓库根目录开始，临时目录使用 mktemp；以下所有步骤在同一终端。只复制共用应用文件，不修改 docker/labs 原文件。",
+    "predict": "final 与 test 都 FROM runtime。预测构建 final 时是否执行 test，修改 README 与 version.txt 时分别会影响哪些步骤。",
+    "steps": [
+      {
+        "title": "固定一个很小的上下文",
+        "code": "U11_DIR=$(mktemp -d)\ncp docker/labs/app.py docker/labs/version.txt docker/labs/verify.py \"$U11_DIR/\"\ncat > \"$U11_DIR/Dockerfile\" <<'EOF'\n# syntax=docker/dockerfile:1\nFROM python:3.12-slim AS runtime\nWORKDIR /app\nCOPY app.py verify.py version.txt ./\nRUN mkdir -p /data && chown 10001:10001 /data\nUSER 10001:10001\nENV DATA_DIR=/data BIND_HOST=0.0.0.0 PORT=8000\nCMD [\"python\",\"app.py\",\"serve\"]\nFROM runtime AS test\nRUN PYTHONPYCACHEPREFIX=/tmp/pycache python -m py_compile app.py verify.py\nFROM runtime AS final\nEOF",
+        "expect": "临时目录内包含明确的三个 COPY 输入和一个 Dockerfile；test 只做语法检查，不能当业务验收。",
+        "why": "此例专门验证依赖图与输入边界，运行应用和数据接口与共用实验一致。"
+      },
+      {
+        "title": "构建 final 并保存可检查日志",
+        "code": "docker build --progress=plain --target final -t learn-u11:final \"$U11_DIR\" > \"$U11_DIR/final.log\" 2>&1\ncat \"$U11_DIR/final.log\"",
+        "expect": "runtime 构建，test 中 py_compile 不应执行。实际下载耗时不作评分依据。",
+        "why": "final 不依赖 test，图裁剪解释了测试为何被跳过。"
+      },
+      {
+        "title": "显式执行 test，再复用未变输入",
+        "code": "docker build --progress=plain --target test -t learn-u11:test \"$U11_DIR\" > \"$U11_DIR/test.log\" 2>&1\ncat \"$U11_DIR/test.log\"\nprintf \"只改变未被 COPY 的说明文件\n\" > \"$U11_DIR/README.txt\"\ndocker build --progress=plain --target final -t learn-u11:final \"$U11_DIR\" > \"$U11_DIR/readme.log\" 2>&1\ncat \"$U11_DIR/readme.log\"",
+        "expect": "test 的 py_compile 应执行；README 不在 COPY 列表中，runtime 应可复用。",
+        "why": "显式目标与最小输入范围是两种独立设计。"
+      },
+      {
+        "title": "改变真正的构建输入",
+        "code": "printf \"11.0.1\n\" > \"$U11_DIR/version.txt\"\ndocker build --progress=plain --target final -t learn-u11:final \"$U11_DIR\" > \"$U11_DIR/version.log\" 2>&1\ncat \"$U11_DIR/version.log\"\ndocker run --rm learn-u11:final python -c \"from pathlib import Path; print(Path('/app/version.txt').read_text().strip())\"",
+        "expect": "COPY 与其后的依赖重建；容器读到 11.0.1。不要只看日志耗时推断成功。",
+        "why": "把缓存失效和实际运行文件联系，避免仅以“构建变慢”判断产物正确。"
+      },
+      {
+        "title": "禁用层缓存验证结果不依赖旧缓存",
+        "code": "docker build --no-cache --target final -t learn-u11:cold \"$U11_DIR\"\ndocker run --rm learn-u11:cold python -c \"from pathlib import Path; assert Path('/app/version.txt').read_text().strip()=='11.0.1'; print('version assertion passed')\"",
+        "expect": "干净重建后的版本断言也通过；本实验没有声称两次 image ID 必然相同。",
+        "why": "功能正确性、缓存命中和字节级可复现是不同验收，本课只验证前两者。"
+      }
+    ],
+    "cleanup": "docker image rm learn-u11:final learn-u11:test learn-u11:cold\nrm -rf \"$U11_DIR\""
+  },
+  "transfer": {
+    "question": "团队把 Dockerfile 移到 deploy/，仍以仓库根为上下文；每次提交文档都重跑 pip install，token 轮换后私有依赖下载步骤却没执行。请解释两个现象，并提出不会把 token 写进镜像或 ARG 的修复。",
+    "evidence": [
+      "实际 build 命令的 -f 与上下文参数，以及 COPY/.dockerignore。",
+      "一份只改文档、一份只改依赖清单的步骤缓存日志。",
+      "secret 挂载与显式非敏感失效标记的设计，以及冷缓存成功证据。"
+    ],
+    "answer": [
+      "先查看是否 COPY . . 放在安装依赖之前；上下文仍是仓库根，文档变化会让该 COPY 及后续依赖步骤失效。按变化频率拆 COPY，并缩小上下文或忽略无关文件。",
+      "secret 的内容不参加缓存键，轮换 token 本身不强制重跑。若业务确需重新下载，应变更明确的依赖版本/锁文件或非敏感 CACHE_REV 标记，而不是把 token 放进 ARG。",
+      "用文档变化、依赖变化和冷构建分别验证加速与正确性；缓存目录应当可以丢弃，不成为隐藏依赖。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "解释 BuildKit 的构建缓存、多阶段依赖图和 cache mount；如何证明一个优化不会改变构建正确性？",
+      "answer": "BuildKit 按目标依赖图调度并裁剪无关阶段，阶段中的操作依据指令及已声明输入匹配缓存。层缓存直接复用步骤结果；cache mount 则在步骤重跑时提供临时加速目录，不属于最终层。优化应先限定上下文与 COPY 输入，再把依赖清单放在经常变化的源码之前。以只改文档、改依赖、冷构建等单变量实验观察步骤和运行产物，证明既减少无关失效，又不依赖缓存残留。网络资源和 secret 值不会自动成为所有缓存输入，必须管理版本与更新策略。",
+      "followups": [
+        {
+          "question": "--target final 会运行在它前面的所有 test 阶段吗？",
+          "answer": "不会，只执行final的依赖。独立test需要显式构建与门禁，不能靠书写顺序。"
+        },
+        {
+          "question": "--no-cache 是否等同于 --pull？",
+          "answer": "不是。前者禁用构建层缓存，后者请求刷新基础镜像；两者也不替代依赖锁和可控更新。"
+        },
+        {
+          "question": "缓存挂载被删掉后构建失败，说明什么？",
+          "answer": "构建可能把缓存当必需输入或只存在的产物来源；应补明确的下载/构建路径，保证空缓存也能成功，再用缓存加速。"
+        }
+      ],
+      "misconception": "CACHED 只代表已声明输入匹配，不代表依赖最新、安全或发布测试已经执行。"
+    }
+  ],
+  "takeaways": [
+    "-f 选择 Dockerfile，上下文参数决定 COPY 的输入边界。",
+    "多阶段是依赖图，存在 test 阶段不代表发布时执行。",
+    "层缓存与 cache mount 加速不同阶段，空缓存也应正确。",
+    "通过单变量输入变化和运行断言验证优化。"
+  ],
+  "references": [
+    {
+      "title": "构建上下文",
+      "url": "https://docs.docker.com/build/building/context/"
+    },
+    {
+      "title": "多阶段构建与阶段裁剪",
+      "url": "https://docs.docker.com/build/building/multi-stage/"
+    },
+    {
+      "title": "缓存失效规则",
+      "url": "https://docs.docker.com/build/cache/invalidation/"
+    },
+    {
+      "title": "优化构建缓存",
+      "url": "https://docs.docker.com/build/cache/optimize/"
+    }
+  ]
+}

@@ -1,0 +1,242 @@
+{
+  "number": 9,
+  "title": "网络空间：bridge、veth 与服务发现",
+  "summary": "沿着一次连接解释 localhost、容器网卡、共享网桥和服务名解析，并区分名字可解析与服务可连接。",
+  "minutes": 55,
+  "environment": "Docker Engine 或 Docker Desktop，Docker Compose v2；宿主机有 Python 3。实验使用独立项目 learn-u09，占用本机 8080；如已被占用，先设置 LAB_PORT=18089，并在宿主机请求中使用该端口。",
+  "sources": [
+    7,
+    11,
+    15
+  ],
+  "objectives": [
+    "根据网络空间判断 localhost 指向谁。",
+    "区分服务发现、网络连通和应用监听三个条件。",
+    "用网络成员和 socket 证据解释为什么一个容器能连接、另一个不能。"
+  ],
+  "question": "宿主机访问 8080 正常，front 网络中的工具容器却找不到 api；加入 api 的网络空间后，工具里的 localhost:8000 又能连接。这三个结果如何同时成立？",
+  "model": [
+    {
+      "title": "localhost 属于网络空间",
+      "body": [
+        "Linux 网络 namespace 隔离网卡、IP 地址、路由、端口与部分网络栈状态。两个容器分别监听 0.0.0.0:8000 通常不冲突，因为它们使用不同网络空间；同一空间中的两个进程绑定同一地址与端口才可能冲突。",
+        "127.0.0.1 指向当前网络空间的回环接口。宿主机、api、gateway 各有自己的 localhost。发布 8080:80 是建立跨空间入口，不会把所有容器的 localhost 合成一个。使用 --network container:目标 才让工具进程加入目标网络空间；文件系统和用户身份仍可不同。"
+      ]
+    },
+    {
+      "title": "网桥与 veth 是连接关系",
+      "body": [
+        "在常见 rootful Linux bridge 网络中，容器 eth0 通过一对 veth 连到宿主机网桥。同一用户自定义网络中的容器可以经网桥交换数据，路由和防火墙决定允许的路径。网桥不是 DNS 服务器，也不是每个请求都必须经过的反向代理。",
+        "共用应用里 gateway 加入 front 和 back，api 只加入 back。gateway 能向 api 发起应用请求，因为它在 back 上有接口；front 中的其他容器不会因此自动获得 api 的服务发现或网络成员身份。Docker Desktop 的桥和 veth 位于 Linux 虚拟机中，桌面系统的 ip 命令不能直接看到它们。"
+      ]
+    },
+    {
+      "title": "服务名解决地址变化，不保证服务可用",
+      "body": [
+        "用户自定义网络提供内置 DNS，容器通常通过 127.0.0.11 查询同网络的服务名。名字解析返回地址后，客户端仍需经过路由、TCP 建连和应用协议；服务只监听 127.0.0.1 时，别人即使知道其容器 IP 也连不上。",
+        "Compose 重建 api 时 IP 可能改变，也可能碰巧没变。服务名是稳定的逻辑入口，客户端要能重新解析、重连。把一次 inspect 看到的 IP 写进配置会把暂时地址误作服务契约；“DNS 成功”只能证明解析阶段成功。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "从网络成员到DNS和TCP连接",
+    "nodes": [
+      {
+        "id": "front",
+        "title": "front 网络",
+        "detail": "只接入 front 的探针",
+        "x": 0,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "gateway",
+        "title": "gateway",
+        "detail": "front 与 back 两张接口",
+        "x": 300,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "dns",
+        "title": "内置 DNS",
+        "detail": "按网络返回服务地址",
+        "x": 600,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "bridge",
+        "title": "back 网桥",
+        "detail": "连接同网络的 veth",
+        "x": 300,
+        "y": 180,
+        "w": 210
+      },
+      {
+        "id": "api",
+        "title": "api 网络空间",
+        "detail": "eth0；0.0.0.0:8000",
+        "x": 600,
+        "y": 180,
+        "w": 210
+      }
+    ],
+    "edges": [
+      {
+        "from": "front",
+        "to": "gateway",
+        "label": "同网通信"
+      },
+      {
+        "from": "gateway",
+        "to": "dns",
+        "label": "查询 api"
+      },
+      {
+        "from": "dns",
+        "to": "api",
+        "label": "解析结果"
+      },
+      {
+        "from": "gateway",
+        "to": "bridge",
+        "label": "发起 TCP"
+      },
+      {
+        "from": "bridge",
+        "to": "api",
+        "label": "veth → eth0"
+      }
+    ],
+    "steps": [
+      {
+        "title": "先判断所在空间",
+        "body": "front 探针的 localhost 是探针自己；gateway、api 分别有自己的回环接口。",
+        "focus": [
+          "front",
+          "gateway",
+          "api"
+        ]
+      },
+      {
+        "title": "先解析再连接",
+        "body": "gateway 在 back 内查询 api，DNS 返回该网络上的地址；front 探针没有同样的服务发现范围。",
+        "focus": [
+          "gateway",
+          "dns",
+          "api"
+        ]
+      },
+      {
+        "title": "沿连接关系前进",
+        "body": "TCP 请求从 gateway 的 back 接口经网桥与 veth 到 api；api 必须监听可到达的地址。",
+        "focus": [
+          "gateway",
+          "bridge",
+          "api"
+        ]
+      },
+      {
+        "title": "重建只改变具体实例",
+        "body": "api 地址可能改变，逻辑服务名仍是 api。连接失败时应区分旧连接、解析、路由与监听状态。",
+        "focus": [
+          "dns",
+          "api"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "从 front、back 和共享网络空间观察同一个 API",
+    "environment": "在仓库根目录进入 docker/labs；以下步骤保持同一终端。使用独立项目与实验数据，启动时会构建共用 API。工具镜像 python:3.12-slim 需要可拉取。",
+    "predict": "运行前画出 gateway 和 api 的网络成员；预测 front 探针能否解析 api、back 探针能否读取 /ready、共享 api 网络空间的探针能否访问 localhost。",
+    "steps": [
+      {
+        "title": "建立独立实验实例",
+        "code": "cd docker/labs\ndocker compose -p learn-u09 up -d --build --wait\ndocker compose -p learn-u09 ps",
+        "expect": "gateway 和 api 应达到 running/healthy；若 --wait 失败先保留日志，不继续把故障当作预期。",
+        "why": "先取得可用基线，后面的网络差异才有可比性。"
+      },
+      {
+        "title": "读取实际网络成员",
+        "code": "docker inspect \"$(docker compose -p learn-u09 ps -q api)\" --format \"{{json .NetworkSettings.Networks}}\"\ndocker inspect \"$(docker compose -p learn-u09 ps -q gateway)\" --format \"{{json .NetworkSettings.Networks}}\"",
+        "expect": "api 只有 learn-u09_back，gateway 同时有 front、back；记录实际 IP，不要求固定数字。",
+        "why": "网络成员是可观察配置，不靠容器名或端口映射猜测。"
+      },
+      {
+        "title": "用同一工具比较解析范围",
+        "code": "docker run --rm --network learn-u09_front python:3.12-slim python -c \"import socket; print(socket.gethostbyname('api'))\"\ndocker run --rm --network learn-u09_back python:3.12-slim python -c \"import socket,urllib.request; print(socket.gethostbyname('api')); print(urllib.request.urlopen('http://api:8000/ready',timeout=3).read().decode())\"",
+        "expect": "front 查询 api 预期报名称解析错误并返回非零；back 应输出实际地址与就绪响应。第一条失败是本步要观察的边界。",
+        "why": "只改变网络成员，隔离服务发现范围；back 上成功响应还验证了 TCP 和应用层。"
+      },
+      {
+        "title": "加入目标网络空间后观察 localhost",
+        "code": "API_ID=$(docker compose -p learn-u09 ps -q api)\ndocker run --rm --network container:\"$API_ID\" python:3.12-slim python -c \"import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=3).read().decode())\"",
+        "expect": "无需发布 api 的 8000，也可通过共享空间中的 localhost 访问其存活接口。",
+        "why": "共享网络空间与仅仅连接同一网桥是两种关系。"
+      },
+      {
+        "title": "重建实例并继续按名字访问",
+        "code": "docker compose -p learn-u09 up -d --force-recreate --wait api\ndocker run --rm --network learn-u09_back python:3.12-slim python -c \"import socket,urllib.request; print(socket.gethostbyname('api')); print(urllib.request.urlopen('http://api:8000/version',timeout=3).read().decode())\"",
+        "expect": "再次记录 IP，无论是否变化，服务名都应可用；版本内容来自实际镜像。",
+        "why": "服务名稳定并不依赖每次一定更换 IP。"
+      }
+    ],
+    "cleanup": "docker compose -p learn-u09 down -v --remove-orphans"
+  },
+  "transfer": {
+    "question": "一个新加入 back 的 worker 能解析 api，却连接 http://api:8000 时被拒绝；在 api 的网络空间访问 localhost:8000 成功。如何定位，不能仅凭“Docker 网络有问题”作答？",
+    "evidence": [
+      "worker 的解析地址和 api 的 back 地址。",
+      "分别从 worker 与共享 api 空间请求的错误类型、目标地址和端口。",
+      "BIND_HOST、PORT 等实际配置，以及修复后从 worker 发起的 /ready 响应。"
+    ],
+    "answer": [
+      "解析成功先排除“完全找不到服务名”，连接被拒绝说明需优先确认监听地址/端口，而不是继续更换 DNS。",
+      "检查 api 是否只监听回环，比较 BIND_HOST 与启动命令；localhost 成功不等于 eth0 地址上监听。若确为回环绑定，改为 0.0.0.0 并重建 api。",
+      "再从 worker 用服务名请求 /ready；若仍失败，回到地址、网络成员及端口逐项核对，不把第一个猜测当最终结论。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "为什么两个容器都能监听 8000？同一网络里的 api 不能用 localhost 访问 db 又是为什么？",
+      "answer": "端口属于网络 namespace，不是 Docker 全局编号。普通容器有独立网卡、路由、套接字与回环接口，所以各自监听 8000 不冲突。localhost 永远指向调用进程所在网络空间；访问另一容器要用同网络可解析的服务名与容器端口。若通过 --network container:目标 共享网络空间，localhost 才共享，端口也开始竞争。可用 inspect 核对成员，用共享空间探针与跨容器探针比较连接结果。",
+      "followups": [
+        {
+          "question": "同一网桥就意味着共享网络空间吗？",
+          "answer": "不是。同一网桥连接多个独立网络空间的接口；每个容器仍有自己的 IP、回环和监听套接字。"
+        },
+        {
+          "question": "重建后 IP 没变，能证明硬编码 IP 安全吗？",
+          "answer": "不能。地址分配可复用同一地址，也可改变；契约是服务名与协议端口，应验证重新解析与重连。"
+        },
+        {
+          "question": "DNS 成功、TCP 超时与 connection refused 分别说明什么？",
+          "answer": "DNS 成功说明名称解析得到地址；超时可能来自丢包、路由、防火墙或无响应；拒绝通常指目标可达但端口没有监听或主动拒绝，仍需观察确认，不能只凭错误字符串定位所有情况。"
+        }
+      ],
+      "misconception": "把 -p 8080:80 理解成所有容器的 8080 都转到目标。发布端口作用于宿主入口；容器间通常访问服务名:容器端口。"
+    }
+  ],
+  "takeaways": [
+    "网络 namespace 隔离网络栈，同网桥只建立通信关系。",
+    "localhost 的含义由请求进程所在空间决定。",
+    "DNS、TCP、HTTP 与就绪是不同证据层。",
+    "用服务名连接可替换实例，同时处理重解析和重连。"
+  ],
+  "references": [
+    {
+      "title": "Docker 网络概览",
+      "url": "https://docs.docker.com/engine/network/"
+    },
+    {
+      "title": "Bridge 网络驱动",
+      "url": "https://docs.docker.com/engine/network/drivers/bridge/"
+    },
+    {
+      "title": "容器网络与 DNS",
+      "url": "https://docs.docker.com/engine/network/#dns-services"
+    }
+  ]
+}

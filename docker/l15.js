@@ -3,17 +3,17 @@ const base={eth:[0,0],pre:[0,90],fw:[0,180],br:[0,270],veth:[0,360],ct:[0,450]};
 const E={eth:N('eth0','192.168.1.10'),pre:N('PREROUTING → DOCKER','nat 表','dim'),fw:N('FORWARD','filter 表 · DOCKER-USER','dim'),br:N('docker0','网桥 172.17.0.1','ink'),veth:N('vethb3a1 ⇄ eth0','veth 对'),ct:N('nginx :80','容器 172.17.0.2'),
  pk:{cls:'pill sig'},n:{w:340,cls:'tag'}};
 const pk=(y,t)=>({pk:[250,y+16,{html:t}]});
-Player(document.getElementById('p1'),{els:E,scenes:[
- {t:'到达宿主机网卡',p:'请求：目的地址 192.168.1.10:8080。',set:{...base,...pk(0,'dst 192.168.1.10:8080')}},
- {t:'DNAT',p:'nat 表 PREROUTING 跳到 DOCKER 链，命中 <code>-p 8080:80</code> 生成的规则，目的地址被改成 <b>172.17.0.2:80</b>。conntrack 记住这个改写，回包时自动改回来。',d:3800,set:{...base,pre:[0,90,{cls:'blk sig'}],...pk(90,'dst 172.17.0.2:80')}},
- {t:'FORWARD',p:'目的地址不是本机了，所以走 FORWARD 链，而不是 INPUT 链。<b>ufw 的规则在 INPUT 链</b>，于是被绕过了。',d:3800,set:{...base,fw:[0,180,{cls:'blk sig'}],...pk(180,'dst 172.17.0.2:80'),n:[250,240,{html:'ufw / INPUT 链：<b>没有经过</b>'}]}},
- {t:'网桥和 veth',p:'路由表说 172.17.0.0/16 在 docker0 上。网桥根据 MAC 地址把包交给对应的 veth，从另一端（容器的 eth0）出来。',set:{...base,br:[0,270,{cls:'blk sig'}],veth:[0,360,{cls:'blk sig'}],...pk(360,'dst 172.17.0.2:80')}},
- {t:'到达容器',p:'nginx 收到一个发往自己 80 端口的普通请求。',set:{...base,ct:[0,450,{cls:'blk sig'}],...pk(450,'到达')}}]});
+Player(document.getElementById('p1'),{els:E,edges:[{from:'eth',to:'pre'},{from:'pre',to:'fw'},{from:'fw',to:'br'},{from:'br',to:'veth'},{from:'veth',to:'ct'}],scenes:[
+ {t:'到达宿主机网卡',focus:['eth'],p:'请求：目的地址 192.168.1.10:8080。',set:{...base,...pk(0,'dst 192.168.1.10:8080')}},
+ {t:'DNAT',focus:['pre'],activeEdges:['eth->pre'],p:'nat 表 PREROUTING 跳到 DOCKER 链，命中 <code>-p 8080:80</code> 生成的规则，目的地址被改成 <b>172.17.0.2:80</b>。conntrack 记住这个改写，回包时自动改回来。',d:3800,set:{...base,pre:[0,90,{cls:'blk sig'}],...pk(90,'dst 172.17.0.2:80')}},
+ {t:'FORWARD',focus:['fw'],activeEdges:['eth->pre','pre->fw'],p:'目的地址不是本机了，所以走 FORWARD 链，而不是 INPUT 链。<b>ufw 的规则在 INPUT 链</b>，于是被绕过了。',d:3800,set:{...base,fw:[0,180,{cls:'blk sig'}],...pk(180,'dst 172.17.0.2:80'),n:[250,240,{html:'ufw / INPUT 链：<b>没有经过</b>'}]}},
+ {t:'网桥和 veth',focus:['br','veth'],activeEdges:['eth->pre','pre->fw','fw->br','br->veth'],p:'路由表说 172.17.0.0/16 在 docker0 上。网桥根据 MAC 地址把包交给对应的 veth，从另一端（容器的 eth0）出来。',set:{...base,br:[0,270,{cls:'blk sig'}],veth:[0,360,{cls:'blk sig'}],...pk(360,'dst 172.17.0.2:80')}},
+ {t:'到达容器',focus:['ct'],activeEdges:['eth->pre','pre->fw','fw->br','br->veth','veth->ct'],p:'nginx 收到一个发往自己 80 端口的普通请求。',set:{...base,ct:[0,450,{cls:'blk sig'}],...pk(450,'到达')}}]});
 const O={ct:[0,0],veth:[0,90],br:[0,180],post:[0,270],eth:[0,360]};
-Player(document.getElementById('p2'),{els:{ct:N('容器 172.17.0.2','curl api.github.com'),veth:N('eth0 ⇄ veth',''),br:N('docker0','默认网关 172.17.0.1','ink'),post:N('POSTROUTING','MASQUERADE 172.17.0.0/16','dim'),eth:N('eth0','192.168.1.10'),pk:{cls:'pill sig'}},scenes:[
- {t:'容器发出请求',p:'源地址 172.17.0.2。容器的默认路由指向 docker0（172.17.0.1）。',set:{...O,pk:[250,16,{html:'src 172.17.0.2'}]}},
- {t:'经过网桥到宿主机',p:'宿主机开启了 ip_forward，查路由表，从 eth0 发出。',set:{...O,pk:[250,196,{html:'src 172.17.0.2'}]}},
- {t:'MASQUERADE',p:'外网不认识 172.17.x.x。nat 表 POSTROUTING 链的 MASQUERADE 规则把源地址改成 eth0 的地址。回包按 conntrack 记录改回容器地址。',d:3800,set:{...O,post:[0,270,{cls:'blk sig'}],pk:[250,286,{html:'src 192.168.1.10'}]}}]});
+Player(document.getElementById('p2'),{els:{ct:N('容器 172.17.0.2','curl api.github.com'),veth:N('eth0 ⇄ veth',''),br:N('docker0','默认网关 172.17.0.1','ink'),post:N('POSTROUTING','MASQUERADE 172.17.0.0/16','dim'),eth:N('eth0','192.168.1.10'),pk:{cls:'pill sig'}},edges:[{from:'ct',to:'veth'},{from:'veth',to:'br'},{from:'br',to:'post'},{from:'post',to:'eth'}],scenes:[
+ {t:'容器发出请求',focus:['ct'],p:'源地址 172.17.0.2。容器的默认路由指向 docker0（172.17.0.1）。',set:{...O,pk:[250,16,{html:'src 172.17.0.2'}]}},
+ {t:'经过网桥到宿主机',focus:['br'],activeEdges:['ct->veth','veth->br'],p:'宿主机开启了 ip_forward，查路由表，从 eth0 发出。',set:{...O,pk:[250,196,{html:'src 172.17.0.2'}]}},
+ {t:'MASQUERADE',focus:['post','eth'],activeEdges:['ct->veth','veth->br','br->post','post->eth'],p:'外网不认识 172.17.x.x。nat 表 POSTROUTING 链的 MASQUERADE 规则把源地址改成 eth0 的地址。回包按 conntrack 记录改回容器地址。',d:3800,set:{...O,post:[0,270,{cls:'blk sig'}],pk:[250,286,{html:'src 192.168.1.10'}]}}]});
 (()=>{let sc='in',ufw=false;const S=document.getElementById('sc'),F=document.getElementById('fw'),H=document.getElementById('hops'),M=document.getElementById('hm');
  const SC={in:'外部访问 -p 8080:80',bind:'外部访问 -p 127.0.0.1:8080:80',out:'容器访问外网',same:'同网络容器按名字访问',diff:'跨网络访问'};
  Object.entries(SC).forEach(([k,l])=>{const b=document.createElement('button');b.className='btn';b.textContent=l;b.dataset.k=k;b.addEventListener('click',()=>{sc=k;draw()});S.appendChild(b)});

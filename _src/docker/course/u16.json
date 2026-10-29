@@ -1,0 +1,259 @@
+{
+  "number": 16,
+  "title": "可验证发布：让证据跟随最终运行产物",
+  "summary": "先完成无需云账号的单平台构建、业务验证、内容固定和重新部署，再扩展到仓库摘要、身份验证与多平台发布。",
+  "minutes": 65,
+  "environment": "Docker Engine或Desktop、Compose v2、宿主Python3。核心闭环完全本地；发布到远端仓库与cosign签名是可选扩展，要求明确的自有仓库权限和工具，不提供虚构可用地址。",
+  "sources": [
+    10,
+    20,
+    23,
+    25
+  ],
+  "objectives": [
+    "让实际启动的最终镜像与验收证据使用同一内容身份。",
+    "演示标签移动后仍能按已验证内容重新部署。",
+    "解释本地image ID、仓库manifest digest与多平台证据之间的转换边界。"
+  ],
+  "question": "CI测试了test阶段，随后重新构建final并推送。部署配置虽然用了digest，为什么仍不能宣称部署的就是刚测试过的产物？",
+  "model": [
+    {
+      "title": "一次构建与一次验收必须连到同一对象",
+      "body": [
+        "源码测试验证逻辑的一部分，test阶段还可能安装额外依赖、以root运行或省略最终入口。最终镜像的启动、监听、数据卷权限、健康检查与业务请求，应在实际发布运行产物上验证。共享缓存不能代替对象身份。",
+        "先取得最终镜像的内容身份，再让启动与验收引用这个对象。单机本地可按image ID启动并对照容器.Image；远端分发需要记录实际仓库manifest或index digest。image ID对应config，不能把它直接伪装成仓库可拉取的manifest摘要。"
+      ]
+    },
+    {
+      "title": "标签是入口，证据必须绑定不可变内容",
+      "body": [
+        "candidate、main、版本号都可能重新指向别的镜像。以标签启动后再记录当前标签值，可能已经记录了另一次构建。应在运行前解析身份，并保存运行容器实际.Image、业务验收输出、配置与时间。",
+        "重新部署时还要固定适用配置、数据位置和运行环境。镜像内容固定不还原卷、数据库或外部服务，也不保证新旧数据库兼容。本课只对同一实验卷和配置做重部署；真正的回滚需要版本化配置与迁移兼容策略。"
+      ]
+    },
+    {
+      "title": "推送、扫描、签名和部署各有门禁",
+      "body": [
+        "单平台在本地验证后可把同一对象推送到自有仓库，再解析真实manifest digest并拉取核对。扫描和签名都应针对该具体对象；部署方还要验证受信身份及必需证据，不能只信任一个可移动标签。核心实验没有远端签名步骤，所以不宣称已具备受信远程发布链。",
+        "多平台index需要逐个运行平台child manifest的启动/业务/扫描证据；amd64上的test通过不能覆盖arm64。先只发布已验证单平台是有效的范围选择。CI应使测试、风险或身份门禁失败时部署不执行；仓库里出现候选对象不等于它已被授权上线。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "最终运行产物从构建到验收再到重部署",
+    "nodes": [
+      {
+        "id": "build",
+        "title": "构建 final",
+        "detail": "产生本地image ID",
+        "x": 0,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "candidate",
+        "title": "内容固定的候选",
+        "detail": "按实际身份启动",
+        "x": 300,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "checks",
+        "title": "运行时验收",
+        "detail": "健康、订单、配置",
+        "x": 600,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "record",
+        "title": "证据记录",
+        "detail": "身份 + JSON + 配置",
+        "x": 600,
+        "y": 180,
+        "w": 210
+      },
+      {
+        "id": "gate",
+        "title": "发布门禁",
+        "detail": "测试 / 风险 / 身份",
+        "x": 300,
+        "y": 180,
+        "w": 210
+      },
+      {
+        "id": "deploy",
+        "title": "按内容重部署",
+        "detail": "核对容器实际镜像",
+        "x": 0,
+        "y": 180,
+        "w": 210
+      }
+    ],
+    "edges": [
+      {
+        "from": "build",
+        "to": "candidate",
+        "label": "产物身份"
+      },
+      {
+        "from": "candidate",
+        "to": "checks",
+        "label": "运行验证"
+      },
+      {
+        "from": "checks",
+        "to": "record",
+        "label": "保留证据"
+      },
+      {
+        "from": "record",
+        "to": "gate",
+        "label": "覆盖范围"
+      },
+      {
+        "from": "gate",
+        "to": "deploy",
+        "label": "准入"
+      },
+      {
+        "from": "deploy",
+        "to": "candidate",
+        "label": "核对实际身份"
+      }
+    ],
+    "steps": [
+      {
+        "title": "身份先于测试",
+        "body": "先解析最终产物，测试和运行都引用它；测试阶段名称不是内容身份。",
+        "focus": [
+          "build",
+          "candidate"
+        ]
+      },
+      {
+        "title": "实际运行与业务断言",
+        "body": "用最终运行用户、网络和数据卷验证/ready与订单读写，保留JSON而非只有绿色日志。",
+        "focus": [
+          "candidate",
+          "checks",
+          "record"
+        ]
+      },
+      {
+        "title": "策略决定发布范围",
+        "body": "本地只证明本地运行闭环；远端身份、扫描与各平台证据需分别补齐。",
+        "focus": [
+          "record",
+          "gate"
+        ]
+      },
+      {
+        "title": "重部署再次核对",
+        "body": "标签可以移动，按已记录内容启动并核对容器.Image；配置与数据也有自己的版本边界。",
+        "focus": [
+          "gate",
+          "deploy",
+          "candidate"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "标签被移动后，重新部署同一份已验证内容",
+    "environment": "从仓库根目录进入docker/labs。项目learn-u16、端口18086和独立数据卷仅供本实验；所有步骤同一终端。无需远端仓库、GitHub账号或签名服务。",
+    "predict": "把candidate标签改指向nginx后，正在运行的API会变吗？按记录的image ID重建后是否仍能通过订单验收？",
+    "steps": [
+      {
+        "title": "构建最终应用并记录本地身份",
+        "code": "cd docker/labs\nU16_DIR=$(mktemp -d)\ndocker build -t learn-u16:candidate .\nIMAGE_ID=$(docker image inspect learn-u16:candidate --format \"{{.Id}}\")\nprintf \"%s\n\" \"$IMAGE_ID\" | tee \"$U16_DIR/image-id.txt\"\ndocker image inspect \"$IMAGE_ID\" > \"$U16_DIR/image-inspect.json\"",
+        "expect": "得到真实本地config/image ID；不把它写成虚构仓库@digest。",
+        "why": "后续运行与证据将绑定同一个已经构建完成的对象。"
+      },
+      {
+        "title": "按具体内容启动而不是再次按候选标签解析",
+        "code": "LAB_IMAGE=\"$IMAGE_ID\" LAB_PORT=18086 docker compose -p learn-u16 up -d --no-build --wait\nAPI_ID=$(docker compose -p learn-u16 ps -q api)\nACTUAL=$(docker inspect \"$API_ID\" --format \"{{.Image}}\")\ntest \"$ACTUAL\" = \"$IMAGE_ID\" && printf \"actual image matches\n\"",
+        "expect": "容器.Image必须与记录的image ID完全一致；启动失败时停止验收。",
+        "why": "证明被测容器确实使用该对象，而不是另一次构建或旧标签。"
+      },
+      {
+        "title": "保留真实运行验收与配置",
+        "code": "python3 verify.py http://127.0.0.1:18086 > \"$U16_DIR/verify-first.json\"\ncat \"$U16_DIR/verify-first.json\"\nLAB_IMAGE=\"$IMAGE_ID\" LAB_PORT=18086 docker compose -p learn-u16 config > \"$U16_DIR/compose-effective.yaml\"\ndocker inspect \"$API_ID\" > \"$U16_DIR/container-first.json\"",
+        "expect": "verify成功并输出业务JSON；配置和容器证据保留实际用户、挂载和健康状态。",
+        "why": "测试对象、声明和运行结果放在同一证据目录。"
+      },
+      {
+        "title": "移动标签并证明运行对象未随之改变",
+        "code": "GATEWAY_ID=$(docker compose -p learn-u16 ps -q gateway)\nGATEWAY_IMAGE=$(docker inspect \"$GATEWAY_ID\" --format \"{{.Image}}\")\ndocker image tag \"$GATEWAY_IMAGE\" learn-u16:candidate\ndocker image inspect learn-u16:candidate --format \"{{.Id}}\"\ndocker inspect \"$API_ID\" --format \"{{.Image}}\"\npython3 verify.py http://127.0.0.1:18086 > \"$U16_DIR/verify-after-tag.json\"",
+        "expect": "candidate标签现在指向本机已存在的nginx内容；运行API仍引用原image ID且业务验收成功。",
+        "why": "标签是可移动引用，已创建容器不随标签重标而替换文件系统。"
+      },
+      {
+        "title": "按已记录内容重部署并保存最终断言",
+        "code": "LAB_IMAGE=\"$IMAGE_ID\" LAB_PORT=18086 docker compose -p learn-u16 up -d --no-build --force-recreate --wait api\nNEW_API=$(docker compose -p learn-u16 ps -q api)\nNEW_ACTUAL=$(docker inspect \"$NEW_API\" --format \"{{.Image}}\")\ntest \"$NEW_ACTUAL\" = \"$IMAGE_ID\"\npython3 verify.py http://127.0.0.1:18086 > \"$U16_DIR/verify-redeploy.json\"\ndocker inspect \"$NEW_API\" > \"$U16_DIR/container-redeploy.json\"\nprintf \"evidence directory: %s\n\" \"$U16_DIR\"",
+        "expect": "新容器仍使用被验证的image ID，业务读写成功。若gateway仍缓存旧API地址导致短暂失败，先取证其DNS/上游行为再显式重建gateway；记录这项运行配置边界。",
+        "why": "这完成本地最终产物闭环；没有把应用重部署夸大成所有配置与数据均可回滚。"
+      }
+    ],
+    "cleanup": "LAB_IMAGE=\"$IMAGE_ID\" LAB_PORT=18086 docker compose -p learn-u16 down -v --remove-orphans\ndocker image rm learn-u16:candidate\n# 将验收JSON与配置复制到发布证据目录后再删除临时文件\nrm -rf \"$U16_DIR\""
+  },
+  "transfer": {
+    "question": "现在要发布到你有写权限的仓库，并增加arm64。请把本地证据扩展为部署方可验证的发布记录；若没有仓库或目标平台执行环境，明确哪些保证尚未取得。",
+    "evidence": [
+      "自己控制的仓库引用、实际推送后解析的digest，不能填写示例哈希。",
+      "每个发布平台child manifest对应的启动/订单/扫描结果，及index到child的对应表。",
+      "部署方受信身份验证的正向和错误身份/缺平台证据的负向结果。"
+    ],
+    "answer": [
+      "单平台可在设置PUBLISH_REF为自己的实际仓库标签并登录后，将记录的IMAGE_ID打上该标签推送，再用docker buildx imagetools inspect \"$PUBLISH_REF\"读取真实digest。按真实仓库@digest拉取，检查配置身份和业务；不要把本地image ID直接拼成仓库manifest引用。",
+      "多平台需先构建并导出各平台manifest，安排原生节点或明确可用的模拟环境运行最终产物；对每个child收集业务与扫描证据，再组index。缺目标平台验证时可只发布当前已验证单平台，而不是沿用amd64结果。",
+      "有cosign与明确身份配置时按实际digest签名，部署前验证受信公钥或OIDC issuer/identity，再检查证据覆盖。无仓库或身份前提时保留本地证据并声明远端链未完成，不能把可选步骤写成已验收。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "设计一条“测试的就是部署的”流水线。为什么部署用了digest还不够？",
+      "answer": "先构建最终运行产物并取得不可变身份，以它启动真实运行配置，执行健康、业务、权限及必要风险检查并保存证据。推送后取得仓库实际manifest或index digest，将该身份与测试报告、扫描、签名身份连接；部署前验证策略，再按摘要拉取并核对实际实例。digest固定内容，但不自带“测过”的含义；如果只测了另一个test阶段、另一架构或另一次重建，固定部署摘要仍可能部署未经验证的内容。多平台要逐child取证，数据和配置兼容另有门禁。",
+      "followups": [
+        {
+          "question": "本地image ID能直接当仓库digest吗？",
+          "answer": "不能，本地image ID通常对应config哈希，仓库引用可能对应manifest或index；推送后必须解析实际仓库摘要。"
+        },
+        {
+          "question": "推送之后再扫描，是否一定不能安全发布？",
+          "answer": "不一定，可先推送候选对象，门禁通过后才授权部署或晋升引用；关键是扫描失败不能触发上线，并明确仓库对象存在与生产授权不同。"
+        },
+        {
+          "question": "同一个index只在amd64测试够吗？",
+          "answer": "不够，arm64可能有不同二进制、系统包和运行问题；必须为发布范围的每个child提供对应运行和风险证据，或缩小发布范围。"
+        }
+      ],
+      "misconception": "一次绿色test阶段、同一Git提交或共享构建缓存，都不能独立证明最终运行镜像已通过验收。"
+    }
+  ],
+  "takeaways": [
+    "证据必须绑定最终运行产物的实际身份。",
+    "本地image ID与仓库manifest/index digest需要明确区分。",
+    "标签移动不改变已运行容器；重新创建时必须重新选择正确内容。",
+    "多平台、受信身份、数据兼容各有独立证据与门禁。"
+  ],
+  "references": [
+    {
+      "title": "在推送前测试镜像",
+      "url": "https://docs.docker.com/build/ci/github-actions/test-before-push/"
+    },
+    {
+      "title": "镜像拉取与digest",
+      "url": "https://docs.docker.com/reference/cli/docker/image/pull/"
+    },
+    {
+      "title": "多平台构建",
+      "url": "https://docs.docker.com/build/building/multi-platform/"
+    },
+    {
+      "title": "Cosign镜像验证",
+      "url": "https://docs.sigstore.dev/cosign/verifying/verify/"
+    }
+  ]
+}

@@ -1,0 +1,258 @@
+{
+  "number": 15,
+  "title": "供应链证据：扫描、SBOM与身份验证",
+  "summary": "把软件清单、漏洞判断、内容摘要和签名身份拆开，建立能够解释通过与拒绝原因的发布证据。",
+  "minutes": 60,
+  "environment": "Docker Engine或Desktop、Buildx、宿主Python3。扫描需联网下载Trivy及漏洞库；不挂载docker.sock。签名扩展需要已安装cosign和自己控制的仓库/OIDC身份，可选，不影响本地扫描与证据实验。",
+  "sources": [
+    9,
+    20,
+    23
+  ],
+  "objectives": [
+    "说明SBOM、漏洞报告、来源证明与签名各自证明什么。",
+    "基于实际扫描结果区分可修复、不可修复与需风险评估的项目。",
+    "将扫描工具、漏洞库时间和镜像身份一起记录，避免用一组固定CVE数字判断安全。"
+  ],
+  "question": "一个镜像扫描“零个可修复CRITICAL”，又有合法签名，是否足以允许部署？如果三天后数据库更新扫描失败，镜像内容一定变化了吗？",
+  "model": [
+    {
+      "title": "清单是观察，漏洞是带时间的判断",
+      "body": [
+        "SBOM列出分析器识别到的软件组件、版本和关系；漏洞扫描把这些组件与当时的漏洞数据库匹配。镜像没有变化，数据库或分析器更新也可能改变结果。包管理器回补安全补丁、运行平台差异、分析覆盖不足都会影响解释。",
+        "扫描输出不应只剩一个总数。记录镜像身份、工具版本、漏洞库元数据、平台与规则，再判断组件是否在运行路径上、是否有修复、替代或缓解措施。--ignore-unfixed改变显示或门禁范围，不会让无修复漏洞消失。"
+      ]
+    },
+    {
+      "title": "digest、签名与身份是三种连接",
+      "body": [
+        "digest把引用绑定到内容。签名把受信密钥或身份绑定到某份内容声明。验证者还需要选择可信公钥，或限制OIDC issuer、证书身份、工作流与引用范围；“存在一个能验证的签名”不等于来自你的发布流程。",
+        "签名者可以签一个有漏洞或没测过的镜像。来源证明记录构建输入和过程线索，其可信度依赖构建者与验证策略。验证内容完整性、验证来源身份、确认测试和风险门禁是彼此关联但不同的步骤。"
+      ]
+    },
+    {
+      "title": "门禁必须允许可解释的拒绝与更新",
+      "body": [
+        "先定义发布策略：允许的平台、受信发布身份、必须提供的测试与扫描证据、漏洞阈值和有时限的例外。对无修复漏洞可以评估可达性、缓解与替换计划，但不能仅因为没有补丁就自动认定安全。",
+        "保持可重复的评估与及时更新存在取舍：固定扫描工具与数据库有利于复核，持续更新有利于发现新风险。应记录本次评估版本，并对已发布digest定期重扫；不得通过删除数据库或忽略全部失败让门禁“变绿”。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "镜像内容、组件清单、风险与受信身份",
+    "nodes": [
+      {
+        "id": "image",
+        "title": "具体镜像内容",
+        "detail": "固定平台与摘要",
+        "x": 0,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "sbom",
+        "title": "SBOM",
+        "detail": "识别出的组件版本",
+        "x": 300,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "scan",
+        "title": "漏洞评估",
+        "detail": "数据库 + 风险策略",
+        "x": 600,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "identity",
+        "title": "签名身份",
+        "detail": "可信密钥或OIDC策略",
+        "x": 0,
+        "y": 180,
+        "w": 210
+      },
+      {
+        "id": "claims",
+        "title": "证据集合",
+        "detail": "来源、测试、扫描",
+        "x": 300,
+        "y": 180,
+        "w": 210
+      },
+      {
+        "id": "gate",
+        "title": "部署决策",
+        "detail": "满足策略才接受",
+        "x": 600,
+        "y": 180,
+        "w": 210
+      }
+    ],
+    "edges": [
+      {
+        "from": "image",
+        "to": "sbom",
+        "label": "分析组件"
+      },
+      {
+        "from": "sbom",
+        "to": "scan",
+        "label": "匹配漏洞库"
+      },
+      {
+        "from": "image",
+        "to": "claims",
+        "label": "按内容绑定"
+      },
+      {
+        "from": "identity",
+        "to": "claims",
+        "label": "验证谁声明"
+      },
+      {
+        "from": "scan",
+        "to": "gate",
+        "label": "风险判定"
+      },
+      {
+        "from": "claims",
+        "to": "gate",
+        "label": "证据范围"
+      }
+    ],
+    "steps": [
+      {
+        "title": "先确定对象",
+        "body": "平台和内容摘要明确后，组件清单与报告才有唯一对应对象。",
+        "focus": [
+          "image",
+          "sbom"
+        ]
+      },
+      {
+        "title": "计算风险判断",
+        "body": "扫描把清单与某一时刻数据库匹配；报告改变并不必然表示镜像改变。",
+        "focus": [
+          "sbom",
+          "scan"
+        ]
+      },
+      {
+        "title": "验证谁作出声明",
+        "body": "校验签名还要限制身份；签名只绑定声明，不替代业务测试或风险评估。",
+        "focus": [
+          "identity",
+          "claims",
+          "image"
+        ]
+      },
+      {
+        "title": "按策略接受或拒绝",
+        "body": "将实际测试、扫描、身份与例外范围组合，保留能够复核拒绝原因的证据。",
+        "focus": [
+          "scan",
+          "claims",
+          "gate"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "不用Docker socket，扫描一份本地应用镜像",
+    "environment": "从仓库根目录开始，所有命令同一终端。扫描器只读挂载导出目录，缓存使用本课独立卷。首次下载漏洞库可能较慢；网络/限额错误必须记作未完成，不能当“零漏洞”。",
+    "predict": "不改变应用镜像，只更新扫描数据库，报告可能变化吗？关闭--ignore-unfixed前后差异说明什么，不能说明什么？",
+    "steps": [
+      {
+        "title": "构建并记录被评估对象",
+        "code": "U15_DIR=$(mktemp -d)\ndocker build -t learn-u15:api docker/labs\nIMAGE_ID=$(docker image inspect learn-u15:api --format \"{{.Id}}\")\ndocker image inspect \"$IMAGE_ID\" > \"$U15_DIR/image-inspect.json\"\ndocker image save \"$IMAGE_ID\" -o \"$U15_DIR/image.tar\"\nprintf \"%s\n\" \"$IMAGE_ID\" | tee \"$U15_DIR/image-id.txt\"",
+        "expect": "保存本次真实image ID及镜像归档；本地image ID是config身份，不冒充仓库manifest digest。",
+        "why": "本地实验先明确对象，后续发布实验再取得仓库引用。"
+      },
+      {
+        "title": "解析本次扫描工具的真实版本",
+        "code": "TRIVY_DIGEST=$(docker buildx imagetools inspect aquasec/trivy:latest --format \"{{.Manifest.Digest}}\")\nTRIVY_IMAGE=\"aquasec/trivy:latest@$TRIVY_DIGEST\"\nprintf \"%s\n\" \"$TRIVY_IMAGE\" > \"$U15_DIR/scanner-ref.txt\"\ndocker run --rm \"$TRIVY_IMAGE\" --version | tee \"$U15_DIR/scanner-version.txt\"",
+        "expect": "工具名称仍保留latest便于阅读，但本次执行固定真实digest；记录实际版本。",
+        "why": "记录扫描工具输入，避免不同时间运行latest却宣称使用同一分析器。"
+      },
+      {
+        "title": "产生完整漏洞报告并确认命令成功",
+        "code": "docker run --rm -v \"$U15_DIR\":/work:ro -v learn-u15-trivy:/cache \"$TRIVY_IMAGE\" image --cache-dir /cache --input /work/image.tar --format json > \"$U15_DIR/scan.json\"\npython3 - \"$U15_DIR/scan.json\" <<'PY'\nimport json,sys\np=json.load(open(sys.argv[1]))\nrows=[v for result in p.get(\"Results\",[]) for v in result.get(\"Vulnerabilities\",[])]\nprint(\"identified vulnerabilities\",len(rows))\nprint(\"fix version available\",sum(bool(v.get(\"FixedVersion\")) for v in rows))\nprint(\"without listed fix\",sum(not v.get(\"FixedVersion\") for v in rows))\nfor v in rows[:5]:\n    print(v[\"VulnerabilityID\"],v[\"PkgName\"],v.get(\"InstalledVersion\"),v.get(\"FixedVersion\",\"no listed fix\"),v[\"Severity\"])\nPY",
+        "expect": "报告必须是有效JSON；数量取决于当前数据库。保留stderr中的下载错误，扫描失败时停止结论。",
+        "why": "完整报告保留“无修复”项目，避免过滤结果被误读为它们不存在。"
+      },
+      {
+        "title": "生成清单并核对它与漏洞报告不同",
+        "code": "docker run --rm -v \"$U15_DIR\":/work:ro -v learn-u15-trivy:/cache \"$TRIVY_IMAGE\" image --cache-dir /cache --input /work/image.tar --format spdx-json > \"$U15_DIR/sbom.spdx.json\"\npython3 - \"$U15_DIR/sbom.spdx.json\" <<'PY'\nimport json,sys\np=json.load(open(sys.argv[1]))\nprint(\"SPDX\",p.get(\"spdxVersion\"),\"packages\",len(p.get(\"packages\",[])))\nfor package in p.get(\"packages\",[])[:5]:\n    print(package[\"name\"],package.get(\"versionInfo\",\"unknown\"))\nPY",
+        "expect": "SPDX中识别出组件，数量不等于漏洞数；没有识别出来不证明组件不存在。",
+        "why": "SBOM用于追踪软件组成，不自带全部漏洞和来源可信保证。"
+      },
+      {
+        "title": "保存数据库线索并作出可复核判断",
+        "code": "docker run --rm -v learn-u15-trivy:/cache --entrypoint cat \"$TRIVY_IMAGE\" /cache/db/metadata.json > \"$U15_DIR/db-metadata.json\"\npython3 - \"$U15_DIR\" <<'PY'\nimport json,sys\nfrom pathlib import Path\np=Path(sys.argv[1]); report=json.loads((p/\"scan.json\").read_text())\nitems=[v for x in report.get(\"Results\",[]) for v in x.get(\"Vulnerabilities\",[])]\nblocked=[v for v in items if v.get(\"Severity\")==\"CRITICAL\" and v.get(\"FixedVersion\")]\nresult={\"example_policy\":\"block fixable CRITICAL; other risk still requires review\",\"blocking_count\":len(blocked),\"scanner_ref\":(p/\"scanner-ref.txt\").read_text().strip(),\"image_id\":(p/\"image-id.txt\").read_text().strip()}\n(p/\"decision.json\").write_text(json.dumps(result,indent=2)); print(json.dumps(result,indent=2))\nprint(\"请为至少一项发现或未发现的覆盖边界写下评估，不将门禁通过表述为安全证明。\")\nPY",
+        "expect": "输出限定范围的门禁判断，保留工具、对象、数据库元数据。metadata路径若因新工具版本变化，应查看/cache实际布局并记录，不能伪造数据库时间。",
+        "why": "扫描结果、门禁策略与最终风险接受是不同对象，证据应能重新审核。"
+      }
+    ],
+    "cleanup": "docker volume rm learn-u15-trivy\ndocker image rm learn-u15:api\n# 将JSON、工具引用和个人评估复制到证据目录后再清理\nrm -rf \"$U15_DIR\""
+  },
+  "transfer": {
+    "question": "镜像扫描通过并附有签名，部署方却必须拒绝它：签名来自同一组织的另一个测试工作流，且该index的arm64尚无扫描证据。请制定验证策略及负向用例。",
+    "evidence": [
+      "实际index与各运行平台manifest的摘要清单。",
+      "签名使用的可信公钥或OIDC issuer、精确身份/工作流/ref约束。",
+      "正确身份、错误身份、篡改内容、缺平台证据四类接受或拒绝结果。"
+    ],
+    "answer": [
+      "先验证内容digest，再校验允许的签名身份，而非接受组织内任意签名。OIDC应限定issuer及明确工作流/引用范围；自管密钥则要验证公钥信任来源。",
+      "逐个平台收集对应child manifest的测试和扫描结果，缺失arm64证据时不能用amd64通过结果替代；可先只发布已验证单平台。",
+      "有cosign与自有仓库时，执行cosign verify --key 受信公钥.pem 实际镜像@真实digest，或按平台OIDC文档使用issuer和identity约束；替换错误公钥/身份预期失败。这里的参数来自自己的配置，不是可以直接运行的虚构仓库。记录退出码和stderr。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "SBOM、漏洞扫描、镜像签名和来源证明有什么区别？如何设计一个可解释的供应链门禁？",
+      "answer": "SBOM回答识别了哪些组件，扫描回答这些组件在指定数据库与规则下有哪些已知风险；digest固定内容，签名绑定内容声明与密钥或身份，来源证明描述构建输入和过程。门禁要明确受信身份、目标平台、测试与扫描范围、风险阈值和有期限的例外。记录工具、数据库和摘要，并用错误身份、篡改内容、缺证据等负向用例验证拒绝。签名合法和零可修复高危都不是安全充分条件。",
+      "followups": [
+        {
+          "question": "为什么镜像不变，扫描结果却改变？",
+          "answer": "漏洞库、分析器覆盖或匹配规则变了；应记录版本和时间，并对已发布digest持续重评。"
+        },
+        {
+          "question": "没有修复版本的CRITICAL如何处理？",
+          "answer": "评估组件可达性、利用前提、缓解与替换计划，必要时拒绝或给予限时例外；不能因为ignore-unfixed隐藏了它就认定安全。"
+        },
+        {
+          "question": "cosign验证成功为何仍可能来源不符？",
+          "answer": "验证策略可能接受了不该信任的密钥或过宽OIDC身份；要校验预期issuer、工作流/ref或受信公钥，不能只证明“某人签过”。"
+        }
+      ],
+      "misconception": "扫描减少未知风险，签名验证内容与身份；二者都不自动证明业务正确、权限最小或所有平台都验收。"
+    }
+  ],
+  "takeaways": [
+    "扫描结论带有对象、工具、数据库、平台与策略边界。",
+    "SBOM用于追踪组成，不等于零风险清单。",
+    "验证签名还要验证受信身份和证据范围。",
+    "为允许与拒绝都保存可复核证据。"
+  ],
+  "references": [
+    {
+      "title": "Trivy容器镜像扫描",
+      "url": "https://trivy.dev/docs/latest/target/container_image/"
+    },
+    {
+      "title": "Docker SBOM证明",
+      "url": "https://docs.docker.com/build/metadata/attestations/sbom/"
+    },
+    {
+      "title": "Docker来源证明",
+      "url": "https://docs.docker.com/build/metadata/attestations/slsa-provenance/"
+    },
+    {
+      "title": "Cosign验证容器签名",
+      "url": "https://docs.sigstore.dev/cosign/verifying/verify/"
+    }
+  ]
+}

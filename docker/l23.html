@@ -4,9 +4,10 @@
 <link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/play.css">
-<link rel="stylesheet" href="layout.css"></head><body>
+<link rel="stylesheet" href="layout.css"><link rel="stylesheet" href="course.css"></head><body>
 <div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 23 课</span><span class="sp"></span><a href="l22.html">← 第 22 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
 <main class="wrap">
+<aside class="legacy-note">原第 23 课 · 补充资料。<a href="index.html">查看按原理、实战与面试组织的新主线 →</a></aside>
 <section class="lede"><div class="k">Docker · 第 23 课</div><h1>CI/CD：自动构建、测试与发布</h1>
 <p>每次推送代码，自动构建镜像、跑测试、扫描、推送到仓库、部署。用 GitHub Actions 搭一条完整的流水线：缓存、标签策略、多平台、签名和按 digest 部署。约 50 分钟。</p>
 <ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">一条流水线</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">标签与 digest</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：排查一条流水线</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">一个完整的 workflow</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
@@ -78,7 +79,7 @@ build-push 步骤：skipped</pre></div></div></div><div class="task2"><div class
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - run: echo "deploy ghcr.io/${{ github.repository }}@${{ needs.build.outputs.digest }}"</pre><pre class="out">deploy ghcr.io/alice/cicd@sha256:4b1e…</pre><p>把扫描步骤插到现有构建推送步骤之后，不要复制出第二个同名 id: build。只给扫描步骤加 PR 条件：PR 事件仍然构建（正文的构建步骤在 PR 时不推送），但跳过对远端镜像的扫描。<code>build-push-action</code> 的 <code>digest</code> 输出通过 job outputs 传给 deploy。真实部署时把这个引用交给 <code>docker compose</code>（用变量）、Kubernetes 或其他平台。<code>environment: production</code> 可以在 GitHub 设置里配置人工审批。</p></div></details></div>
+      - run: echo "deploy ghcr.io/${{ github.repository }}@${{ needs.build.outputs.digest }}"</pre><pre class="out">deploy ghcr.io/alice/cicd@sha256:4b1e…</pre><p>把扫描步骤插到现有构建推送步骤之后，不要复制出第二个同名 id: build。此示例未显式选择扫描平台，Trivy 默认加载 linux/amd64，不能据此声称所有平台都已扫描；实际发布需逐平台验证最终产物，并在部署前验证受信签名。只给扫描步骤加 PR 条件：PR 事件仍然构建（正文的构建步骤在 PR 时不推送），但跳过对远端镜像的扫描。<code>build-push-action</code> 的 <code>digest</code> 输出通过 job outputs 传给 deploy。真实部署时把这个引用交给 <code>docker compose</code>（用变量）、Kubernetes 或其他平台。<code>environment: production</code> 可以在 GitHub 设置里配置人工审批。</p></div></details></div>
 </section>
 
 <section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
@@ -86,7 +87,7 @@ build-push 步骤：skipped</pre></div></div></div><div class="task2"><div class
 </section>
 
 <section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li>流水线顺序：检查 → 构建 → 测试 → 扫描 → 推送 → 签名 → 部署。前面的步骤失败，后面的不执行。</li><li>CI 机器每次都是新的：用 <code>cache-to/cache-from type=gha</code>（或 registry）保留构建缓存（第 17 课）。</li><li>标签策略：每个提交打 <code>sha-xxxxxxx</code>（命名约定，本身仍可覆盖），发布时打 <code>1.4.2</code>、<code>1.4</code>；<code>latest</code> 只作方便用途，部署不要依赖它。</li><li>test 阶段验证测试环境中的代码；它不自动证明最终运行阶段或所有目标平台可用。对最终发布 digest 做启动与接口冒烟检查，再允许部署。</li><li>推送凭证用 CI 平台的密钥或 <code>GITHUB_TOKEN</code>，权限最小化。不要写进仓库。</li><li>部署按 <b>digest</b>：构建步骤输出 digest，部署步骤用 <code>image@sha256:…</code>，保证部署的就是刚测试过、签过名的那个镜像。</li></ol></section>
+<ol class="sum"><li>流水线顺序：检查 → 构建 → 测试 → 扫描 → 推送 → 签名 → 部署。前面的步骤失败，后面的不执行。</li><li>CI 机器每次都是新的：用 <code>cache-to/cache-from type=gha</code>（或 registry）保留构建缓存（第 17 课）。</li><li>标签策略：每个提交打 <code>sha-xxxxxxx</code>（命名约定，本身仍可覆盖），发布时打 <code>1.4.2</code>、<code>1.4</code>；<code>latest</code> 只作方便用途，部署不要依赖它。</li><li>test 阶段验证测试环境中的代码；它不自动证明最终运行阶段或所有目标平台可用。对最终发布 digest 做启动与接口冒烟检查，再允许部署。</li><li>推送凭证用 CI 平台的密钥或 <code>GITHUB_TOKEN</code>，权限最小化。不要写进仓库。</li><li>部署按 <b>digest</b>：构建步骤输出 digest，部署步骤用 <code>image@sha256:…</code>，固定部署内容；测试、扫描和可信身份必须由最终平台产物的证据另外证明。</li></ol></section>
 <footer class="endnav"><div class="k">下一课 · 24</div><a class="big" href="l24.html">跨主机网络：overlay 与 Swarm 简介 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
 </main>
 <script src="../assets/play.js"></script>

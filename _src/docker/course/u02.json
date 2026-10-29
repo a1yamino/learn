@@ -1,0 +1,255 @@
+{
+  "title": "容器本质与 namespace",
+  "summary": "用同一进程的不同视图解释 PID、localhost 和挂载隔离，并辨认 Docker Desktop 中真正的 Linux 执行环境。",
+  "minutes": 45,
+  "environment": "运行 Linux 容器的 Docker Engine 或 Docker Desktop，终端可使用 docker compose。共用应用实验无需 sudo、unshare 或特权容器；Desktop 的 Engine、PID 与网络位于 Linux VM。涉及原生 Linux /proc 的额外验证只在明确的 Engine 主机上进行。",
+  "sources": [
+    1,
+    2,
+    11
+  ],
+  "objectives": [
+    "从进程、namespace 和内核三个层次解释容器与虚拟机的区别。",
+    "用 /proc 的 namespace 标识证明两个进程是否共享网络视图。",
+    "解释共享网络后 localhost 可通而 PID 视图仍独立的反例。"
+  ],
+  "question": "两个容器里都能看到 PID 1，为什么它们不冲突？同一个 localhost:8000，为什么有时能访问订单 API，有时却连接失败？",
+  "model": [
+    {
+      "title": "容器进程没有单独的 Linux 内核",
+      "body": [
+        "应用仍通过系统调用使用执行它的 Linux 内核。namespace 为特定资源建立不同视图，cgroups 约束资源预算，权限与安全策略限制操作；它们共同形成容器运行环境。镜像提供用户态文件和配置，不携带一套运行中的独立内核。",
+        "原生 Linux Engine 直接使用该 Linux 主机内核；Docker Desktop 的 Linux 容器运行在其 Linux VM 中，使用 VM 内核。因此在 Mac 上得到的容器 PID、docker0 和 /var/lib/docker 路径属于 VM，不能拿这个 PID 直接查询 macOS 的 /proc。镜像也不会消除 CPU 架构、内核功能与外部服务的差异。"
+      ]
+    },
+    {
+      "title": "namespace 隔离的是指定资源的视图",
+      "body": [
+        "PID namespace 隔离进程编号；network namespace 包含网卡、路由、端口和回环接口；mount namespace 隔离挂载表；UTS namespace 隔离主机名。加入一组 namespace 的进程会共享这组资源，并不要求它们来自同一个镜像。",
+        "mount namespace 本身不会自动生成一份新根文件系统。运行时还需要准备镜像文件视图和根目录。user namespace 管理 UID/GID 映射，也不能与 Dockerfile 的 USER 混为一谈：USER 选择运行身份，不等于创建 user namespace。默认是否启用映射，应检查实际 daemon 配置。"
+      ]
+    },
+    {
+      "title": "一个进程可以有多个 PID 编号",
+      "body": [
+        "在新的 PID namespace 中，初始进程通常是 PID 1；执行环境的祖先 PID namespace 也能看到它，但编号不同。docker inspect 的 State.Pid 是 Engine 所在 Linux 执行环境看到的编号。docker exec 启动的是额外进程，它有自己的 PID，不会把当前终端变成容器原来的 PID 1。",
+        "停止的容器对象仍保存配置与可写层，却没有正在运行的主进程。因此“容器就是进程”描述的是运行机制，不能用来断言容器对象只能在运行时存在。PID 1 的退出与信号责任将在下一课单独验证。"
+      ]
+    },
+    {
+      "title": "localhost 指向网络视图，不能代表应用身份",
+      "body": [
+        "在默认隔离的两个网络 namespace 中，127.0.0.1 各自指向自己的回环接口。相同端口号不会冲突，因为监听表不同。--network container:目标容器 会让新容器加入目标的网络 namespace，因此它的 localhost 可以访问目标监听的服务。",
+        "共享网络不自动共享 PID、挂载或用户视图。host 网络、共享 PID 模式也会改变默认边界，不能把“每个容器必然有独立 namespace”当作定义。隔离也不等于安全的全部：共享内核、能力、挂载权限和用户身份仍需分别分析。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "namespace 为同一 Linux 内核上的进程提供可选择的资源视图",
+    "nodes": [
+      {
+        "id": "kernel",
+        "title": "Linux 内核",
+        "detail": "原生 Engine 主机或 Desktop VM",
+        "x": 340,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "process",
+        "title": "API 主进程",
+        "detail": "普通 Linux 进程",
+        "x": 340,
+        "y": 180,
+        "w": 220
+      },
+      {
+        "id": "pid",
+        "title": "PID namespace",
+        "detail": "容器内编号与祖先视图不同",
+        "x": 0,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "net",
+        "title": "network namespace",
+        "detail": "接口、路由、端口与 localhost",
+        "x": 680,
+        "y": 180,
+        "w": 220
+      },
+      {
+        "id": "mnt",
+        "title": "mount namespace",
+        "detail": "挂载表与准备好的根文件视图",
+        "x": 0,
+        "y": 180,
+        "w": 220
+      },
+      {
+        "id": "helper",
+        "title": "诊断进程",
+        "detail": "可只加入 API 的网络视图",
+        "x": 680,
+        "y": 0,
+        "w": 220
+      }
+    ],
+    "edges": [
+      {
+        "from": "process",
+        "to": "kernel",
+        "label": "系统调用"
+      },
+      {
+        "from": "process",
+        "to": "pid",
+        "label": "进程视图"
+      },
+      {
+        "from": "process",
+        "to": "net",
+        "label": "网络视图"
+      },
+      {
+        "from": "process",
+        "to": "mnt",
+        "label": "路径视图"
+      },
+      {
+        "from": "helper",
+        "to": "net",
+        "label": "共用 net"
+      }
+    ],
+    "steps": [
+      {
+        "title": "先找执行环境",
+        "body": "所有图中进程使用同一个 Linux 内核；Desktop 的这层位于 VM。",
+        "focus": [
+          "kernel",
+          "process"
+        ]
+      },
+      {
+        "title": "给编号建立视图",
+        "body": "容器内 PID 1 与 Engine 侧 PID 可以指向同一个进程。",
+        "focus": [
+          "process",
+          "pid"
+        ]
+      },
+      {
+        "title": "分开资源种类",
+        "body": "网络隔离影响 localhost，挂载隔离影响路径；两者没有自动绑定关系。",
+        "focus": [
+          "net",
+          "mnt"
+        ]
+      },
+      {
+        "title": "只共享一种视图",
+        "body": "诊断进程加入 API 的网络后能访问其回环服务，但仍保留自己的进程与文件视图。",
+        "focus": [
+          "helper",
+          "net",
+          "pid"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "只共享网络，观察 localhost 与 PID 的独立性",
+    "environment": "从仓库根目录进入 docker/labs；所有步骤在同一终端执行。项目 learn-u02 与容器 learn-u02-probe 必须未被其他任务使用。只启动 api，不发布宿主机端口。helper 使用 python:3.12-slim，第一次需能拉取镜像。",
+    "predict": "helper 加入 API 的 network namespace 后，它的 /proc/1/cmdline 会变成 API 的启动命令吗？为什么？",
+    "steps": [
+      {
+        "title": "确认请求由哪个 Engine 执行，并启动独立 API",
+        "code": "cd docker/labs\ndocker context show\ndocker info --format 'OSType={{.OSType}} CgroupVersion={{.CgroupVersion}}'\ndocker compose -p learn-u02 up -d --build api\nU02_API=$(docker compose -p learn-u02 ps -q api)",
+        "expect": "确认 Server 为 Linux，记录当前 context 和 API 容器 ID；这些值由本机实际生成。",
+        "why": "CLI 所在电脑不一定就是 Engine 所在的 Linux 执行环境。先确定观察对象，避免把 Desktop VM 的 PID 当作桌面系统 PID。"
+      },
+      {
+        "title": "读取主进程命令与 namespace 标识",
+        "code": "docker exec \"$U02_API\" python -c 'import os; print(open(\"/proc/1/cmdline\",\"rb\").read().replace(b\"\\0\",b\" \")); print({n:os.readlink(\"/proc/1/ns/\"+n) for n in (\"pid\",\"net\",\"mnt\")})'\ndocker inspect -f 'Engine侧PID={{.State.Pid}}' \"$U02_API\"",
+        "expect": "/proc/1/cmdline 对应 python app.py serve；记录三个 namespace 标识和实际 Engine 侧 PID，不要求其数值固定。",
+        "why": "同一主进程在容器内与祖先 PID 视图中有不同编号，namespace 标识可用于比较共享关系。"
+      },
+      {
+        "title": "在独立网络视图中尝试同一个回环地址",
+        "code": "docker run -d --name learn-u02-probe python:3.12-slim python -c 'import time; time.sleep(3600)'\ndocker exec learn-u02-probe python -c 'import os; print(os.readlink(\"/proc/1/ns/net\"))'\ndocker exec learn-u02-probe python -c 'import urllib.request; print(urllib.request.urlopen(\"http://127.0.0.1:8000/health\",timeout=2).read().decode())'",
+        "expect": "probe 的 net 标识与 API 不同；最后一条命令预期连接失败并返回非零。若成功，先排查该 probe 是否已经有本地监听服务，不能直接套用结论。",
+        "why": "失败针对 probe 的 localhost；它并未通过 DNS 或宿主机端口去寻找 API。"
+      },
+      {
+        "title": "让临时 helper 只加入 API 的网络视图",
+        "code": "docker run --rm --network \"container:$U02_API\" python:3.12-slim python -c 'import os,urllib.request; print({n:os.readlink(\"/proc/1/ns/\"+n) for n in (\"pid\",\"net\",\"mnt\")}); print(open(\"/proc/1/cmdline\",\"rb\").read().replace(b\"\\0\",b\" \")); print(urllib.request.urlopen(\"http://127.0.0.1:8000/health\",timeout=5).read().decode())'",
+        "expect": "helper 的 net 标识与 API 相同，pid/mnt 标识不同；请求返回存活响应，但 helper 的 PID 1 命令是自己的 python -c。",
+        "why": "网络共享已经足以让 localhost 指向同一监听表；镜像、PID 与根目录无须一并共享。"
+      },
+      {
+        "title": "检查内核边界，而不是寻找一个虚构的第二内核",
+        "code": "uname -s\ndocker exec \"$U02_API\" python -c 'import os; print(os.uname())'\ndocker inspect -f 'NetworkMode={{.HostConfig.NetworkMode}} PidMode={{.HostConfig.PidMode}}' \"$U02_API\"",
+        "expect": "容器报告 Linux 内核；桌面命令可能是 Darwin 或 Linux 等，按真实平台解释。记录网络模式和 PID 模式，空的 PidMode 表示使用默认模式。",
+        "why": "这一步把“不同系统名字”与“不同资源视图”分开，也防止从单个 PID 数字推断物理宿主机。"
+      }
+    ],
+    "cleanup": "docker rm -f learn-u02-probe\ndocker compose -p learn-u02 down -v\nunset U02_API\n# -v 只用于本课独立项目产生的实验数据；不操作默认 learn-docker 项目。"
+  },
+  "transfer": {
+    "question": "同事把监控容器改成 --network container:订单API 后，localhost:8000 可通，但仍在监控容器里找不到 API 的数据目录，也看不到 API 的 PID 1。是不是 namespace 功能失效？",
+    "evidence": [
+      "对比两个进程的 /proc/1/ns/net、pid、mnt 标识。",
+      "提交两个 PID 1 的 cmdline，以及 API 的 Mounts 配置。",
+      "解释为什么网络访问成功不足以证明挂载或进程视图共享。"
+    ],
+    "answer": [
+      "先按资源类型逐个比较。net 相同而 pid/mnt 不同，正是只共享网络模式的预期结果，不是失效。",
+      "API 的 /data 来自它自己的挂载表；诊断容器没有相应卷时，同名路径没有同一含义。需要读取数据时先明确只读访问目的，再显式挂载对应卷，而不是扩大到特权模式。",
+      "若要诊断进程可选共享 PID 的受限工具容器；原生 Linux 上也可由有权限的管理员使用 nsenter，但 Desktop 的 PID 必须在 VM 内解释。每次只共享所需视图，并提交共享前后的标识证据。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "用两分钟解释容器与虚拟机的区别，并回答“容器是进程”为什么不等于“没有隔离”。",
+      "answer": "Linux 容器里的应用仍是 Linux 内核调度的进程；namespace 改变资源视图，cgroups 限制资源使用，权限与安全策略限制操作，镜像提供用户态文件。虚拟机通常有自己的 guest 内核。Docker Desktop 又在桌面系统与 Linux 容器之间增加一层 Linux VM，因此说“共享宿主机内核”时要明确宿主指 Engine 的 Linux 执行环境。可以用 namespace 标识、容器内 cmdline 与 Engine 侧 State.Pid 验证；停止的容器对象仍存在，但没有运行进程。",
+      "followups": [
+        {
+          "question": "为什么两个容器都能有 PID 1？",
+          "answer": "它们可处于不同 PID namespace，编号在各自视图中独立；祖先 namespace 能给同一进程分配另一个编号。编号相等不能证明进程相同。"
+        },
+        {
+          "question": "namespace 能限制容器最多使用多少内存吗？",
+          "answer": "namespace 管理视图，资源预算由 cgroups 等机制完成。看不到主机全部进程不代表不能耗尽可用内存；下一课资源实验将读取 cgroup 文件验证。"
+        },
+        {
+          "question": "如果两个容器共享网络，怎样证明它们仍有不同的文件视图？",
+          "answer": "比较 net 与 mnt 标识，读取各自 /proc/1/cmdline 和 Mounts。相同 net 配上不同 mnt/PID，是资源边界可以独立组合的可观察证据。"
+        }
+      ],
+      "misconception": "“容器有自己的操作系统，所以必然有自己的内核。”镜像可以包含发行版用户态工具，运行它的内核仍来自 Engine 的 Linux 环境；Desktop VM 是另外一层。"
+    }
+  ],
+  "takeaways": [
+    "namespace 是按资源种类提供的视图，cgroups 与权限承担不同职责。",
+    "PID 数字、localhost 和文件路径都必须先说明观察环境。",
+    "Desktop 的 Linux VM 是解释 PID、网络和卷路径必不可少的边界。",
+    "用标识与实际请求验证共享关系，不能只凭容器名或镜像名推断。"
+  ],
+  "references": [
+    {
+      "title": "Linux namespaces 总览",
+      "url": "https://man7.org/linux/man-pages/man7/namespaces.7.html"
+    },
+    {
+      "title": "Linux PID namespace 与初始进程",
+      "url": "https://man7.org/linux/man-pages/man7/pid_namespaces.7.html"
+    },
+    {
+      "title": "Docker Desktop 的 VM 与网络路径",
+      "url": "https://docs.docker.com/desktop/features/networking/"
+    }
+  ],
+  "number": 2
+}

@@ -1,0 +1,10 @@
+.git
+__pycache__
+*.pyc
+*.db
+*.db-*
+evidence
+README.md
+compose*.yaml
+nginx.conf
+faults.py

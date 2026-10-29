@@ -1,0 +1,266 @@
+{
+  "title": "OCI 镜像：层、配置与内容身份",
+  "summary": "分清标签、仓库摘要、镜像 ID 和层 diffID，解释为什么同名不保证同内容。",
+  "minutes": 55,
+  "environment": "需要 Linux 容器 Docker Engine、Python 3、网络可拉取 python:3.12-slim；从仓库根目录开始。实验记录本次真实摘要，不预填 digest。多平台镜像会按当前 Engine 平台选择内容；Desktop 的目标平台属于 Linux VM。",
+  "sources": [
+    5,
+    6,
+    10,
+    17
+  ],
+  "objectives": [
+    "画出 OCI image index/manifest、config、layer blob 的引用关系。",
+    "用 pull、inspect、tag 对比可变标签与内容摘要，并说明平台选择。",
+    "指出本地镜像 ID 与仓库 RepoDigest 的区别。"
+  ],
+  "question": "同事说“大家都用 python:3.12-slim，所以环境完全一样”。如果标签指向发生变化，或者两台机器架构不同，这句话缺了什么证据？",
+  "model": [
+    {
+      "title": "镜像是一张按摘要引用的内容图",
+      "body": [
+        "OCI 镜像的 manifest 指向配置 JSON 和有顺序的 layer blob，各项由 digest 标识。多平台仓库通常还有 index（或 manifest list），把平台描述符映射到各平台 manifest。拉取时按 Engine 平台选中对应内容；index digest 与某个平台 manifest digest 不能混为一个概念。",
+        "层按顺序叠成最终 rootfs；config 记录默认命令、环境和 rootfs diffIDs 等。层 blob 的分发摘要与解压后内容的 diffID 属于不同对象，不能只看两串 sha256 就当同一身份。"
+      ]
+    },
+    {
+      "title": "tag 是名字，digest 是内容定位",
+      "body": [
+        "python:3.12-slim 是仓库中的可变标签，之后可能指向不同内容。仓库引用中的 @sha256 摘要用于定位本次拉取的内容；在构建输入中固定它，可避免以后 tag 移动带来静默变更。固定摘要仍需明确目标平台和依赖来源，不能据此保证整个构建绝对可复现。",
+        "docker image inspect 的 Id 是本地镜像配置对象的内容 ID，RepoDigests 是关联的仓库摘要引用。刚 build 出且未 push 的本地镜像通常没有可引用的 RepoDigest；不能把 .Id 编造为仓库 manifest 摘要。"
+      ]
+    },
+    {
+      "title": "层复用并不意味着运行时写回镜像",
+      "body": [
+        "构建步骤形成只读镜像层；容器运行时另加自己的可写层。多个容器可以共享镜像层，但各自写入不会改变原镜像。docker tag 为已有镜像增加一个名字，本身不重新构建内容。",
+        "删除本地标签、删除容器对象、修改远端标签是三种不同操作。构建缓存和最终镜像内容也不是同一个承诺；是否命中缓存应由构建输出与实际身份判断。"
+      ]
+    },
+    {
+      "title": "部署记录应保存可核验的身份",
+      "body": [
+        "交付时记录所用仓库引用及实际解析的 digest、平台、镜像 ID、构建参数与源码版本。事故调查时先确认运行中的容器 .Image，随后与期望身份对照，不能仅看 Compose 文件里的 tag 文本。",
+        "如果需要安全和供应链保证，还需另查来源、签名、漏洞与构建过程；内容摘要只证明所取字节身份，不自动证明这些字节可信。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "从可变标签定位到平台镜像和运行根文件系统",
+    "nodes": [
+      {
+        "id": "tag",
+        "title": "仓库 tag",
+        "detail": "可变名称",
+        "x": 0,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "index",
+        "title": "OCI index",
+        "detail": "可选的多平台入口",
+        "x": 340,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "manifest",
+        "title": "manifest",
+        "detail": "引用 config 与 layers",
+        "x": 680,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "config",
+        "title": "config",
+        "detail": "默认配置与 diffIDs",
+        "x": 340,
+        "y": 220,
+        "w": 220
+      },
+      {
+        "id": "blobs",
+        "title": "layer blobs",
+        "detail": "压缩分发内容",
+        "x": 680,
+        "y": 220,
+        "w": 220
+      },
+      {
+        "id": "rootfs",
+        "title": "运行输入",
+        "detail": "rootfs 与默认启动配置",
+        "x": 510,
+        "y": 440,
+        "w": 220
+      }
+    ],
+    "edges": [
+      {
+        "from": "tag",
+        "to": "index",
+        "label": "解析为摘要"
+      },
+      {
+        "from": "index",
+        "to": "manifest",
+        "label": "选择平台"
+      },
+      {
+        "from": "manifest",
+        "to": "config",
+        "label": "内容摘要"
+      },
+      {
+        "from": "manifest",
+        "to": "blobs",
+        "label": "有序摘要"
+      },
+      {
+        "from": "config",
+        "to": "rootfs",
+        "label": "应用配置"
+      },
+      {
+        "from": "blobs",
+        "to": "rootfs",
+        "label": "解压并叠层"
+      }
+    ],
+    "steps": [
+      {
+        "title": "名字不是身份",
+        "body": "tag 可能移动；先记录本次拉取实际指向。",
+        "focus": [
+          "tag",
+          "index"
+        ]
+      },
+      {
+        "title": "选择目标平台",
+        "body": "多平台入口选择匹配平台的 manifest。",
+        "focus": [
+          "index",
+          "manifest"
+        ]
+      },
+      {
+        "title": "校验内容引用",
+        "body": "manifest 用 digest 引用配置和每个 layer blob。",
+        "focus": [
+          "manifest",
+          "config",
+          "blobs"
+        ]
+      },
+      {
+        "title": "合成运行视图",
+        "body": "按层顺序形成 rootfs，启动后容器另有可写层。",
+        "focus": [
+          "config",
+          "blobs",
+          "rootfs"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "记录实际 digest，再比较标签与镜像 ID",
+    "environment": "从仓库根目录执行；本课只创建 learn-u06:base、learn-u06:one、learn-u06:alias 三个本地标签。需要可拉取基础镜像；本机 Python 3 供静态读取使用。所有步骤同一终端。",
+    "predict": "两个指向同一镜像的本地 tag，其 .Id 是否相同？本地 build 镜像是否一定有 RepoDigest？本次 pull 的 digest 能否由课件预先写死？",
+    "steps": [
+      {
+        "title": "拉取并记录本机实际解析结果",
+        "code": "cd docker/labs\ndocker version --format 'Server={{.Server.Version}} OS={{.Server.Os}} Arch={{.Server.Arch}}'\ndocker pull python:3.12-slim\ndocker image inspect python:3.12-slim --format 'Id={{.Id}} RepoDigests={{json .RepoDigests}} Layers={{len .RootFS.Layers}}'",
+        "expect": "保存实际 Server 平台、Id 与 RepoDigests；digest 以本次拉取为准，不照抄课程文字。",
+        "why": "tag 是获取入口，实际内容身份要在当前平台和仓库解析后记录。"
+      },
+      {
+        "title": "选用真实仓库摘要作为构建输入",
+        "code": "U06_BASE=$(docker image inspect python:3.12-slim --format '{{index .RepoDigests 0}}')\ntest -n \"$U06_BASE\"\nprintf 'Pinned base: %s\\n' \"$U06_BASE\"\ndocker pull \"$U06_BASE\"\ndocker tag \"$U06_BASE\" learn-u06:base",
+        "expect": "Pinned base 是本机 pull 后报告的仓库摘要引用；若 RepoDigests 为空，应先确认仓库拉取与平台，不能自行拼造摘要。",
+        "why": "用可验证引用固定本次构建输入，而不是把可变 tag 当作内容锁。"
+      },
+      {
+        "title": "用已解析基础镜像构建应用镜像",
+        "code": "docker build --build-arg PYTHON_IMAGE=\"$U06_BASE\" -t learn-u06:one .\ndocker image inspect learn-u06:one --format 'Id={{.Id}} RepoDigests={{json .RepoDigests}} Layers={{json .RootFS.Layers}}'",
+        "expect": "输出本地镜像 ID 和 diffID 列表；本地未推送的新镜像 RepoDigests 可能为空。",
+        "why": "本地 config 身份与仓库发布的 manifest/index 摘要是不同层级，不能互换。"
+      },
+      {
+        "title": "给同一内容增加别名并核对运行对象",
+        "code": "docker tag learn-u06:one learn-u06:alias\ndocker image inspect learn-u06:one learn-u06:alias --format 'Tag={{index .RepoTags 0}} Id={{.Id}}'\ndocker run --rm --entrypoint python learn-u06:alias -c 'from pathlib import Path; print(\"VERSION\",Path(\"/app/version.txt\").read_text().strip())'",
+        "expect": "两个 inspect 对象的 Id 相同；运行结果来自同一镜像内容，Tag 字段的第一项可能按本地排序变化，不作为身份断言。",
+        "why": "增加 tag 不会复制或重新构建层；真正运行内容应按 ID 与文件观测核对。"
+      },
+      {
+        "title": "对照基础镜像与应用镜像的层身份",
+        "code": "docker image inspect learn-u06:base --format 'BASE_ID={{.Id}} BASE_LAYERS={{json .RootFS.Layers}}'\ndocker image inspect learn-u06:one --format 'APP_ID={{.Id}} APP_LAYERS={{json .RootFS.Layers}}'",
+        "expect": "应用镜像通常含基础层以及本课构建新增层；以实际输出为准，层数量会随基础镜像版本变化。",
+        "why": "底层共享可通过 diffID 序列观察；这仍不等于运行中写入会修改镜像。"
+      }
+    ],
+    "cleanup": "docker image rm learn-u06:alias learn-u06:one learn-u06:base\nunset U06_BASE\n# 只移除本课三个标签；保留用户原有 python:3.12-slim 标签。"
+  },
+  "transfer": {
+    "question": "一台 arm64 开发机和一台 amd64 服务器都部署了 team/api:release。标签文字一样，启动后依赖行为不同。如何证明它们是否运行了相同平台内容？",
+    "evidence": [
+      "记录各自 Engine 平台、拉取时的仓库摘要和 image inspect 的 Id/RepoDigests。",
+      "记录运行容器 inspect 的 .Image，不只截取 Compose 中的 tag。",
+      "如果使用多平台 index，列出各平台 manifest 关系并核对构建输入。"
+    ],
+    "answer": [
+      "先排除 tag 在两个时间点移动：比较解析出的仓库摘要。相同 index digest 仍可能按 arm64 与 amd64 选出不同平台 manifest 和层。",
+      "容器 .Image 与本地镜像 Id 表明实际运行了哪个配置对象；结合平台与 manifest 摘要定位差异。",
+      "修复时按目标平台明确构建与发布，部署记录 pin 经过验证的引用，再在目标平台复验行为；不把 tag 相同当作最终证据。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "tag、RepoDigest、image Id 和 layer diffID 分别是什么，如何用于部署审计？",
+      "answer": "tag 是会移动的仓库名字；RepoDigest 是本地记录的仓库内容引用，可能指多平台 index 或平台 manifest；image Id 是本地 config 内容 ID；diffID 是解压后层的内容身份。拉取时记录真实 digest 与平台，构建时固定输入，运行时用容器 .Image 核对实际 image Id，再检查业务行为。摘要证明字节身份，不证明安全或绝对可复现。",
+      "followups": [
+        {
+          "question": "docker tag 会产生新层吗？",
+          "answer": "不会。它给现有本地镜像增加引用；两个 tag 的 Id 相同，除非之后某个 tag 被重指向。"
+        },
+        {
+          "question": "为什么同一个 index digest 在两台机器的 rootfs 可以不同？",
+          "answer": "index 可指多个平台 manifest；各平台 config 和 layers 不同，Engine 按 OS/架构选择。"
+        },
+        {
+          "question": "为什么不能把 docker image inspect 的 Id 当作 pull digest？",
+          "answer": "Id 对应本地 config 对象，仓库 digest 对应被引用的 manifest 或 index；对象层级不同。新 build 镜像未发布时可能根本没有 RepoDigest。"
+        }
+      ],
+      "misconception": "“sha256 都是一回事。”摘要要带对象类型和平台语境，否则无法判断比较的是否是同一内容。"
+    }
+  ],
+  "takeaways": [
+    "tag 是可变名字；记录本次真实 digest 和目标平台。",
+    "manifest 引用 config 与层，index 可能进一步选择平台 manifest。",
+    "本地 image Id、仓库 RepoDigest、层 diffID 不是同一对象。",
+    "容器可写层不修改镜像；同一镜像可有多个本地 tag。"
+  ],
+  "references": [
+    {
+      "title": "OCI Image Specification",
+      "url": "https://github.com/opencontainers/image-spec"
+    },
+    {
+      "title": "Docker image digests",
+      "url": "https://docs.docker.com/dhi/core-concepts/digests/"
+    },
+    {
+      "title": "docker image inspect",
+      "url": "https://docs.docker.com/reference/cli/docker/image/inspect/"
+    },
+    {
+      "title": "Docker 多平台镜像",
+      "url": "https://docs.docker.com/build/building/multi-platform/"
+    }
+  ],
+  "number": 6
+}

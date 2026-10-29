@@ -19,7 +19,7 @@ Player(document.getElementById('p2'),{els:{
  {t:'正确做法',p:'镜像里不放任何密钥。运行时用 secrets 挂载成文件；构建时用 BuildKit secret 挂载，只在那一条 RUN 期间存在。',d:3800,set:{base:[0,150],ok:[0,100],okb:[0,50],n1:[420,110,{html:'不在镜像配置里'}],n2:[420,60,{html:'不在任何层里'}]}}]});
 (()=>{const cm=document.getElementById('cm'),lg=document.getElementById('lg'),fd=document.getElementById('fd');const found=new Set();
  const C=[['docker inspect -f "{{json .Config.Env}}" shop-api:1.3','["PATH=/usr/local/sbin:…","NODE_ENV=production","STRIPE_KEY=sk_live_51Hx…"]','env','ENV 里的 STRIPE_KEY'],
-  ['docker history --no-trunc shop-api:1.3 | grep ARG','RUN |1 NPM_TOKEN=npm_9fQ2… /bin/sh -c npm ci   41.2MB','arg','构建参数 NPM_TOKEN'],
+  ['docker history --no-trunc shop-api:1.3 | grep NPM_TOKEN','RUN |1 NPM_TOKEN=npm_9fQ2… /bin/sh -c npm ci   41.2MB','arg','构建参数 NPM_TOKEN'],
   ['docker run --rm shop-api:1.3 ls -a /app','.  ..  dist  node_modules  package.json',null,null],
   ['docker save shop-api:1.3 | tar -x && grep -r "DB_PASSWORD" blobs/','blobs/sha256/7ac1…: app/.env: DB_PASSWORD=pa55w0rd!','file','被“删除”的 .env'],
   ['docker run --rm shop-api:1.3 env | grep -i pass','',null,null]];

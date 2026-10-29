@@ -25,10 +25,10 @@ Player(document.getElementById('p1'),{els,scenes:[
 const B=(t,c,w=230)=>({w,h:44,cls:'blk '+c,html:t});
 Player(document.getElementById('p3'),{els:{stop:{cls:'pill mute',html:'$ docker stop api'},sig:{cls:'pill sig',html:'SIGTERM'},kill:{cls:'pill bad',html:'10 秒后 SIGKILL'},
  sh:B('PID 1 · /bin/sh -c "uvicorn …"','dim',300),app:B('uvicorn','',230),app1:B('PID 1 · uvicorn','',300),res:{w:320,cls:'tag'},lab:{w:300,cls:'tag'}},scenes:[
- {t:'shell 形式：CMD uvicorn …',p:'不写成 JSON 数组时，Docker 用 <code>/bin/sh -c</code> 启动命令。PID 1 是 sh，uvicorn 是它的子进程。',set:{lab:[0,-40,{html:'<b>CMD uvicorn main:app …</b>'}],sh:[0,0],app:[70,70]}},
- {t:'信号停在 sh',p:'<code>docker stop</code> 把 SIGTERM 发给 PID 1。sh 不会把信号转发给子进程，uvicorn 什么都不知道。',set:{lab:[0,-40,{html:'<b>CMD uvicorn main:app …</b>'}],stop:[400,8],sig:[310,8],sh:[0,0],app:[70,70]}},
+ {t:'shell 形式：CMD uvicorn …',p:'不写成 JSON 数组时，Docker 用 <code>/bin/sh -c</code> 启动命令。图中模拟 shell 保留为 PID 1、应用为子进程的情形；某些 shell 会优化为 exec，应先查看真实进程树。',set:{lab:[0,-40,{html:'<b>CMD uvicorn main:app …</b>'}],sh:[0,0],app:[70,70]}},
+ {t:'信号停在 sh',p:'本例停止信号为 SIGTERM。若 PID 1 的 shell 没有 exec 或转发它，uvicorn 就收不到停止请求。停止信号可以由 STOPSIGNAL 或运行参数覆盖。',set:{lab:[0,-40,{html:'<b>CMD uvicorn main:app …</b>'}],stop:[400,8],sig:[310,8],sh:[0,0],app:[70,70]}},
  {t:'10 秒后被强制杀死',p:'超时后 Docker 发 SIGKILL。正在处理的请求被中断，数据库连接没有正常关闭。',d:3600,set:{lab:[0,-40,{html:'<b>CMD uvicorn main:app …</b>'}],kill:[310,8],sh:[0,0,{cls:'blk dim',html:'PID 1 · sh（被杀死）'}],app:[70,70,{cls:'blk dim',html:'uvicorn（被杀死）'}],res:[0,140,{html:'停止耗时 <b>10 秒</b>'}]}},
- {t:'exec 形式：CMD ["uvicorn", …]',p:'JSON 数组形式不经过 shell，uvicorn 自己就是 PID 1，直接收到 SIGTERM：停止接收新请求、处理完当前请求后退出。',d:3600,set:{lab:[0,-40,{html:'<b>CMD ["uvicorn","main:app",…]</b>'}],stop:[400,8],sig:[310,8],app1:[0,0],res:[0,70,{html:'停止耗时 <b>&lt; 1 秒</b>，请求正常完成'}]}}]});
+ {t:'exec 形式：CMD ["uvicorn", …]',p:'JSON 数组形式不经过 shell，uvicorn 自己就是 PID 1，直接收到 SIGTERM：停止接收新请求、处理完当前请求后退出。',d:3600,set:{lab:[0,-40,{html:'<b>CMD ["uvicorn","main:app",…]</b>'}],stop:[400,8],sig:[310,8],app1:[0,0],res:[0,70,{html:'应用收到信号；还需验证请求完成与清理日志'}]}}]});
 Term(document.getElementById('t4'),[
 ['docker build -t api-demo:1.0 .','[+] Building 18.3s (11/11) FINISHED\n => [4/7] RUN pip install --no-cache-dir -r requirements.txt   12.9s\n => [6/7] RUN useradd --create-home --uid 10001 app             0.4s\n => naming to docker.io/library/api-demo:1.0','标签用版本号，不要只用 latest。第 10 课会讲标签策略。'],
 ['docker run -d --name api -p 8000:8000 --env-file .env api-demo:1.0','9e2c7d1a5f60b3…','<code>--env-file</code> 从文件读取环境变量（数据库地址等）。配置在运行时注入，同一个镜像可以用于测试和生产。第 9 课详细讲。'],

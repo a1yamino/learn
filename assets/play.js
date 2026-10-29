@@ -3,20 +3,26 @@
  document.addEventListener('DOMContentLoaded',()=>{setTheme(r.dataset.theme);document.querySelectorAll('[data-theme-btn]').forEach(b=>b.addEventListener('click',()=>setTheme(r.dataset.theme==='dark'?'light':'dark')))})})();
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const IC={play:'<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>',pause:'<svg viewBox="0 0 16 16"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z" fill="currentColor"/></svg>',re:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 8a5.5 5.5 0 1 0 1.7-4"/><path d="M2.5 2v3h3"/></svg>'};
-/* Player: a self-contained diagram animation. Auto-plays once when it enters view,
-   pauses off screen / in hidden tabs, keeps one player active per page, honours
-   prefers-reduced-motion. Optional zoom: Player(root,{...,zoom:true}) or window.PLAYER_ZOOM=true. */
+/* Player: shared diagram playback, with optional step mode, speed controls,
+   fixed camera bounds and directed edges. Defaults preserve existing courses.
+   Pauses off screen / in hidden tabs; only one player runs at a time. */
 (() => {
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
-  let activePlayer = null;
+  let activePlayer = null, nextDiagramId = 0;
   window.Player = function(root, o) {
     const zoomOn = o.zoom !== undefined ? !!o.zoom : !!window.PLAYER_ZOOM;
+    const autoplay = o.autoplay ?? window.PLAYER_AUTOPLAY ?? true;
+    const fixedCamera = o.fixedCamera ?? window.PLAYER_FIXED_CAMERA ?? false;
+    const durationScale = o.durationScale ?? window.PLAYER_DURATION_SCALE ?? .65;
+    const speeds = o.speeds ?? window.PLAYER_SPEEDS ?? [];
+    let speed = o.speed ?? 1;
+    if (!Number.isFinite(speed) || speed <= 0) speed = 1;
     const notes = o.scenes.map(s => `<li><h4><button class="step-trigger" type="button">${s.t}</button></h4><p>${s.p}</p></li>`).join('');
     root.classList.add('watch');
-        root.innerHTML = `<div class="pv" tabindex="0" aria-label="${zoomOn ? '课程图解；放大后可滚动查看，按 Escape 恢复适配' : '课程图解'}"><div class="board"></div></div><div class="pc"><button class="btn pri pp" type="button"></button><button class="btn rp" type="button" aria-label="从头重播图解">${IC.re}重播</button>${zoomOn ? '<button class="btn zoom" type="button" aria-pressed="false" aria-label="放大图解，可滚动查看">放大</button>' : ''}<div class="tl" aria-hidden="true">${o.scenes.map(() => '<i><b></b></i>').join('')}</div><button class="btn pr" type="button" aria-label="上一步">‹</button><button class="btn nx" type="button" aria-label="下一步">›</button></div><ol class="notes">${notes}</ol>`;
+        root.innerHTML = `<div class="pv" tabindex="0" aria-label="${zoomOn ? '课程图解；放大后可滚动查看，按 Escape 恢复适配' : '课程图解'}"><div class="board"></div></div><div class="pc"><button class="btn pri pp" type="button"></button><button class="btn rp" type="button" aria-label="从头重播图解">${IC.re}重播</button>${zoomOn ? '<button class="btn zoom" type="button" aria-pressed="false" aria-label="放大图解，可滚动查看">放大</button>' : ''}${speeds.length ? '<label class="player-speed">倍速 <select aria-label="图解播放倍速">' + speeds.map(v => `<option value="${v}"${v === speed ? ' selected' : ''}>${v}×</option>`).join('') + '</select></label>' : ''}<div class="tl" aria-hidden="true">${o.scenes.map(() => '<i><b></b></i>').join('')}</div><button class="btn pr" type="button" aria-label="上一步">‹</button><button class="btn nx" type="button" aria-label="下一步">›</button></div><ol class="notes">${notes}</ol>`;
     const pv = root.querySelector('.pv'), board = root.querySelector('.board');
     const pp = root.querySelector('.pp'), prev = root.querySelector('.pr'), next = root.querySelector('.nx');
-    const zoom = root.querySelector('.zoom');
+    const zoom = root.querySelector('.zoom'), speedControl = root.querySelector('.player-speed select');
     const ticks = [...root.querySelectorAll('.tl i')];
     const fills = ticks.map(t => t.querySelector('b'));
     const lis = [...root.querySelectorAll('.notes li')], E = {}, S = o.scenes;
@@ -31,22 +37,97 @@ const IC={play:'<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="curren
       board.appendChild(n);
       E[id] = {n, d, vis: false, key: null, html, cls};
     }
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const edgeLayer = document.createElementNS(svgNS, 'svg');
+    Object.assign(edgeLayer.style, {position: 'absolute', left: '0', top: '0', width: '1px', height: '1px', overflow: 'visible', pointerEvents: 'none'});
+    edgeLayer.setAttribute('aria-hidden', 'true');
+    const makeSvg = (tag, attrs) => {
+      const n = document.createElementNS(svgNS, tag);
+      for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
+      return n;
+    };
+    const defs = makeSvg('defs'), markerId = 'player-arrow-' + (++nextDiagramId);
+    const marker = makeSvg('marker', {id: markerId, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse'});
+    marker.appendChild(makeSvg('path', {d: 'M 0 0 L 10 5 L 0 10 z', fill: 'context-stroke'}));
+    defs.appendChild(marker); edgeLayer.appendChild(defs);
+    const edges = (o.edges || []).map(d => {
+      const group = makeSvg('g'), path = makeSvg('path', {fill: 'none', 'stroke-width': 1.8, 'marker-end': `url(#${markerId})`});
+      group.appendChild(path);
+      let label = null;
+      if (d.label) {
+        label = makeSvg('text', {'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': 13, 'font-family': 'var(--f, sans-serif)', 'paint-order': 'stroke', 'stroke-width': 6, 'stroke-linejoin': 'round'});
+        label.textContent = d.label; group.appendChild(label);
+      }
+      edgeLayer.appendChild(group);
+      return {d, group, path, label};
+    });
+    if (edges.length) board.prepend(edgeLayer);
+    function drawEdges(scene, f) {
+      edgeLayer.style.transform = position([0, 0], f);
+      for (const {d, group, path, label} of edges) {
+        const a = scene.set[d.from], b = scene.set[d.to];
+        group.style.opacity = a && b ? '1' : '0';
+        if (!a || !b || !E[d.from] || !E[d.to]) continue;
+        const an = E[d.from].n, bn = E[d.to].n;
+        const ac = [a[0] + an.offsetWidth / 2, a[1] + an.offsetHeight / 2];
+        const bc = [b[0] + bn.offsetWidth / 2, b[1] + bn.offsetHeight / 2];
+        const dx = bc[0] - ac[0], dy = bc[1] - ac[1];
+        let x1, y1, x2, y2, curve;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          const sign = dx >= 0 ? 1 : -1;
+          x1 = ac[0] + sign * (an.offsetWidth / 2 + 4); y1 = ac[1];
+          x2 = bc[0] - sign * (bn.offsetWidth / 2 + 5); y2 = bc[1];
+          const mx = (x1 + x2) / 2;
+          curve = `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`;
+        } else {
+          const sign = dy >= 0 ? 1 : -1;
+          x1 = ac[0]; y1 = ac[1] + sign * (an.offsetHeight / 2 + 4);
+          x2 = bc[0]; y2 = bc[1] - sign * (bn.offsetHeight / 2 + 5);
+          const my = (y1 + y2) / 2;
+          curve = `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`;
+        }
+        const active = scene.activeEdges?.includes(d.id || `${d.from}->${d.to}`);
+        path.setAttribute('d', curve);
+        path.setAttribute('stroke', active ? 'var(--sig)' : 'var(--ink2)');
+        path.setAttribute('stroke-width', active ? 3 : 1.8);
+        group.classList.toggle('is-active', !!active);
+        if (label) {
+          label.setAttribute('x', (x1 + x2) / 2); label.setAttribute('y', (y1 + y2) / 2);
+          label.setAttribute('fill', active ? 'var(--sig)' : 'var(--ink2)'); label.setAttribute('stroke', 'var(--bg2)');
+        }
+      }
+    }
     let cur = -1, playing = false, tm = null, started = false, userPaused = false;
     let ended = false, remaining = 0, beganAt = 0, resumePending = false, visibleRatio = 0;
     let zoomed = false, frame = null, resizeFrame = null;
-    const dur = i => Math.round((S[i].d || 3200) * 0.65);
+    const dur = i => Math.round((S[i].d || 3200) * durationScale / speed);
+    let fixedBounds = null;
     const owner = {pauseForOther() { pause(false); resumePending = false; }};
 
-    // Read all dimensions together, after the scene's content has been updated.
-    function camera(i) {
+    // A fixed camera uses the union of every authored scene, including text variants.
+    function measureBounds(i) {
+      if (o.bounds) return {x0: o.bounds.x, y0: o.bounds.y, x1: o.bounds.x + o.bounds.width, y1: o.bounds.y + o.bounds.height};
+      if (fixedCamera && fixedBounds) return fixedBounds;
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const id in S[i].set) {
-        const v = S[i].set[id], n = E[id].n;
-        x0 = Math.min(x0, v[0]);
-        y0 = Math.min(y0, v[1]);
-        x1 = Math.max(x1, v[0] + n.offsetWidth);
-        y1 = Math.max(y1, v[1] + n.offsetHeight);
+      for (const scene of fixedCamera ? S : [S[i]]) {
+        for (const [id, v] of Object.entries(scene.set)) {
+          const e = E[id], opt = v[2] || {}, html = opt.html ?? e.d.html ?? '';
+          const cls = opt.cls ?? e.d.cls ?? '';
+          const measuring = fixedCamera && (html !== e.html || cls !== e.cls);
+          const n = measuring ? e.n.cloneNode(false) : e.n;
+          if (measuring) { n.innerHTML = html; n.className = 'el ' + cls; n.style.visibility = 'hidden'; board.appendChild(n); }
+          x0 = Math.min(x0, v[0]); y0 = Math.min(y0, v[1]);
+          x1 = Math.max(x1, v[0] + n.offsetWidth); y1 = Math.max(y1, v[1] + n.offsetHeight);
+          if (measuring) n.remove();
+        }
       }
+      if (fixedCamera) {
+        fixedBounds = {x0, y0, x1, y1};
+      }
+      return {x0, y0, x1, y1};
+    }
+    function camera(i) {
+      let {x0, y0, x1, y1} = measureBounds(i);
       if (!Number.isFinite(x0)) { x0 = y0 = 0; x1 = y1 = 1; }
       const r = pv.getBoundingClientRect(), pad = Math.min(r.width, r.height) * .1;
       const fit = Math.min(1.5, (r.width - pad * 2) / Math.max(1, x1 - x0), (r.height - pad * 2) / Math.max(1, y1 - y0));
@@ -88,6 +169,7 @@ const IC={play:'<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="curren
       }
       // Camera rebasing is a layout adjustment, so commit it without motion.
       moveCamera(f, true);
+      drawEdges(S[cur], f);
       for (const [n, transition] of transitions) n.style.transition = transition;
     }
     function show(i, instant) {
@@ -123,8 +205,10 @@ const IC={play:'<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="curren
       ticks.forEach((t, k) => { t.className = k < i ? 'd' : k === i ? 'c' : ''; });
       root.style.setProperty('--dur', dur(i) + 'ms');
       fills[i].style.animation = 'none';
+      fills[i].style.animationDelay = '';
 
       const f = camera(i);
+      drawEdges(s, f);
       for (const [e, v] of entering) {
         e.n.style.transition = 'none';
         e.n.style.transform = position([v[0], v[1] + (instant || motion.matches ? 0 : 14)], f);
@@ -134,6 +218,7 @@ const IC={play:'<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="curren
       for (const id in E) {
         const e = E[id], v = s.set[id];
         e.n.setAttribute('aria-hidden', v ? 'false' : 'true');
+        e.n.classList.toggle('is-focused', !!s.focus?.includes(id));
         if (v) {
           if (entering.has(e)) e.n.style.transition = '';
           e.n.style.transform = position(v, f);
@@ -168,7 +253,7 @@ const IC={play:'<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="curren
       }, remaining);
     }
     function ui() {
-      const label = playing ? '暂停' : ended ? '再看一遍' : '播放';
+      const label = playing ? '暂停' : ended ? '再看一遍' : autoplay ? '播放' : '播放复习';
       pp.innerHTML = (playing ? IC.pause : ended ? IC.re : IC.play) + label;
       pp.setAttribute('aria-label', label + '图解');
       pp.setAttribute('aria-pressed', String(playing));
@@ -204,7 +289,7 @@ const IC={play:'<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="curren
     function visibility() {
       if (document.hidden || visibleRatio === 0) {
         if (playing) { pause(false); resumePending = true; }
-      } else if (!userPaused && !motion.matches && ((!started && visibleRatio >= .55) || resumePending)) start();
+      } else if (!userPaused && !motion.matches && ((autoplay && !started && visibleRatio >= .55) || resumePending)) start();
     }
     function setZoom(value) {
       pause(true);
@@ -216,6 +301,21 @@ const IC={play:'<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="curren
       zoom.setAttribute('aria-label', value ? '恢复图解适配大小' : '放大图解，可滚动查看');
       recamera();
     }
+    function setSpeed(value) {
+      if (!Number.isFinite(value) || value <= 0 || value === speed) return;
+      const wasPlaying = playing, oldSpeed = speed;
+      pause(false);
+      speed = value;
+      remaining *= oldSpeed / speed;
+      root.style.setProperty('--dur', dur(cur) + 'ms');
+      fills[cur].style.animation = 'none';
+      fills[cur].style.animationDelay = -(dur(cur) - remaining) + 'ms';
+      void fills[cur].offsetWidth;
+      fills[cur].style.animation = '';
+      if (speedControl) speedControl.value = String(speed);
+      if (wasPlaying) start();
+    }
+    if (speedControl) speedControl.addEventListener('change', () => setSpeed(Number(speedControl.value)));
     pp.addEventListener('click', () => playing ? pause(true) : play());
     root.querySelector('.rp').addEventListener('click', () => { pause(false); show(0); play(); });
     if (zoom) zoom.addEventListener('click', () => setZoom(!zoomed));
@@ -236,14 +336,14 @@ const IC={play:'<svg viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z" fill="curren
     });
     function requestCamera() {
       if (resizeFrame !== null) return;
-      resizeFrame = requestAnimationFrame(() => { resizeFrame = null; recamera(); });
+      resizeFrame = requestAnimationFrame(() => { resizeFrame = null; fixedBounds = null; recamera(); });
     }
     addEventListener('resize', requestCamera);
     if (document.fonts) {
       document.fonts.ready.then(requestCamera);
       document.fonts.addEventListener('loadingdone', requestCamera);
     }
-    return {show, play, pause, E};
+    return {show, play, pause, setSpeed, E};
   };
 })();
 /* Game state */
@@ -275,9 +375,9 @@ window.shake=n=>{n.classList.remove('shake');n.offsetWidth;n.classList.add('shak
 window.flip=(nodes,change)=>{const a=new Map(nodes().map(n=>[n,n.getBoundingClientRect()]));change();if(RM)return;nodes().forEach(n=>{const r=a.get(n);if(!r)return;const b=n.getBoundingClientRect(),dx=r.left-b.left,dy=r.top-b.top;if(!dx&&!dy)return;n.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}],{duration:420,easing:'cubic-bezier(0.23,1,0.32,1)'})})};
 document.addEventListener('DOMContentLoaded',()=>{const p=document.querySelector('.prog');if(!p)return;let q=0;const u=()=>{q=0;const h=document.documentElement;p.style.setProperty('--p',h.scrollTop/Math.max(1,h.scrollHeight-h.clientHeight))};addEventListener('scroll',()=>{if(!q){q=1;requestAnimationFrame(u)}},{passive:true});u()});
 /* Terminal: tabs of commands with typed output + explanation */
-window.Term=function(el,T){el.innerHTML='<div class="term"><div class="tabs" role="tablist"></div><pre>点击上面的命令查看输出。</pre></div><div class="ex"></div>';const tabs=el.querySelector('.tabs'),pre=el.querySelector('pre'),ex=el.querySelector('.ex');let tm;const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+window.Term=function(el,T,options={}){el.innerHTML='<div class="term"><div class="tabs" role="tablist"></div><pre>点击上面的命令查看输出。</pre></div><div class="ex"></div>';const tabs=el.querySelector('.tabs'),pre=el.querySelector('pre'),ex=el.querySelector('.ex');let tm;const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
  T.forEach(([c,o,x])=>{const b=document.createElement('button');b.setAttribute('role','tab');b.textContent='$ '+c;b.addEventListener('click',()=>{tabs.querySelectorAll('button').forEach(z=>z.setAttribute('aria-selected',z===b));clearInterval(tm);let k=0;ex.innerHTML='';
-  const draw=()=>pre.innerHTML=`<b>$ ${esc(c)}</b>\n<span>${esc(o.slice(0,k))}</span>`;const done=()=>{ex.innerHTML=x;b.classList.add('ran')};if(RM){k=o.length;draw();done();return}tm=setInterval(()=>{k+=6;draw();if(k>=o.length){clearInterval(tm);done()}},14)});tabs.appendChild(b)})};
+  const draw=()=>pre.innerHTML=`<b>$ ${esc(c)}</b>\n<span>${esc(o.slice(0,k))}</span>`;const done=()=>{ex.innerHTML=x;b.classList.add('ran')};if(RM||(options.instant ?? window.TERM_INSTANT)){k=o.length;draw();done();return}tm=setInterval(()=>{k+=6;draw();if(k>=o.length){clearInterval(tm);done()}},14)});tabs.appendChild(b)})};
 /* Quiz */
 window.Quiz=function(el,Q){Q.forEach((q,qi)=>{const d=document.createElement('div');d.className='q';d.innerHTML=`<h4>${qi+1}. ${q[0]}</h4>`+q[1].map((o,i)=>`<button class="op" data-i="${i}"><i>${'ABCD'[i]}</i><span>${o}</span></button>`).join('')+'<div class="fb" aria-live="polite"></div>';
  d.addEventListener('click',e=>{const b=e.target.closest('.op');if(!b||d.classList.contains('ok'))return;const fb=d.querySelector('.fb');if(+b.dataset.i===q[2]){b.classList.add('r');d.classList.add('ok');fb.textContent='正确。'+q[3]}else{b.classList.add('w');shake(b);fb.textContent='不对，再选一次。'}});el.appendChild(d)})};

@@ -721,3 +721,39 @@ button.blk:focus-visible,
   .prac,
   .term { box-shadow: none; }
 }
+
+/* Step learning keeps the relationship map steady; only the current fact changes. */
+.watch .board { transition: none; }
+.watch .board > .el.is-focused {
+  outline: 2px solid var(--sig);
+  outline-offset: 4px;
+}
+.watch .player-speed {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  font: 500 12px/1.4 var(--m);
+  color: var(--ink2);
+}
+.watch .player-speed select {
+  min-height: 40px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+}
+@media (max-width: 600px) {
+  .watch .player-speed { grid-column: 3; grid-row: 1; justify-self: center; }
+  .watch .player-speed select { min-height: 44px; }
+}
+/* Use the full diagram width before offering optional magnification. */
+.watch { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto; }
+.watch > .notes {
+  grid-column: 1;
+  grid-row: 3;
+  border-left: 0;
+  border-top: 1px solid var(--line);
+}

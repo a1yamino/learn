@@ -9,9 +9,10 @@ def page(n,title,desc,secs,summ,nxt,mins=20,jsv=''):
 <link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/play.css">
-<link rel="stylesheet" href="layout.css"></head><body>
+<link rel="stylesheet" href="layout.css"><link rel="stylesheet" href="course.css"></head><body>
 <div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 {n} 课</span><span class="sp"></span>{f'<a href="l{n-1:02d}.html">← 第 {n-1} 课</a>' if n>1 else ''}<button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
 <main class="wrap">
+<aside class="legacy-note">原第 {n} 课 · 补充资料。<a href="index.html">查看按原理、实战与面试组织的新主线 →</a></aside>
 <section class="lede"><div class="k">Docker · 第 {n} 课</div><h1>{title}</h1>
 <p>{desc}约 {mins} 分钟。</p>
 <ol class="ms">{toc}</ol></section>

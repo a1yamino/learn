@@ -1,0 +1,249 @@
+{
+  "number": 10,
+  "title": "NAT、防火墙与回程：一个包的完整路径",
+  "summary": "解释端口发布的目的地址改写、转发过滤、出站伪装与连接跟踪，并辨认本机请求和外部请求的路径差异。",
+  "minutes": 55,
+  "environment": "原理适用于常见 bridge 网络；实机实验限定独立原生 Linux、rootful Docker、iptables 防火墙后端，已安装 curl、iptables、conntrack，且有 sudo。Desktop 或 nftables 用户可阅读模型并按本机后端另取证，不能套用下面链名。",
+  "sources": [
+    7,
+    15
+  ],
+  "objectives": [
+    "画出入站 DNAT 与回包反向改写的五元组变化。",
+    "解释为什么发布端口不一定经过 INPUT 规则。",
+    "先识别后端与访问来源，再选择能证明过滤生效的观察。"
+  ],
+  "question": "为什么关闭宿主机 INPUT 的 8080 仍可能挡不住发布端口，而绑定 127.0.0.1 后外部又访问不到？本机 curl 能否证明外部流量经过了相同路径？",
+  "model": [
+    {
+      "title": "发布端口先改目的地址，再决定转发",
+      "body": [
+        "对常见 iptables bridge 发布路径，外部包进入宿主机后在 nat PREROUTING 相关规则中匹配发布端口，DNAT 将宿主地址:发布端口改为容器地址:目标端口。随后路由决定把它转发给网桥，过滤发生在 FORWARD 相关链，而不是当作发往宿主进程的 INPUT 流量。",
+        "因此仅检查 INPUT 的端口拒绝规则不足以证明容器入口被限制。iptables 后端可在 DOCKER-USER 等受支持位置过滤；进入该链时目的地址通常已经 DNAT，若需按原始发布端口匹配，要用连接跟踪的原始目的信息。不要随意清空 Docker 自动创建的规则。"
+      ]
+    },
+    {
+      "title": "conntrack 保存原始与回复方向",
+      "body": [
+        "连接跟踪记录协议及原始/回复方向的地址与端口关系。外部客户端看到自己连接宿主发布端口，容器收到的是发往容器端口的请求；回包经过反向转换，客户端仍看到同一对端。NAT 并不是在每次响应中重新猜测它属于哪个客户端。",
+        "容器访问外网时，常见 bridge 出站 MASQUERADE 把容器源地址换成宿主出口地址。对外服务看到的通常是宿主地址；返回流量通过连接跟踪回到容器。直连路由、host 网络、IPv6 等配置可能有不同路径，不能把 MASQUERADE 当成所有 Docker 网络的定义。"
+      ]
+    },
+    {
+      "title": "访问位置与防火墙后端是模型前提",
+      "body": [
+        "本机产生的请求经过本机 OUTPUT 路径，外部到达网卡的包走 PREROUTING；localhost 发布还可能涉及用户态代理。观察本机成功只能证明本机入口可用，不能替代来自另一台机器的准入测试。",
+        "绑定 127.0.0.1 限定宿主发布入口的绑定范围，但并不等于连 Docker 主机本身也无法访问容器 IP。iptables 与 nftables 后端的表、链及用户过滤接入点不同。先记录 Docker 版本、后端、网络与来源，再解释规则；不要把固定链名或 UFW 的表现背成跨环境保证。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "外部请求DNAT转发与回包",
+    "nodes": [
+      {
+        "id": "client",
+        "title": "外部客户端",
+        "detail": "原始 dst：宿主:18080",
+        "x": 0,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "nat",
+        "title": "目的地址转换",
+        "detail": "PREROUTING / DNAT",
+        "x": 300,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "filter",
+        "title": "转发与过滤",
+        "detail": "FORWARD；按后端规则",
+        "x": 600,
+        "y": 0,
+        "w": 210
+      },
+      {
+        "id": "api",
+        "title": "容器服务",
+        "detail": "目标端口 80",
+        "x": 600,
+        "y": 180,
+        "w": 210
+      },
+      {
+        "id": "ct",
+        "title": "连接跟踪",
+        "detail": "记录原始/回复地址关系",
+        "x": 300,
+        "y": 180,
+        "w": 210
+      },
+      {
+        "id": "reply",
+        "title": "回到客户端",
+        "detail": "源还原为宿主:18080",
+        "x": 0,
+        "y": 180,
+        "w": 210
+      }
+    ],
+    "edges": [
+      {
+        "from": "client",
+        "to": "nat",
+        "label": "入站包"
+      },
+      {
+        "from": "nat",
+        "to": "filter",
+        "label": "DNAT 后"
+      },
+      {
+        "from": "filter",
+        "to": "api",
+        "label": "转发"
+      },
+      {
+        "from": "api",
+        "to": "ct",
+        "label": "响应"
+      },
+      {
+        "from": "ct",
+        "to": "reply",
+        "label": "反向 NAT"
+      }
+    ],
+    "steps": [
+      {
+        "title": "明确原始入口",
+        "body": "先写请求来源、宿主目标 IP 与发布端口；本图表示外部 IPv4 bridge 入站。",
+        "focus": [
+          "client",
+          "nat"
+        ]
+      },
+      {
+        "title": "改写并转发",
+        "body": "DNAT 后目的地是容器地址，包通常进入转发过滤；只有 INPUT 规则不构成充分证据。",
+        "focus": [
+          "nat",
+          "filter",
+          "api"
+        ]
+      },
+      {
+        "title": "记录双向关系",
+        "body": "conntrack 保存连接对应关系；回包反向转换后，客户端看到的对端仍是发布地址。",
+        "focus": [
+          "api",
+          "ct",
+          "reply"
+        ]
+      },
+      {
+        "title": "变更一个前提再预测",
+        "body": "若来源改为宿主 localhost，改查 OUTPUT/代理；若后端改为 nftables，换用该后端的规则结构。",
+        "focus": [
+          "client",
+          "nat",
+          "filter"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "在限定后端上只读观察一次本机端口发布",
+    "environment": "仅在满足本课环境前提的 Linux 实验机执行。Docker 主机无其他名为 learn-u10-web 的容器，本机 18080 空闲。本实验不修改系统防火墙，只读查询 Docker 为实验容器创建的规则。",
+    "predict": "本机访问 127.0.0.1:18080 与直接访问容器 IP:80 都可能成功；前者是否经过 PREROUTING？先写出你的路径预测。",
+    "steps": [
+      {
+        "title": "记录环境并创建限定入口",
+        "code": "docker version --format \"{{.Server.Version}}\"\ndocker info --format \"{{.Driver}} {{json .SecurityOptions}}\"\nsudo iptables -t nat -S DOCKER\ndocker run -d --name learn-u10-web -p 127.0.0.1:18080:80 nginx:stable-alpine",
+        "expect": "版本、存储信息与现有 DOCKER 链可记录；若 DOCKER 链不存在，先确认是否为 nftables 后端，不继续猜测。新容器应运行。",
+        "why": "先确认观察工具对应实际后端；只创建本课专属资源。"
+      },
+      {
+        "title": "核对绑定地址和目标端口",
+        "code": "docker port learn-u10-web\ndocker inspect learn-u10-web --format \"{{json .NetworkSettings.Networks}}\"\ncurl -fsS -o /dev/null -w \"%{http_code}\n\" http://127.0.0.1:18080",
+        "expect": "发布结果应显示 127.0.0.1:18080；HTTP 返回成功状态。记录实际容器地址。",
+        "why": "将声明、实际绑定与应用响应关联，避免把 EXPOSE 当端口发布。"
+      },
+      {
+        "title": "分别观察本机与入站规则入口",
+        "code": "sudo iptables -t nat -S OUTPUT\nsudo iptables -t nat -S PREROUTING\nsudo iptables -t nat -S DOCKER | grep 18080\nsudo iptables -S DOCKER-USER",
+        "expect": "记录发布规则的目标地址、端口和跳转；具体规则顺序由本机版本决定。DOCKER-USER 的空或放行规则也要记录。",
+        "why": "本机 curl 不能单独证明 PREROUTING 行为；规则路径与访问来源必须一致。"
+      },
+      {
+        "title": "寻找原始与回复方向的证据",
+        "code": "curl -fsS http://127.0.0.1:18080 >/dev/null\nsudo conntrack -L -p tcp 2>/dev/null | grep 18080",
+        "expect": "如命中连接条目，比较原始方向与回复方向两组地址；若 localhost 由用户态代理处理，可能看到两段连接，或没有对应 NAT 条目。记录实际结果，不把没有单一条目当失败。",
+        "why": "这一步用观测判断代理/内核路径，不能为了符合图示而伪造一条 conntrack 输出。"
+      },
+      {
+        "title": "区分发布入口限制与主机直连",
+        "code": "CIP=$(docker inspect learn-u10-web --format \"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}\")\ncurl -fsS -o /dev/null -w \"%{http_code}\n\" \"http://$CIP:80\"\ndocker inspect learn-u10-web --format \"{{json .HostConfig.PortBindings}}\"",
+        "expect": "原生 rootful Linux 的主机通常可直接访问容器 IP；成功说明“只绑定回环”不等于防住 Docker 主机。若本机额外路由或防火墙阻止，保存规则与错误作为差异证据。",
+        "why": "发布规则限制的是一个入口，网络隔离需要根据威胁来源定义。"
+      }
+    ],
+    "cleanup": "docker rm -f learn-u10-web"
+  },
+  "transfer": {
+    "question": "另一台机器请求宿主:18080 超时，本机 curl 正常。有人建议关闭 Docker 防火墙或使用 --network host。请设计最小诊断方案，先不修改规则。",
+    "evidence": [
+      "实际 PortBindings、客户端目标 IP 与本机监听/发布地址。",
+      "客户端请求时宿主入站接口是否见包，以及适用后端的 NAT/转发计数或抓包。",
+      "容器端服务是否可达，以及回程路由或连接跟踪证据。"
+    ],
+    "answer": [
+      "先看是否只绑定 127.0.0.1：若是，外部不能通过宿主非回环地址命中同样的发布入口，这是配置边界而非 Docker 故障。",
+      "若确实发布到预期外部地址，按客户端→宿主入站→NAT/过滤→容器→回程逐段取证；安全组、主机防火墙、路由与监听各有独立证据。",
+      "只有定位到错误前提后才最小修改，验证授权来源可连接、非授权来源仍失败。host 网络会改变隔离模型，不能作为跳过根因分析的通用修复。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "解释 -p 18080:80 的入站和回程；为什么 ufw deny 18080 不一定能保护容器？",
+      "answer": "在常见 iptables bridge 后端中，外部包在 PREROUTING 相关规则被 DNAT 到容器 IP:80，路由后经 FORWARD 过滤和网桥/veth进入容器。conntrack 记住原始与回复方向，回包反向转换，因此客户端仍看到宿主:18080。仅配置宿主 INPUT 拒绝规则可能覆盖不到这条转发路径。应识别后端并在受支持的转发过滤位置验证准入，或按需求只绑定回环。localhost 请求与外部请求路径不同，必须分别验证。",
+      "followups": [
+        {
+          "question": "DOCKER-USER 中看到的目的端口一定是 18080 吗？",
+          "answer": "通常已经 DNAT 成容器端口80；按原始发布目的匹配时需要连接跟踪的原始目标信息，并考虑入口接口和方向。"
+        },
+        {
+          "question": "把 userland-proxy 关闭会让 NAT 不再需要吗？",
+          "answer": "不会。代理与内核 NAT 是不同实现路径或补充，关闭代理不撤销发布、路由、过滤与连接跟踪模型。"
+        },
+        {
+          "question": "换 nftables 后端还能照抄 DOCKER-USER 吗？",
+          "answer": "不能。Docker nftables 后端没有同样的 DOCKER-USER 结构，应按其受支持表/链和优先级接入，先读取本机配置。"
+        }
+      ],
+      "misconception": "NAT 只改地址，不等于访问控制；绑定回环、容器网络隔离和抵御宿主机访问也不是同一种保证。"
+    }
+  ],
+  "takeaways": [
+    "先写来源与后端，再画 NAT 和过滤路径。",
+    "外部 PREROUTING 与本机 OUTPUT 请求不可混为一次验证。",
+    "conntrack 解释双向地址转换；防火墙决定允许哪些连接。",
+    "入口绑定不替代完整网络访问策略。"
+  ],
+  "references": [
+    {
+      "title": "Docker 与 iptables",
+      "url": "https://docs.docker.com/engine/network/firewall-iptables/"
+    },
+    {
+      "title": "Docker 与 nftables",
+      "url": "https://docs.docker.com/engine/network/firewall-nftables/"
+    },
+    {
+      "title": "端口发布与映射",
+      "url": "https://docs.docker.com/engine/network/port-publishing/"
+    }
+  ]
+}

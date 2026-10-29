@@ -1,0 +1,285 @@
+{
+  "number": 18,
+  "title": "综合项目与面试毕业验收",
+  "summary": "用独立交付、恢复、未知故障和 Docker 专项面试，证明原理已经转化成可用能力。",
+  "minutes": 150,
+  "environment": "需要完成主线实验；使用仓库 docker/labs 提供的应用。准备两个空闲本机端口、独立 Compose 项目和新的恢复卷。实战可以查官方文档；面试口述与画图闭卷。面试范围先覆盖后端开发与平台工程中的 Docker 技术环节。",
+  "sources": [
+    25
+  ],
+  "objectives": [
+    "在干净环境交付可访问、可观测、可恢复的服务。",
+    "根据证据完成至少两种未知故障的根因分析和复验。",
+    "通过45–60分钟Docker专项模拟面试，准确解释原理并承接连续追问。"
+  ],
+  "question": "别人拿到你的仓库、镜像引用和运行手册，能独立启动、恢复和排障吗？面试官换一个条件追问时，你还能说明为什么吗？",
+  "model": [
+    {
+      "title": "毕业要求有两项，都需要独立完成",
+      "body": [
+        "实战证明你能让系统按约定工作。面试证明你能在没有逐条教程时，把现象、机制、边界和工程取舍讲清。两项分别记录结果，完成一个不能替代另一个。",
+        "课程的面试目标是具备通过目标岗位 Docker 技术环节的能力。实际题目按岗位深度调整；验收使用口述、画图、配置分析、未知故障和项目复盘，避免只检查术语记忆。"
+      ]
+    },
+    {
+      "title": "先写承诺，再选择证据",
+      "body": [
+        "给出应用入口、支持的平台、数据目录、运行身份、资源与就绪条件，以及发布和回滚步骤。声明支持的平台必须有对应最终产物的验证证据；镜像摘要只固定内容，不自动证明测试、扫描或可信身份。",
+        "提供业务代码是为了集中检验容器交付。你仍需理解代码的启动、停止和持久化契约；不要把课程实验描述成从未经历过的生产事故。"
+      ]
+    },
+    {
+      "title": "恢复需要证明业务内容和后续写入",
+      "body": [
+        "本应用使用SQLite，运行中备份通过SQLite backup API产生一致快照。将快照恢复到新卷，再核对原订单内容与约束；随后新建订单，确认恢复后的系统还能继续工作。",
+        "镜像回滚与数据回滚是不同动作。本项目当前只有一个向后兼容的表结构；若你扩展迁移，应在升级前说明旧版本是否仍能读取新数据，并在兼容条件下演练回滚。不能以换回镜像替代数据库恢复设计。"
+      ]
+    },
+    {
+      "title": "面试回答是一条可检验的解释链",
+      "body": [
+        "先用一句话给结论，再解释机制，指出适用条件和例外，最后给出实验或项目证据。例如回答“容器为什么轻量”后，应能继续说明共享内核的边界、Desktop中的Linux VM和安全隔离取舍。",
+        "模拟面试建议45–60分钟：原理口述10分钟、运行路径或网络画图10分钟、场景诊断15分钟、配置与工程取舍10分钟、项目复盘5–15分钟。每项都要达到独立解释要求；核心模型出现关键错误时，补做相关实验后用新题复验。"
+      ]
+    }
+  ],
+  "diagram": {
+    "label": "从交付承诺到双重毕业证据",
+    "nodes": [
+      {
+        "id": "contract",
+        "title": "运行契约",
+        "detail": "入口、平台、数据与边界",
+        "x": 0,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "artifact",
+        "title": "最终产物",
+        "detail": "平台、摘要与验证记录",
+        "x": 350,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "delivery",
+        "title": "独立交付",
+        "detail": "干净环境与运行手册",
+        "x": 700,
+        "y": 0,
+        "w": 220
+      },
+      {
+        "id": "incident",
+        "title": "故障与恢复",
+        "detail": "证据、根因、修复与复验",
+        "x": 700,
+        "y": 210,
+        "w": 220
+      },
+      {
+        "id": "interview",
+        "title": "面试与项目答辩",
+        "detail": "结论、机制、边界、证据",
+        "x": 350,
+        "y": 210,
+        "w": 220
+      },
+      {
+        "id": "graduate",
+        "title": "毕业证据",
+        "detail": "实战与面试分别达标",
+        "x": 0,
+        "y": 210,
+        "w": 220
+      }
+    ],
+    "edges": [
+      {
+        "from": "contract",
+        "to": "artifact",
+        "label": "验证承诺"
+      },
+      {
+        "from": "artifact",
+        "to": "delivery",
+        "label": "固定引用"
+      },
+      {
+        "from": "delivery",
+        "to": "incident",
+        "label": "改变条件"
+      },
+      {
+        "from": "incident",
+        "to": "interview",
+        "label": "解释事实"
+      },
+      {
+        "from": "interview",
+        "to": "graduate",
+        "label": "追问复验"
+      },
+      {
+        "from": "contract",
+        "to": "graduate",
+        "label": "逐项核对"
+      }
+    ],
+    "steps": [
+      {
+        "title": "承诺必须可观察",
+        "body": "把要交付的行为与环境前提写清，才能选择证据，而不是事后按一次成功输出解释。",
+        "focus": [
+          "contract",
+          "artifact"
+        ]
+      },
+      {
+        "title": "让别人从零运行",
+        "body": "只给源码、最终产物引用、配置和运行手册；在没有旧容器和旧数据的环境启动并做业务验收。",
+        "focus": [
+          "artifact",
+          "delivery"
+        ]
+      },
+      {
+        "title": "用故障挑战原有解释",
+        "body": "注入不同故障并恢复到新卷，提交诊断、最小修复和业务复验，说明每条证据排除了什么。",
+        "focus": [
+          "delivery",
+          "incident"
+        ]
+      },
+      {
+        "title": "口述并承接追问",
+        "body": "面试中把实际项目证据与原理模型连起来。实战与面试分别记录通过条件和需要补做的项目。",
+        "focus": [
+          "incident",
+          "interview",
+          "graduate",
+          "contract"
+        ]
+      }
+    ]
+  },
+  "lab": {
+    "title": "形成一份可交接的毕业证据",
+    "environment": "从仓库根目录进入 docker/labs。以下示例独占 learn-u18 项目和18018/18019端口，使用同一个Bash终端。命令会创建实验数据；不要指向真实业务环境。",
+    "predict": "先列出五个待证明的承诺：入口可用、数据可保留、权限和网络符合配置、备份可恢复、旧版本可兼容回滚。为每项写出会推翻它的观察结果。",
+    "steps": [
+      {
+        "title": "记录环境和源码输入",
+        "code": "cd docker/labs\nexport LAB_PORT=18018 LAB_IMAGE=learn-u18-api:1.0.0\nmkdir -p evidence/u18\ndocker version --format '{{.Server.Version}}' > evidence/u18/engine.txt\ndocker info --format '{{.OSType}} {{.Architecture}} {{.Driver}} {{.CgroupVersion}}' > evidence/u18/environment.txt\ngit rev-parse HEAD > evidence/u18/commit.txt\ngit diff --stat > evidence/u18/working-tree.txt",
+        "expect": "证据目录包含版本、平台、后端、提交以及未提交改动说明。",
+        "why": "提交号并不包含未提交修改；交接需要如实记录实际输入，最终运行对象还要记录镜像ID或仓库digest。"
+      },
+      {
+        "title": "从构建到业务验收",
+        "code": "docker compose -p learn-u18 up -d --build --wait\npython3 verify.py http://127.0.0.1:18018 --output evidence/u18/business.json\ndocker image inspect \"$LAB_IMAGE\" --format '{{.Id}}' > evidence/u18/image-id.txt\ndocker compose -p learn-u18 config > evidence/u18/resolved-compose.yaml\ncurl -fsS http://127.0.0.1:18018/orders > evidence/u18/orders-before.json",
+        "expect": "业务验收passed为true；保存实际镜像ID、展开后的配置和订单内容。本地镜像ID不能冒充已推送仓库的manifest digest。",
+        "why": "配置、身份与业务行为共同支撑承诺。若要声明远端可部署，继续完成第16课的仓库发布与最终产物验证。"
+      },
+      {
+        "title": "证明容器重建不丢数据",
+        "code": "docker compose -p learn-u18 ps -q api > evidence/u18/container-before.txt\ndocker compose -p learn-u18 up -d --force-recreate --wait\ndocker compose -p learn-u18 ps -q api > evidence/u18/container-after.txt\ncurl -fsS http://127.0.0.1:18018/orders > evidence/u18/orders-after.json\npython3 -c \"import json; a=json.load(open('evidence/u18/orders-before.json')); b=json.load(open('evidence/u18/orders-after.json')); assert a==b; print('orders preserved')\"",
+        "expect": "容器ID变化，订单内容一致；保存比较结果。",
+        "why": "只比较容器是否启动不足以证明持久化；必须检查同一数据身份和业务内容。"
+      },
+      {
+        "title": "一致快照与新卷恢复",
+        "code": "docker compose -p learn-u18 exec api python app.py backup /data/backup.db\ndocker compose -p learn-u18 cp api:/data/backup.db evidence/u18/backup.db\nexport LAB_RESTORE_VOLUME=learn-u18-restore-$(date +%s)\ndocker volume create \"$LAB_RESTORE_VOLUME\"\ndocker run --rm --user 0:0 -v \"$LAB_RESTORE_VOLUME:/restore\" --mount \"type=bind,src=$(pwd)/evidence/u18/backup.db,dst=/snapshot.db,readonly\" \"$LAB_IMAGE\" python -c \"import os,shutil; shutil.copy('/snapshot.db','/restore/orders.db'); os.chown('/restore/orders.db',10001,10001); os.chown('/restore',10001,10001)\"\ndocker run -d --name learn-u18-restored -p 127.0.0.1:18019:8000 -v \"$LAB_RESTORE_VOLUME:/data\" \"$LAB_IMAGE\"",
+        "expect": "恢复使用全新卷；目录和数据库所有者允许10001读写。等待恢复服务/ready返回成功，再执行下一步。",
+        "why": "快照一致性和恢复环境权限是不同条件；源卷仍可用不能证明备份已可恢复。"
+      },
+      {
+        "title": "验证恢复内容与继续写入",
+        "code": "curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:18019/orders > evidence/u18/orders-restored.json\npython3 -c \"import json; a=json.load(open('evidence/u18/orders-after.json')); b=json.load(open('evidence/u18/orders-restored.json')); assert a==b; print('restore content matches')\"\npython3 verify.py http://127.0.0.1:18019 --output evidence/u18/restore-write.json",
+        "expect": "先核对恢复内容与快照前的订单一致，再证明新订单能成功写入；解释verify会增加一笔新订单。",
+        "why": "恢复出的文件可读、业务内容正确和系统能继续写入，是三个不同断言。"
+      },
+      {
+        "title": "完成未知故障和面试记录",
+        "code": "python3 faults.py --case A --output evidence/u18/case-one\n# 按脚本打印的命令，在 learn-u18 项目加载故障配置。\n# 保存现象、假设、区分假设的观测、最小修复与业务复验。\n# 恢复基础配置后，用 --case B --output evidence/u18/case-two 生成不同场景；答案文件留到提交诊断后查看。\n# 与同伴完成45–60分钟Docker专项模拟面试，按下面的通过条件记录。",
+        "expect": "至少两类故障都有完整证据；模拟面试记录原问题、作答要点、追问、关键错误和补做实验。",
+        "why": "可运行项目、诊断能力和口述表达分别验收。未知变体与递进追问能发现对固定答案的依赖。"
+      }
+    ],
+    "cleanup": "docker compose -p learn-u18 down\n# 仅清理本课恢复容器与刚创建的恢复卷：\ndocker rm -f learn-u18-restored\ndocker volume rm \"$LAB_RESTORE_VOLUME\"\n# 确认不再需要原项目数据后，可另行执行 docker compose -p learn-u18 down -v"
+  },
+  "transfer": {
+    "question": "评审者只知道“升级后有时502、部分订单看不到”。你能否在不删除卷、不反复重启的前提下提出至少两个可区分的假设，证明根因并给出可回滚的最小修复？",
+    "evidence": [
+      "真实入口、容器状态、错误时间与应用/代理日志。",
+      "至少两种合理假设，以及能区分它们的观测。",
+      "修复前后相同请求与原订单的对照，必要时的新卷恢复。",
+      "一份他人可复现的runbook，以及你对不确定范围的说明。"
+    ],
+    "answer": [
+      "先把入口HTTP错误与数据身份问题拆开。502可来自代理到后端的DNS、网络、监听或就绪；订单变化可来自项目名、卷、DATA_DIR、版本或查询逻辑。不要用一种症状直接猜一个命令。",
+      "收集展开的Compose配置、网络成员、监听证据、真实挂载和数据库位置，再提出最小改动。记录哪些观测排除了其他假设；根因可能不止一个。",
+      "恢复后从相同入口重复请求，并对照业务数据。若涉及迁移，先证明兼容性和备份恢复，再决定镜像回滚或数据恢复；不要把清空数据当作修复。"
+    ]
+  },
+  "interview": [
+    {
+      "question": "用两分钟介绍你完成的容器化项目：为什么这样设计，如何证明它可靠？",
+      "answer": "先说明目标和范围：本项目交付一个可持久化的订单API，Nginx为入口，API以非root运行，数据在命名卷。随后解释镜像、网络和数据边界，给出业务验收、重建、备份新卷恢复与未知故障的实际证据。最后说明限制：单机SQLite实验并非高可用商店；要扩展生产，需要按负载、数据库和故障模型重新验证。",
+      "followups": [
+        {
+          "question": "请画出一次docker run和一次HTTP请求分别经过什么。",
+          "answer": "运行路径区分CLI、Engine、containerd/shim、OCI运行时与容器进程，说明命名空间、cgroup和根文件系统在哪里生效。请求路径区分本机发布端口、代理、容器网络、API监听和数据库；再按实际平台解释NAT和Desktop VM边界。"
+        },
+        {
+          "question": "你的恢复演练具体证明了什么，还有什么没有证明？",
+          "answer": "一致快照恢复到新卷后核对原订单并继续写入，证明这次快照与应用版本组合可恢复。它不自动证明任意历史备份、其他平台、所有迁移或恢复时间目标；应明确实际测试的版本、数据集和恢复步骤。"
+        },
+        {
+          "question": "如果发布过程支持arm64和amd64，只测了一种平台，你会怎样表述？",
+          "answer": "如实说明目前只取得一种平台的证据。对另一个平台的最终manifest增加运行时冒烟、业务断言和扫描，再发布覆盖声明；固定index digest不能替代这些验证。"
+        }
+      ],
+      "misconception": "把“镜像小、容器running、扫描无严重漏洞”合起来当作可靠性证明。应逐项对应运行契约、业务断言、恢复与信任策略。"
+    },
+    {
+      "question": "现场给你一个访问失败的服务，你会如何诊断并说明取舍？",
+      "answer": "先界定失败入口、时间和影响，保留状态与日志，再提出可区分的假设。按DNS、TCP连接、监听、HTTP、应用依赖、资源和数据逐层观察；选择能改变判断的最小证据。修复优先对应已证实根因，并保留数据与回滚路径，最后重复原始业务请求。",
+      "followups": [
+        {
+          "question": "你为什么不先重启试试？",
+          "answer": "重启可能暂时消除现象，也可能丢失退出现场或隐藏资源压力。若有明确恢复目标，重启可以是有记录的止损动作；诊断仍要保存证据并解释它为何奏效，不能用它替代根因。"
+        },
+        {
+          "question": "如果只能再执行一条命令，你如何选择？",
+          "answer": "选择能区分当前最重要两种假设的观察。例如同名解析是否失败可在同网络的工具容器中查解析；如果名字和IP均可连接却HTTP失败，应查协议与应用日志。没有脱离上下文的固定万能命令。"
+        },
+        {
+          "question": "面试时忘记一个iptables或buildx参数怎么办？",
+          "answer": "先准确说明网络或构建模型、预期验证点和证据来源，再查官方参考确认参数。核心语义错误比忘记冷门参数更重要；实战应把最终复现命令留在runbook中。"
+        }
+      ],
+      "misconception": "将排障题背成logs、exec、restart的固定顺序。真正需要的是每次观察如何改变假设，以及修复后如何证明原问题已消除。"
+    }
+  ],
+  "takeaways": [
+    "毕业同时验收独立交付与Docker专项面试表达。",
+    "每个承诺都有环境前提、可推翻的断言和保留的证据。",
+    "恢复必须验证业务内容和继续写入，回滚必须检查数据兼容。",
+    "面试回答按结论、机制、边界和证据组织，并能处理陌生追问。"
+  ],
+  "references": [
+    {
+      "title": "Docker 生产环境使用 Compose",
+      "url": "https://docs.docker.com/compose/how-tos/production/"
+    },
+    {
+      "title": "Docker 镜像摘要",
+      "url": "https://docs.docker.com/dhi/explore/security-concepts/digests/"
+    },
+    {
+      "title": "Python sqlite3 backup API",
+      "url": "https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.backup"
+    }
+  ]
+}

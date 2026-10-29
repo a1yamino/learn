@@ -1,7 +1,7 @@
 const kv=rows=>rows.map(([k,v,x])=>`<div class="kv${x?' x':''}"><span>${k}</span><span>${v}</span></div>`).join('');
 const blk=(t,c='')=>({cls:'blk '+c,html:t});
 /* ---------- Mission 1 animation ---------- */
-const SRV_NEW=`<h6>生产服务器 · 只装了 Docker</h6>`+kv([['python','3.12'],['openssl','3.0'],['requests','2.31']]);
+const SRV_NEW=`<h6>生产服务器上的容器</h6>`+kv([['python','3.12'],['openssl','3.0'],['requests','2.31']]);
 Player(document.getElementById('p1'),{els:{
  lap:{w:280,cls:'card',html:`<h6>你的电脑</h6>`+kv([['python','3.12'],['openssl','3.0'],['requests','2.31']])},
  srv:{w:280,cls:'card',html:`<h6>生产服务器</h6>`+kv([['python','3.8',1],['openssl','1.1',1],['requests','2.20',1]])},
@@ -11,7 +11,7 @@ Player(document.getElementById('p1'),{els:{
  {t:'本地一切正常',p:'Python 3.12、OpenSSL 3.0、requests 2.31。测试全部通过。',set:{lap:[110,150],okL:[110,370]}},
  {t:'服务器上跑不起来',p:'服务器的三个版本都更旧。同样的代码报 <b>ImportError</b> 和 SSL 错误。代码没变，变的是环境。',d:3600,set:{lap:[110,150],okL:[110,370],arrow:[430,220],srv:[610,150],stS:[610,370]}},
  {t:'把环境和代码一起打包',p:'Docker 把应用连同运行时、依赖、配置打包成一个<b>镜像</b>。',set:{lap:[110,150],okL:[110,370],pkg:[95,128],arrow:[430,220],srv:[610,150],stS:[610,370]}},
- {t:'在服务器上运行同一个镜像',p:'服务器只需要安装 Docker。镜像里的版本和本地完全一样。',d:3800,set:{lap:[110,150],okL:[110,370],arrow:[430,220],pkg:[595,128],srv:[610,150,{html:SRV_NEW}],stS:[610,370,{html:'运行正常',cls:'pill ok'}]}}]});
+ {t:'在服务器上运行同一个镜像',p:'服务器需要兼容的 Docker 执行环境。镜像固定用户态依赖；CPU 架构、Linux 内核、挂载和运行配置仍有边界。',d:3800,set:{lap:[110,150],okL:[110,370],arrow:[430,220],pkg:[595,128],srv:[610,150,{html:SRV_NEW}],stS:[610,370,{html:'运行正常',cls:'pill ok'}]}}]});
 /* ---------- Mission 2 animation ---------- */
 const VM={hw:[300,500],os:[300,452],hv:[300,404,{html:'Hypervisor',cls:'blk'}],g1:[300,356],g2:[436,356],g3:[572,356],d1:[300,308],d2:[436,308],d3:[572,308],a1:[300,260],a2:[436,260],a3:[572,260],lab:[300,222,{html:'<b>虚拟机</b> · 每个应用一套完整操作系统'}]};
 const CT={hw:[300,500],os:[300,452,{html:'宿主机操作系统 · 共享内核'}],hv:[300,404,{html:'Docker Engine',cls:'blk ink'}],d1:[300,356],d2:[436,356],d3:[572,356],a1:[300,308],a2:[436,308],a3:[572,308],lab:[300,270,{html:'<b>容器</b> · 只有应用和它的依赖'}]};
@@ -23,7 +23,7 @@ Player(document.getElementById('p2'),{els:{
  m1:{w:220,html:'<div class="big">数十秒</div><div class="tag">虚拟机启动</div>'},m2:{w:220,html:'<div class="big" style="color:var(--sig)">&lt; 1 秒</div><div class="tag">容器启动</div>'}},
  scenes:[
  {t:'虚拟机：每个应用一套系统',p:'Hypervisor 模拟出多台“电脑”，每台装自己的操作系统（<b>Guest OS</b>），各占 GB 级磁盘和内存。',d:3600,set:VM},
- {t:'容器：共享宿主机内核',p:'去掉 Guest OS，只留应用和依赖。隔离靠内核的 <code>namespace</code> 和 <code>cgroups</code>。容器就是被隔离的普通进程。',d:4200,set:CT},
+ {t:'容器：共享宿主机内核',p:'容器共享 Linux 执行环境的内核；Docker Desktop 中是 Linux VM 的内核。隔离靠内核的 <code>namespace</code> 和 <code>cgroups</code>。容器就是被隔离的普通进程。',d:4200,set:CT},
  {t:'结果：更快、更小',p:'不用启动操作系统，容器通常不到一秒启动。代价：隔离不如虚拟机彻底，且必须用宿主机内核。',d:3600,set:{...CT,m1:[740,250],m2:[740,370]}}]});
 /* ---------- Mission 3 animation ---------- */
 const IMG={L1:[290,470],L2:[290,418],L3:[290,366],imgLab:[290,530]},W={1:[290,318],2:[434,318],3:[578,318]};
@@ -35,7 +35,7 @@ Player(document.getElementById('p3'),{els:{
  {t:'镜像由只读层组成',p:'每一层记录一次文件变化：基础系统、依赖、代码。层生成后不再改变。',set:IMG},
  {t:'docker run：加一层可写层',p:'Docker 不复制镜像，只在上面加一层<b>可写层</b>并启动进程。这就是<b>容器</b>。',set:{...IMG,W1:W[1]}},
  {t:'多个容器共享同一份镜像',p:'三个容器，只读层在磁盘上仍然<b>只有一份</b>。',set:{...IMG,W1:W[1],W2:W[2],W3:W[3]}},
- {t:'写入只影响自己',p:'容器 1 写入 <code>/tmp/log.txt</code>，只进入它自己的可写层。这叫<b>写时复制</b>。',set:{...IMG,W1:W[1],W2:W[2],W3:W[3],f1:[308,280]}},
+ {t:'写入只影响自己',p:'新建 <code>/tmp/log.txt</code> 直接进入容器 1 的可写层。修改镜像已有文件时，先复制到上层再改，才是 <b>copy-up / 写时复制</b>。',set:{...IMG,W1:W[1],W2:W[2],W3:W[3],f1:[308,280]}},
  {t:'删除容器，镜像不变',p:'<code>docker rm</code> 删除容器 3 和它的可写层。要保存的数据放在 <b>Volume</b> 里。',set:{...IMG,W1:W[1],W2:W[2],f1:[308,280]}}]});
 /* ---------- Hands-on ---------- */
 (()=>{const host=document.getElementById('host3'),ws=document.getElementById('ws3'),n=document.getElementById('n3'),ma=document.getElementById('msg3a'),mb=document.getElementById('msg3b'),b3=document.getElementById('b3'),img=document.getElementById('img3');let c=0;
@@ -63,7 +63,7 @@ hello-world   latest    d2c94e258dcb   13.3kB`,'列出本地镜像。<b>REPOSITO
  
  T.forEach(([c,o,x],i)=>{const b=document.createElement('button');b.setAttribute('role','tab');b.textContent='$ '+c;b.addEventListener('click',()=>{tabs.querySelectorAll('button').forEach(z=>z.setAttribute('aria-selected',z===b));clearInterval(tm);let k=0;ex.innerHTML='';
   const done=()=>{ex.innerHTML=x;b.classList.add('ran');ran.add(i);};
-  const draw=()=>pre.innerHTML=`<b>$ ${c}</b>\n<span>${esc(o.slice(0,k))}</span>`;if(RM){k=o.length;draw();done();return}tm=setInterval(()=>{k+=6;draw();if(k>=o.length){clearInterval(tm);done()}},14)});tabs.appendChild(b)})})();
+  const draw=()=>pre.innerHTML=`<b>$ ${c}</b>\n<span>${esc(o.slice(0,k))}</span>`;if(RM||window.TERM_INSTANT){k=o.length;draw();done();return}tm=setInterval(()=>{k+=6;draw();if(k>=o.length){clearInterval(tm);done()}},14)});tabs.appendChild(b)})})();
 /* ---------- Mission 5: quiz ---------- */
 const Q=[['镜像和容器的关系，哪一项最准确？',['镜像是运行中的进程，容器是文件','镜像是只读的层；容器是镜像加一层可写层，并作为进程运行','两者是同一个东西的不同叫法'],1,'容器在镜像的只读层上加了自己的可写层。'],
 ['用同一个镜像启动 3 个容器，镜像的只读层在磁盘上有几份？',['1 份，被共享','3 份','4 份'],0,'只读层共享，每个容器只多一层可写层。'],
