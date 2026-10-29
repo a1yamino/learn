@@ -1,0 +1,177 @@
+/* Docker 主线（第二版）阅读与图解样式。加载在 layout.css 之后，只作用于 body.u2。 */
+.u2 { --measure: 40em; --u2-gap: clamp(72px, 12vh, 140px); }
+.u2-wrap { max-width: 1080px; }
+
+/* —— 开篇 —— */
+.u2-lede { padding: clamp(72px, 14vh, 150px) 0 clamp(40px, 6vh, 72px); }
+.u2-lede h1 { font-size: clamp(36px, 6.2vw, 80px); line-height: 1.06; letter-spacing: -0.035em; max-width: 14em; text-wrap: balance; }
+.u2 .u2-sum { font-size: clamp(17px, 1.6vw, 20px); line-height: 1.75; color: var(--ink2); max-width: 34em; text-wrap: pretty; }
+.u2-ask { margin: clamp(36px, 6vh, 56px) 0 0; max-width: 46em; padding: 22px 26px 24px; border-radius: var(--radius-l);
+  background: var(--card); box-shadow: var(--elev); border: 1px solid var(--line); position: relative; }
+.u2-ask::before { content: ""; position: absolute; left: 0; top: 22px; bottom: 22px; width: 2px; background: var(--sig); border-radius: 2px; }
+.u2-ask span { font: 500 12px/1 var(--m); letter-spacing: .12em; color: var(--sig); }
+.u2-ask p { margin: 12px 0 0 !important; color: var(--ink) !important; font-size: 18px !important; line-height: 1.8; max-width: none !important; }
+.u2-jumps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 36px; }
+.u2-jumps a { font: 500 13px/1 var(--m); color: var(--ink2); text-decoration: none; padding: 10px 14px; min-height: 36px; display: inline-flex; align-items: center;
+  border: 1px solid var(--line); border-radius: 999px; transition: color 160ms var(--ease-out), border-color 160ms var(--ease-out), transform 120ms var(--ease-out); }
+.u2-jumps a:active { transform: scale(.97); }
+@media (hover: hover) and (pointer: fine) { .u2-jumps a:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 30%, transparent); } }
+
+/* —— 分节 —— */
+.u2-sec { padding: var(--u2-gap) 0 0; scroll-margin-top: 64px; }
+.u2-sh { display: grid; grid-template-columns: auto 1fr; column-gap: 14px; align-items: baseline; margin-bottom: 32px;
+  padding-top: 20px; border-top: 1px solid var(--line); }
+.u2-idx { font: 500 12px/1 var(--m); color: var(--sig); letter-spacing: .08em; }
+.u2-lab { font: 500 12px/1 var(--m); color: var(--ink2); letter-spacing: .12em; }
+.u2-sh h2 { grid-column: 1 / -1; margin: 18px 0 0; font: 800 clamp(26px, 3.4vw, 40px)/1.2 var(--f); letter-spacing: -.025em; text-wrap: balance; max-width: 20em; }
+.u2-sec p { font-size: 17px; line-height: 1.85; max-width: var(--measure); margin: 0 0 14px; color: var(--ink); text-wrap: pretty; }
+
+.u2-concept { display: grid; grid-template-columns: minmax(0, 15em) minmax(0, 1fr); gap: 12px 48px; padding: 28px 0; border-top: 1px solid var(--line); }
+.u2-concept:first-of-type { border-top: 0; padding-top: 4px; }
+.u2-concept h3 { margin: 4px 0 0; font: 700 19px/1.5 var(--f); letter-spacing: -.01em; }
+.u2-concept p:last-child { margin-bottom: 0; }
+.u2-concept p + p { color: var(--ink2); }
+@media (max-width: 760px) { .u2-concept { grid-template-columns: 1fr; gap: 10px; } }
+
+/* —— 图解 —— */
+.u2-fig { margin: 0; border-radius: var(--radius-l); background: var(--card); border: 1px solid var(--line); box-shadow: var(--elev);
+  overflow: hidden; position: relative; }
+.u2-stage { padding: clamp(18px, 4vw, 44px) clamp(14px, 4vw, 44px) 8px;
+  background-image: radial-gradient(var(--dot) 1px, transparent 1px); background-size: 22px 22px; background-position: -11px -11px; }
+.u2-svg { display: block; width: 100%; height: auto; max-height: 64vh; overflow: visible; font-family: var(--f); }
+.u2-node rect { fill: var(--bg2); stroke: var(--line); stroke-width: 1.2; transition: fill 240ms var(--ease-out), stroke 240ms var(--ease-out); }
+.u2-nt { fill: var(--ink); font-weight: 700; font-size: 19px; letter-spacing: -.01em; }
+.u2-nd { fill: var(--ink2); font-size: 15px; }
+.u2-node { opacity: 0; transform: translateY(10px); transition: opacity 320ms var(--ease-out) calc(var(--i) * 45ms), transform 420ms var(--ease-out) calc(var(--i) * 45ms); }
+.u2-line { fill: none; stroke: color-mix(in srgb, var(--ink) 26%, transparent); stroke-width: 1.6; stroke-dasharray: 1; stroke-dashoffset: 1;
+  transition: stroke-dashoffset 520ms var(--ease-out) calc(200ms + var(--i) * 60ms), stroke 240ms var(--ease-out); }
+.u2-ah { fill: none; stroke: inherit; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+marker path.u2-ah { stroke: color-mix(in srgb, var(--ink) 40%, transparent); }
+.u2-pulse { fill: var(--sig); opacity: 0; transition: opacity 200ms var(--ease-out); }
+.u2-el { opacity: 0; transition: opacity 240ms var(--ease-out) 420ms; }
+.u2-el rect { fill: var(--card); stroke: var(--line); }
+.u2-el text { fill: var(--ink2); font-size: 13.5px; font-family: var(--f); font-weight: 500; }
+.u2-svg.in .u2-node { opacity: 1; transform: none; }
+.u2-svg.in .u2-line { stroke-dashoffset: 0; }
+.u2-svg.in .u2-el { opacity: 1; }
+/* 有当前步骤时：焦点之外的元素退后，保留可见 */
+.has-step .u2-node:not(.on) { opacity: .42; }
+.u2-node.on rect { fill: color-mix(in srgb, var(--sig) 10%, var(--bg2)); stroke: var(--sig); stroke-width: 1.6; }
+.u2-edge.on .u2-line { stroke: var(--sig); }
+.has-step .u2-el:not(.on) { opacity: .45; }
+.u2-el.on rect { stroke: color-mix(in srgb, var(--sig) 55%, transparent); }
+.u2-el.on text { fill: var(--ink); }
+.u2-edge.on .u2-pulse { opacity: 1; }
+
+.u2-cap { min-height: 104px; padding: 18px clamp(18px, 4vw, 44px) 4px; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-content: start; }
+.u2-cap:empty::before { content: "图解播放时，这里会逐步说明。"; color: var(--ink2); font-size: 15px; grid-column: 1 / -1; }
+.u2-cap .u2-n { font: 500 12px/1.9 var(--m); color: var(--sig); }
+.u2-cap strong { font: 700 17px/1.6 var(--f); }
+.u2-cap .u2-cb { grid-column: 2; color: var(--ink2); font-size: 16px; line-height: 1.75; max-width: 40em; }
+.u2-cap.swap > * { animation: u2-in 260ms var(--ease-out) both; }
+.u2-cap.swap .u2-cb { animation-delay: 40ms; }
+@keyframes u2-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.u2-ctl { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px clamp(12px, 4vw, 40px) 18px; }
+.u2-ticks { display: flex; gap: 6px; flex: 1; max-width: 360px; }
+.u2-tick { flex: 1; height: 32px; padding: 0; border: 0; background: none; cursor: pointer; display: flex; align-items: center; }
+.u2-tick i { display: block; width: 100%; height: 3px; border-radius: 3px; background: var(--line); position: relative; overflow: hidden; }
+.u2-tick i::after { content: ""; position: absolute; inset: 0; background: var(--sig); transform: scaleX(0); transform-origin: left; }
+.u2-tick.done i::after { transform: scaleX(1); }
+.u2-tick.cur i::after { transform: scaleX(1); }
+.playing .u2-tick.cur i::after { transform: scaleX(0); animation: u2-fill var(--step-ms, 3200ms) linear forwards; }
+@keyframes u2-fill { to { transform: scaleX(1); } }
+.u2-btns { display: flex; gap: 6px; }
+.u2-b { min-width: 40px; height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink);
+  font: 500 13px/1 var(--m); cursor: pointer; transition: transform 120ms var(--ease-out), border-color 160ms var(--ease-out), background-color 160ms var(--ease-out), opacity 160ms; }
+.u2-b:active:not(:disabled) { transform: scale(.96); }
+.u2-b:disabled { opacity: .35; cursor: default; }
+.u2-replay { color: var(--ink2); }
+.ended .u2-replay { color: var(--inv); background: var(--sig); border-color: var(--sig); }
+@media (hover: hover) and (pointer: fine) { .u2-b:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ink) 35%, transparent); } }
+.u2-b:focus-visible, .u2-tick:focus-visible, .u2-opt:focus-visible, .u2-det summary:focus-visible { outline: 2px solid var(--sig); outline-offset: 2px; }
+
+/* —— 推演 —— */
+.u2-q { font-size: 19px !important; line-height: 1.8 !important; font-weight: 500; max-width: 38em !important; }
+.u2-hint { color: var(--ink2) !important; font-size: 15px !important; }
+.u2-opts { display: grid; gap: 10px; margin: 24px 0 0; max-width: 42em; }
+.u2-opt { display: flex; gap: 14px; align-items: baseline; text-align: left; padding: 16px 18px; border-radius: var(--radius-m); border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); font: 400 16px/1.6 var(--f); cursor: pointer; box-shadow: var(--elev);
+  transition: transform 120ms var(--ease-out), border-color 180ms var(--ease-out), background-color 180ms var(--ease-out), opacity 200ms var(--ease-out); }
+.u2-opt:active { transform: scale(.985); }
+@media (hover: hover) and (pointer: fine) { .u2-opts:not(.answered) .u2-opt:hover { border-color: color-mix(in srgb, var(--ink) 30%, transparent); } }
+.u2-key { font: 500 12px/1 var(--m); color: var(--ink2); width: 14px; flex: none; }
+.answered .u2-opt { cursor: default; }
+.answered .u2-opt:not(.right):not(.wrong) { opacity: .45; }
+.u2-opt.right { border-color: var(--ok); background: var(--oks); }
+.u2-opt.right .u2-key { color: var(--ok); }
+.u2-opt.wrong { border-color: var(--bad); background: var(--bads); }
+.u2-reveal { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 360ms var(--ease-out), opacity 260ms var(--ease-out); }
+.u2-reveal > div { overflow: hidden; }
+.u2-reveal.open { grid-template-rows: 1fr; opacity: 1; }
+.u2-verdict { margin-top: 28px !important; font-weight: 700; }
+.u2-term { margin-top: 22px; max-width: 44em; border-radius: var(--radius-m); background: #0d0d0f; border: 1px solid rgba(255,255,255,.08); overflow: hidden; }
+.u2-term-h { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.u2-term-h span { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.14); }
+.u2-term-h em { margin-left: auto; font: 500 11px/1 var(--m); color: rgba(243,242,237,.45); font-style: normal; letter-spacing: .06em; }
+.u2-term pre { margin: 0; padding: 16px 18px 18px; overflow-x: auto; font: 400 13.5px/1.7 var(--m); color: #e6e4dc; white-space: pre; }
+.u2-term code { background: none; padding: 0; color: inherit; font: inherit; overflow-wrap: normal; }
+
+/* —— 折叠 —— */
+.u2-det { max-width: 44em; border-top: 1px solid var(--line); }
+.u2-det:last-child { border-bottom: 1px solid var(--line); }
+.u2-det summary { list-style: none; cursor: pointer; padding: 18px 36px 18px 0; position: relative; font: 600 16px/1.6 var(--f); }
+.u2-det summary::-webkit-details-marker { display: none; }
+.u2-det summary::after { content: ""; position: absolute; right: 6px; top: 50%; width: 9px; height: 9px; margin-top: -6px;
+  border-right: 1.5px solid var(--ink2); border-bottom: 1.5px solid var(--ink2); transform: rotate(45deg); transition: transform 200ms var(--ease-out); }
+.u2-det[open] summary::after { transform: translateY(4px) rotate(-135deg); }
+.u2-sub summary { font-weight: 500; color: var(--ink2); }
+.u2-det[open] .u2-det-b { animation: u2-in 260ms var(--ease-out) both; }
+.u2-det-b { padding: 0 0 12px; }
+.u2-det-b p { color: var(--ink); }
+#transfer .u2-hint, #interview .u2-hint { margin-bottom: 28px; }
+
+/* —— 小结 —— */
+.u2-take { list-style: none; counter-reset: t; padding: 0; margin: 0; max-width: 44em; }
+.u2-take li { counter-increment: t; display: grid; grid-template-columns: 44px 1fr; padding: 18px 0; border-top: 1px solid var(--line); font-size: 18px; line-height: 1.7; font-weight: 500; }
+.u2-take li::before { content: counter(t, decimal-leading-zero); font: 500 12px/2.4 var(--m); color: var(--sig); }
+.u2-refs { margin-top: 40px; display: grid; grid-template-columns: 7em 1fr; gap: 12px; max-width: 44em; }
+.u2-refs > span { font: 500 12px/2 var(--m); color: var(--ink2); letter-spacing: .08em; }
+.u2-refs ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.u2-refs a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 4px; transition: text-decoration-color 160ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { .u2-refs a:hover { text-decoration-color: var(--sig); } }
+.u2-end { margin-top: var(--u2-gap); }
+.u2-end a.big { font-size: clamp(32px, 5vw, 64px); text-wrap: balance; }
+
+/* —— 目录 —— */
+.u2-index .list .grp { display: flex; gap: 14px; align-items: baseline; }
+.u2-index .list .grp span { font: 500 12px/1 var(--m); color: var(--sig); }
+.u2-old { margin: 80px 0 40px; }
+.u2-old summary { cursor: pointer; font: 500 13px/1 var(--m); color: var(--ink2); padding: 18px 0; border-top: 1px solid var(--line); list-style: none; }
+.u2-old summary::-webkit-details-marker { display: none; }
+.u2-old .list { opacity: .8; }
+
+@media (max-width: 600px) {
+  .u2 .wrap { padding: 0 20px; }
+  .u2-sec p, .u2-opt { font-size: 16px; }
+  .u2-q { font-size: 17px !important; }
+  .u2-ask { padding: 18px 18px 20px; }
+  .u2-ask p { font-size: 16px !important; }
+  .u2-cap { grid-template-columns: 1fr; }
+  .u2-cap .u2-cb { grid-column: 1; }
+  .u2-ctl { flex-wrap: wrap; }
+  .u2-ticks { max-width: none; flex-basis: 100%; }
+  .u2-btns { margin-left: auto; }
+  .u2-refs { grid-template-columns: 1fr; }
+  .u2-take li { font-size: 16px; grid-template-columns: 36px 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .u2-node, .u2-line, .u2-el, .u2-reveal, .u2-cap.swap > *, .u2-det[open] .u2-det-b { transition: none !important; animation: none !important; }
+  .u2-pulse { display: none; }
+  .playing .u2-tick.cur i::after { animation: none; transform: scaleX(1); }
+}
+.u2-svg.compact .u2-nt { font-size: 25px; }
+.u2-svg.compact .u2-nd { font-size: 18px; }
+.u2-svg.compact .u2-el text { font-size: 19px; }
+.u2-svg.compact .u2-line, .u2-svg.compact .u2-ah { stroke-width: 2.2; }
