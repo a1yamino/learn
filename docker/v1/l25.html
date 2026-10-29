@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Docker 第 25 课 · 综合项目：从零到生产</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/play.css">
+<link rel="stylesheet" href="../layout.css"></head><body>
+<div class="top"><a href="../../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 25 课</span><span class="sp"></span><a href="l24.html">← 第 24 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Docker · 第 25 课</div><h1>综合项目：从零到生产</h1>
+<p>把整门课串起来：一个 Web + API + 数据库 + 缓存的应用，从 Dockerfile 写到 CI 流水线，再部署到一台服务器，带健康检查、资源限制、加固、备份和回滚。约 120 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">目标架构</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">一次发布的全过程</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：上线前审查</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">上线后的日常命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">项目：一步步完成</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>目标架构</h2><div class="goal">四个服务，两个网络，一个数据卷。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>一次发布的全过程</h2><div class="goal">从 git push 到用户看到新版本，再到回滚。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：上线前审查</h2><div class="goal">下面是同事提交的生产 Compose 文件。点击你认为有问题的行。找出全部 7 处。</div></div></div>
+<div class="chal"><div class="log" id="cf" style="white-space:pre;cursor:pointer;max-height:none;height:auto;overflow-x:auto"></div><div class="msg" id="rv"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>上线后的日常命令</h2><div class="goal">部署、观察、备份、回滚。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>项目：一步步完成</h2><div class="goal">这是开放式综合项目，命令中的目录、镜像和数据库对象需先按要求实现。第 4 课仅有 /health，并未提供订单、数据库访问、缓存、迁移或测试代码。先完成下方功能契约，再进入部署步骤；输出为验收示例，不是运行空目录即可得到的结果。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p><b>1. 应用和仓库</b>。在第 4 课 API 上实现：订单写入 PostgreSQL 的 shop 数据库、查询订单及 Redis Cache-Aside 缓存、/health 就绪检查。迁移任务创建 orders 表；测试至少断言创建后可查询、更新后缓存失效、缓存不可用时按约定回源。前端通过 /api 访问服务。配置数据库名 POSTGRES_DB=shop，记录初始化数据的实际行数，不要假定预期一定是 42。目录结构如下。</p><pre class="cmd">mkdir shop &amp;&amp; cd shop &amp;&amp; git init
+# api/  (Dockerfile, app, tests)
+# web/  (Dockerfile, 静态文件, nginx.conf)
+# compose.yaml  compose.override.yaml  compose.prod.yaml
+# .github/workflows/ci.yml  .dockerignore  .env.example</pre><pre class="out">（.env 加入 .gitignore，只提交 .env.example）</pre></div></div><div class="st"><span class="n">02</span><div><p><b>2. 镜像</b>。api 用多阶段构建、test 阶段、非 root、缓存挂载；web 用 nginx-unprivileged。检查大小和用户。</p><pre class="cmd">docker build -t shop-api ./api &amp;&amp; docker build -t shop-web ./web
+docker image ls shop-* --format &quot;{{.Repository}} {{.Size}}&quot;
+docker run --rm shop-api id -u</pre><pre class="out">shop-api 78MB
+shop-web 52MB
+10001</pre></div></div><div class="st"><span class="n">03</span><div><p><b>3. Compose</b>。db 和 redis 带健康检查；migrate 一次性任务；api 依赖 db healthy 和 migrate 成功；只有 web 发布端口。</p><pre class="cmd">docker compose up -d --wait &amp;&amp; docker compose ps --format &quot;{{.Service}} {{.Status}}&quot;</pre><pre class="out">api Up 20 seconds (healthy)
+db Up 31 seconds (healthy)
+redis Up 31 seconds (healthy)
+web Up 9 seconds (healthy)</pre></div></div><div class="st"><span class="n">04</span><div><p><b>4. 确认网络隔离</b>。数据库未发布到宿主机 localhost:5432，web 也不能按服务名直连数据库。这个检查不证明对 Docker 主机本身的隔离：Linux 主机通常仍能访问容器 IP。</p><pre class="cmd">nc -zv -w2 localhost 5432; docker compose exec web nc -zv -w2 db 5432</pre><pre class="out">nc: connect to localhost port 5432 (tcp) failed: Connection refused
+nc: bad address &#x27;db&#x27;</pre></div></div><div class="st"><span class="n">05</span><div><p><b>5. 生产加固</b>（compose.prod.yaml）：资源限制、cap_drop、read_only、no-new-privileges、restart、日志轮转。用 config 检查合并结果。</p><pre class="cmd">docker compose -f compose.yaml -f compose.prod.yaml config | grep -E &quot;cap_drop|read_only|memory&quot; | sort | uniq -c</pre><pre class="out">      4     cap_drop:
+      4     memory: &quot;…&quot;
+      3     read_only: true</pre></div></div><div class="st"><span class="n">06</span><div><p><b>6. CI</b>：第 23 课的 workflow，构建两个镜像、test 阶段、Trivy 门禁、推送、签名，输出两个 digest。</p><pre class="cmd">git push &amp;&amp; gh run watch</pre><pre class="out">✓ build (api)  ✓ build (web)  ✓ deploy</pre></div></div><div class="st"><span class="n">07</span><div><p><b>7. 部署</b>：服务器上通过环境变量传入 digest。</p><pre class="cmd">API_IMAGE=ghcr.io/you/shop-api@sha256:… WEB_IMAGE=ghcr.io/you/shop-web@sha256:… \
+  docker compose -f compose.yaml -f compose.prod.yaml up -d --wait</pre><pre class="out">✔ Container shop-api-1  Healthy
+✔ Container shop-web-1  Healthy</pre></div></div><div class="st"><span class="n">08</span><div><p><b>8. 备份与恢复演练</b>。备份数据库，删除卷，恢复，确认数据还在。</p><pre class="cmd"># 在测试环境执行。只有备份成功才删卷恢复；用子 shell 开启 pipefail，不影响当前终端
+if (set -o pipefail; docker compose exec -T db pg_dump -U postgres shop | gzip &gt; backup.sql.gz); then
+  docker compose down -v &amp;&amp; docker compose up -d --wait db
+  gunzip -c backup.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U postgres shop &gt;/dev/null
+  docker compose exec db psql -U postgres shop -tc &quot;select count(*) from orders&quot;
+else
+  echo &quot;备份失败，已停止恢复演练，卷没有删除&quot; &gt;&amp;2
+fi</pre><pre class="out">  42</pre></div></div><div class="st"><span class="n">09</span><div><p><b>9. 回滚演练</b>。在测试环境部署健康检查失败的版本，再换回上一个 digest。镜像回滚不回滚数据库或卷：迁移必须与旧应用兼容，破坏性迁移需另行制定数据恢复方案。验证健康状态、订单读写和恢复前后数据行数。</p><pre class="cmd">API_IMAGE=…@sha256:&lt;坏版本&gt; docker compose … up -d --wait; echo exit=$?
+API_IMAGE=…@sha256:&lt;上一版本&gt; docker compose … up -d --wait; echo exit=$?</pre><pre class="out">container shop-api-1 is unhealthy
+exit=1
+exit=0</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>写一份运维手册</h3><p>在仓库里加 <code>RUNBOOK.md</code>，覆盖：部署、回滚、备份和恢复、查看日志、三种常见故障的排查步骤。请另一个人（或未来的你）只照着手册，在一台新服务器上把应用跑起来并完成一次恢复。</p><details><summary>查看参考答案</summary><div><p>参考结构：</p><pre class="cmd"># Shop 运维手册
+## 部署
+1. 从 CI 最近一次成功运行复制两个 digest
+2. API_IMAGE=… WEB_IMAGE=… docker compose -f compose.yaml -f compose.prod.yaml up -d --wait
+3. curl -fsS https://shop.example.com/healthz
+## 回滚
+- deploys.log 里记录每次部署的 digest；用上一行的值重复“部署”第 2 步
+## 备份与恢复
+- 每天 03:00 cron：pg_dump | gzip，保留 14 天，复制到另一台机器/对象存储
+- 每月恢复演练一次（命令见项目第 8 步）
+## 排障（第 22 课顺序）
+- api 反复重启：docker inspect … OOMKilled → 调整 memory
+- 502：docker compose logs web；api 是否 healthy；监听地址
+- 磁盘满：docker system df；du -sh /var/lib/docker/containers/*</pre><p>手册的价值在于<b>被验证过</b>：没有在新机器上照做成功过的步骤，到真正出事时往往行不通。备份同理：没有恢复过的备份，不能算备份。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>镜像：多阶段构建、非 root、固定基础镜像版本、<code>.dockerignore</code>、缓存挂载（第 3、5、17 课）。</li><li>编排：Compose 健康检查 + 依赖条件 + 迁移任务；开发和生产分文件（第 8、18 课）。</li><li>网络：只有反向代理发布端口，数据库和缓存只在内部网络（第 7、15 课）。</li><li>数据：命名卷 + 定期备份并验证能恢复（第 6、16 课）。</li><li>安全与资源：cap-drop、只读文件系统、no-new-privileges、内存和 CPU 限制、日志轮转；镜像扫描、SBOM、签名（第 19–21 课）。</li><li>交付：CI 构建一次、测试、扫描、推送、签名，按 digest 部署，回滚就是换回上一个 digest（第 23 课）。出问题按第 22 课的顺序排查。</li></ol></section>
+<footer class="endnav"><div class="k">课程完成</div><a class="big" href="index.html">课程目录 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../../index.html">学习</a></div></footer>
+</main>
+<script src="../../assets/play.js"></script>
+<script src="../motion.js"></script>
+<script src="l25.js"></script>
+</body></html>

@@ -175,3 +175,24 @@ marker path.u2-ah { stroke: color-mix(in srgb, var(--ink) 40%, transparent); }
 .u2-svg.compact .u2-nd { font-size: 18px; }
 .u2-svg.compact .u2-el text { font-size: 19px; }
 .u2-svg.compact .u2-line, .u2-svg.compact .u2-ah { stroke-width: 2.2; }
+
+/* —— 加深内容：走一遍、常见误区、生产 —— */
+.u2-walk, .u2-pit, .u2-prod { margin-top: 48px; max-width: 46em; }
+.u2-walk h3, .u2-pit h3, .u2-prod h3, .u2-fig2 { font: 700 19px/1.5 var(--f); letter-spacing: -.01em; margin: 0 0 18px; }
+.u2-walk ol { list-style: none; counter-reset: w; margin: 0; padding: 0; border-left: 1px solid var(--line); }
+.u2-walk li { counter-increment: w; position: relative; padding: 0 0 18px 28px; font-size: 16px; line-height: 1.85; }
+.u2-walk li::before { content: counter(w); position: absolute; left: -10px; top: 4px; width: 20px; height: 20px; border-radius: 50%;
+  background: var(--bg); border: 1px solid var(--sig); color: var(--sig); font: 500 11px/18px var(--m); text-align: center; }
+.u2-walk li:last-child { padding-bottom: 0; }
+.u2-pit dl { margin: 0; display: grid; gap: 0; }
+.u2-pit dt { font-weight: 600; font-size: 16px; line-height: 1.7; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink); }
+.u2-pit dt::before { content: "误区"; font: 500 11px/1 var(--m); color: var(--bad); border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent);
+  border-radius: 4px; padding: 3px 5px; margin-right: 10px; vertical-align: 2px; }
+.u2-pit dd { margin: 6px 0 16px; color: var(--ink2); font-size: 16px; line-height: 1.8; }
+.u2-prod { padding: 22px 24px 8px; border-radius: var(--radius-l); background: var(--card); border: 1px solid var(--line); box-shadow: var(--elev); }
+.u2-prod p { font-size: 16px !important; }
+.u2-fig2 { margin: 56px 0 18px; }
+.u2-foot { margin: 72px 0 48px; padding-top: 20px; border-top: 1px solid var(--line); }
+.u2-foot a { font: 500 12px/1 var(--m); color: var(--ink2); text-decoration: none; letter-spacing: .06em; transition: color 160ms var(--ease-out); }
+@media (hover: hover) and (pointer: fine) { .u2-foot a:hover { color: var(--ink); } }
+@media (max-width: 600px) { .u2-prod { padding: 18px 18px 6px; } .u2-walk li, .u2-pit dd { font-size: 15.5px; } }

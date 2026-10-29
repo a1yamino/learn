@@ -1,5 +1,9 @@
 import os,sys;H=os.path.dirname(os.path.abspath(__file__));sys.path.insert(0,H);from page import page
-OUT=os.environ.get('OUT',os.path.join(H,'..','..','docker'))
+OUT=os.environ.get('OUT',os.path.join(H,'..','..','docker','v1'))
+# 旧版已归档到 docker/v1/：输出时把相对路径整体下移一层
+def relocate(h):
+    return (h.replace('"../assets/','"../../assets/').replace('href="layout.css"','href="../layout.css"')
+             .replace('src="motion.js"','src="../motion.js"').replace('href="../index.html"','href="../../index.html"'))
 from html import escape as E
 def prac(steps,chal=None):
     h='<div class="prac">'
@@ -11,4 +15,4 @@ def prac(steps,chal=None):
 import importlib
 for n in sys.argv[1:]:
     m=importlib.import_module(f'l{int(n):02d}')
-    open(os.path.join(OUT,f'l{int(n):02d}.html'),'w').write(page(int(n),m.TITLE,m.DESC,m.secs(prac,E),m.SUM,m.NEXT,m.MIN,getattr(m,'JSV','')))
+    open(os.path.join(OUT,f'l{int(n):02d}.html'),'w').write(relocate(page(int(n),m.TITLE,m.DESC,m.secs(prac,E),m.SUM,m.NEXT,m.MIN,getattr(m,'JSV',''))))

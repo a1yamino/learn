@@ -1,48 +1,5 @@
-<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Docker 第 1 课 · 为什么需要 Docker</title>
-<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}if(t!=='light')t='dark';document.documentElement.dataset.theme=t})()</script>
-<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/play.css">
-<link rel="stylesheet" href="layout.css"></head><body>
-<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 1 课</span><span class="sp"></span><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
-<main class="wrap">
-<section class="lede"><div class="k">Docker · 第 1 课</div><h1>为什么需要 Docker</h1>
-<p>Docker 解决什么问题；镜像和容器是什么、怎样配合。约 15 分钟。</p>
-<ol class="ms"><li><a href="#m1"><span class="n">01</span><span class="t">环境不一致</span></a></li><li><a href="#m2"><span class="n">02</span><span class="t">虚拟机和容器</span></a></li><li><a href="#m3"><span class="n">03</span><span class="t">镜像和容器</span></a></li><li><a href="#m4"><span class="n">04</span><span class="t">前三条命令</span></a></li><li><a href="#m5"><span class="n">05</span><span class="t">自测</span></a></li></ol></section>
-
-<section class="mis" id="m1"><div class="mh"><div><div class="k">01</div><h2>代码一样，环境不一样</h2><div class="goal">代码相同，运行环境不同，结果就不同。</div></div></div>
-<div id="p1"></div>
-</section>
-
-<section class="mis" id="m2"><div class="mh"><div><div class="k">02</div><h2>虚拟机和容器</h2><div class="goal">虚拟机带着整个操作系统，容器只带应用和依赖。</div></div></div>
-<div id="p2"></div>
-</section>
-
-<section class="mis" id="m3"><div class="mh"><div><div class="k">03</div><h2>镜像和容器</h2><div class="goal">镜像是只读的层，容器在上面加一层可写层。</div></div></div>
-<div id="p3"></div>
-<div class="chal"><p class="task">动手：把镜像拖到主机上，运行 2 个容器。</p><p class="hint">也可点选镜像，再选择主机；支持 Tab / Enter。每次执行一次 <code>docker run</code>。</p>
-<div class="arena"><div class="zone"><h6>镜像仓库</h6><div class="chips"><button class="chip img" id="img3">镜像 myapp:1.0</button></div></div>
-<div class="zone" id="host3"><h6>主机 · 容器 <span id="n3">0</span>/2</h6><div class="stk"><div class="row" id="ws3"></div><div class="blk dim" style="height:38px">③ COPY app.py .</div><div class="blk dim" style="height:38px">② RUN pip install</div><div class="blk dim" style="height:38px">① FROM python:3.12-slim</div><div class="tag" style="margin-top:4px">只读层 · 磁盘上 1 份</div></div></div></div>
-<div class="msg" id="msg3a" aria-live="polite"></div>
-<div id="b3" hidden style="margin-top:28px;border-top:1px solid var(--line);padding-top:24px"><p class="task">接着：容器 1 执行了 <code>echo hi &gt; /tmp/log.txt</code>。文件写进了哪一层？</p><p class="hint">点击那一层。</p>
-<div class="stk" id="pick3"><div class="row"><button class="blk hatch" data-a="ok">容器 1 · 可写层</button><button class="blk hatch" data-a="c2">容器 2 · 可写层</button></div><button class="blk dim" data-a="ro">③ COPY app.py .</button><button class="blk dim" data-a="ro">② RUN pip install</button><button class="blk dim" data-a="ro">① FROM python:3.12-slim</button></div>
-<div class="msg" id="msg3b" aria-live="polite"></div></div>
-</section>
-
-<section class="mis" id="m4"><div class="mh"><div><div class="k">04</div><h2>前三条命令</h2><div class="goal">先安装 Docker Desktop（Mac / Windows）或 Docker Engine（Linux），然后在终端依次执行。点击命令查看输出。</div></div></div>
-<div class="term" id="term"><div class="tabs" role="tablist"></div><pre>点击上面的命令运行。</pre></div><div class="ex" id="ex"></div>
-</section>
-
-<section class="mis" id="m5"><div class="mh"><div><div class="k">05</div><h2>自测</h2><div class="goal">三道题，选完显示解释。答错可以再选。</div></div></div>
-<div id="qs"></div></section>
-
-<section class="mis" id="sumsec"><div class="mh"><div><div class="k">小结</div><h2>记住这五点</h2></div></div>
-<ol class="sum" style="margin-top:28px"><li>Docker 把应用和运行环境一起打包成镜像，解决环境不一致。</li><li>容器共享宿主机内核，比虚拟机启动快、占用小。隔离靠 namespace 和 cgroups。</li><li>镜像由只读层组成。容器 = 镜像 + 一层可写层 + 运行中的进程。</li><li>多个容器共享同一个镜像的只读层；写入只进入各自的可写层。</li><li>删除容器会删除它的可写层。需要保存的数据放在 Volume 里（第 6 课）。</li></ol>
-</section>
-<footer class="endnav"><div class="k">下一课 · 02</div><a class="big" href="l02.html">容器生命周期<br>与核心命令 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
-</main>
-<script src="../assets/play.js"></script>
-<script src="motion.js"></script>
-<script src="l01.js"></script>
-</body></html>
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>已移至归档 · Docker</title>
+<meta http-equiv="refresh" content="0; url=v1/l01.html"><link rel="canonical" href="v1/l01.html"><meta name="robots" content="noindex">
+<script>location.replace("v1/l01.html"+location.hash)</script>
+</head><body><p>这一课已移到 <a href="v1/l01.html">旧版归档</a>。</p></body></html>
