@@ -10,7 +10,7 @@
 
 | 课程 | 重点 | 建议基础 | 课数与状态 |
 |---|---|---|---|
-| [Docker](https://a1yamino.github.io/learn/docker/) | 镜像、容器、Compose、Linux 原理与交付 | 能使用终端，了解一个后端服务如何运行 | 25 / 25 |
+| [Docker](https://a1yamino.github.io/learn/docker/) | 容器原理、镜像、网络、Compose、安全与交付排障 | 能使用终端，了解一个后端服务如何运行 | 18 / 18 |
 | [Kubernetes](https://a1yamino.github.io/learn/k8s/) | 声明式 API、工作负载、网络、存储与集群运维 | Docker 基础、端口与网络基本概念 | 27 / 27 |
 | [PostgreSQL](https://a1yamino.github.io/learn/postgres/) | SQL、索引、事务、MVCC、复制与恢复 | 基本 SQL；练习使用 Docker | 26 / 26 |
 | [Redis](https://a1yamino.github.io/learn/redis/) | 数据结构、持久化、复制、缓存一致性 | 后端开发基础，了解数据库与缓存的区别 | 24 / 24 |
@@ -20,7 +20,7 @@
 | [pi 源码精读：编码 agent 的内核](https://a1yamino.github.io/learn/pi/) | 模型适配、agent 循环、工具、上下文与扩展 | TypeScript / Node.js 基础，能阅读异步代码 | 20 / 20 |
 | [Codex CLI 源码精读：生产级编码 agent](https://a1yamino.github.io/learn/codex/) | turn 循环、工具、沙箱与审批、执行策略、压缩、MCP、/plan 与 /goal | 学完 pi 源码精读；能阅读 Rust 代码 | 24 / 24 |
 
-目前共开放 **218 课**，以各课程目录的入口状态为准。
+目前共开放 **211 课**，以各课程目录的入口状态为准。
 
 ## 建议的学习路线
 
@@ -102,46 +102,44 @@ _src/            部分课程的 Python 生成源、输出记录与辅助脚本
 展开课程查看分阶段大纲；每课独立一行，点击标题可直接进入课件。
 
 <details>
-<summary><strong>Docker</strong> · 25 课</summary>
+<summary><strong>Docker</strong> · 18 课</summary>
 
 [进入课程目录](https://a1yamino.github.io/learn/docker/)
 
-**基础 · 第 01–10 课**
+**快速上手 · 第 01 课**
 
-- **01** [为什么需要 Docker](https://a1yamino.github.io/learn/docker/l01.html)
-- **02** [容器生命周期与核心命令](https://a1yamino.github.io/learn/docker/l02.html)
-- **03** [Dockerfile 与构建缓存](https://a1yamino.github.io/learn/docker/l03.html)
-- **04** [实战：把后端 API 打包成镜像](https://a1yamino.github.io/learn/docker/l04.html)
-- **05** [多阶段构建与镜像瘦身](https://a1yamino.github.io/learn/docker/l05.html)
-- **06** [数据卷与持久化](https://a1yamino.github.io/learn/docker/l06.html)
-- **07** [网络与端口映射](https://a1yamino.github.io/learn/docker/l07.html)
-- **08** [Docker Compose 入门](https://a1yamino.github.io/learn/docker/l08.html)
-- **09** [配置、环境变量与密钥](https://a1yamino.github.io/learn/docker/l09.html)
-- **10** [镜像仓库、标签与推送](https://a1yamino.github.io/learn/docker/l10.html)
+- **01** [快速上手：交付一个 API](https://a1yamino.github.io/learn/docker/u01.html)
 
-**原理 · 第 11–16 课**
+**进程、镜像与数据 · 第 02–08 课**
 
-- **11** [namespace](https://a1yamino.github.io/learn/docker/l11.html)
-- **12** [cgroups](https://a1yamino.github.io/learn/docker/l12.html)
-- **13** [OverlayFS 和 OCI 镜像规范](https://a1yamino.github.io/learn/docker/l13.html)
-- **14** [runc、containerd 与 Docker Engine](https://a1yamino.github.io/learn/docker/l14.html)
-- **15** [bridge、veth、iptables 与 DNS](https://a1yamino.github.io/learn/docker/l15.html)
-- **16** [存储驱动与数据卷原理](https://a1yamino.github.io/learn/docker/l16.html)
+- **02** [容器本质与 namespace](https://a1yamino.github.io/learn/docker/u02.html)
+- **03** [PID 1、信号与容器生命周期](https://a1yamino.github.io/learn/docker/u03.html)
+- **04** [cgroups 与资源诊断](https://a1yamino.github.io/learn/docker/u04.html)
+- **05** [一次 docker run 背后的运行链路](https://a1yamino.github.io/learn/docker/u05.html)
+- **06** [OCI 镜像：层、配置与内容身份](https://a1yamino.github.io/learn/docker/u06.html)
+- **07** [OverlayFS、挂载与容器文件视图](https://a1yamino.github.io/learn/docker/u07.html)
+- **08** [数据生命周期、权限与可验证恢复](https://a1yamino.github.io/learn/docker/u08.html)
 
-**进阶与生产 · 第 17–24 课**
+**网络与构建 · 第 09–12 课**
 
-- **17** [BuildKit](https://a1yamino.github.io/learn/docker/l17.html)
-- **18** [Compose 深入](https://a1yamino.github.io/learn/docker/l18.html)
-- **19** [安全一：rootless、capabilities、seccomp](https://a1yamino.github.io/learn/docker/l19.html)
-- **20** [安全二：镜像扫描、SBOM 与签名](https://a1yamino.github.io/learn/docker/l20.html)
-- **21** [性能与资源调优](https://a1yamino.github.io/learn/docker/l21.html)
-- **22** [生产排障](https://a1yamino.github.io/learn/docker/l22.html)
-- **23** [CI/CD](https://a1yamino.github.io/learn/docker/l23.html)
-- **24** [overlay 网络与 Swarm 简介](https://a1yamino.github.io/learn/docker/l24.html)
+- **09** [网络空间：bridge、veth 与服务发现](https://a1yamino.github.io/learn/docker/u09.html)
+- **10** [NAT、防火墙与回程：一个包的完整路径](https://a1yamino.github.io/learn/docker/u10.html)
+- **11** [构建上下文、依赖图与缓存正确性](https://a1yamino.github.io/learn/docker/u11.html)
+- **12** [多平台与可复现构建：固定的究竟是什么](https://a1yamino.github.io/learn/docker/u12.html)
 
-**综合项目 · 第 25 课**
+**编排与安全边界 · 第 13–15 课**
 
-- **25** [从零到生产](https://a1yamino.github.io/learn/docker/l25.html)
+- **13** [Compose：期望状态、就绪与运行中恢复](https://a1yamino.github.io/learn/docker/u13.html)
+- **14** [运行时安全边界：身份、能力与系统调用](https://a1yamino.github.io/learn/docker/u14.html)
+- **15** [供应链证据：扫描、SBOM 与身份验证](https://a1yamino.github.io/learn/docker/u15.html)
+
+**交付、排障与毕业 · 第 16–18 课**
+
+- **16** [可验证发布：让证据跟随最终运行产物](https://a1yamino.github.io/learn/docker/u16.html)
+- **17** [未知故障诊断：从症状到可证伪的根因](https://a1yamino.github.io/learn/docker/u17.html)
+- **18** [综合项目与面试毕业验收](https://a1yamino.github.io/learn/docker/u18.html)
+
+第一版 25 课仍可从课程目录底部进入。
 
 </details>
 

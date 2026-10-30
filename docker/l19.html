@@ -1,53 +1,5 @@
-<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Docker 第 19 课 · 安全（一）：rootless、capabilities、seccomp</title>
-<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
-<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/play.css">
-<link rel="stylesheet" href="layout.css"></head><body>
-<div class="top"><a href="../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 19 课</span><span class="sp"></span><a href="l18.html">← 第 18 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
-<main class="wrap">
-<section class="lede"><div class="k">Docker · 第 19 课</div><h1>安全（一）：rootless、capabilities、seccomp</h1>
-<p>容器里的 root 有多大权力？逐层收紧：非 root 用户、user namespace 与 rootless 模式、删除 capabilities、seccomp 系统调用过滤、只读文件系统和 no-new-privileges。约 45 分钟。</p>
-<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">层层防护</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">rootless：root 映射成普通用户</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：最小 capabilities</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
-
-<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>层层防护</h2><div class="goal">一次容器逃逸要连续突破多少层？</div></div></div>
-<div id="p1"></div>
-</section>
-
-<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>rootless：root 映射成普通用户</h2><div class="goal">user namespace 把 uid 0 换成别的数字。</div></div></div>
-<div id="p2"></div>
-</section>
-
-<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：最小 capabilities</h2><div class="goal">一个 Web 服务，以 root 启动，需要绑定 80 端口，然后切换到 nginx 用户。从 <code>--cap-drop ALL</code> 开始，只加回必需的项。本模拟明确设定 <code>net.ipv4.ip_unprivileged_port_start=1024</code>；Docker 通常将其设为 0，此时绑定 80 端口不需要 NET_BIND_SERVICE。</div></div></div>
-<div class="chal"><div class="cmds" id="caps"></div><div class="log" id="cl"></div><div class="msg" id="cmg"></div></div>
-</section>
-
-<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">查看、收紧、验证。</div></div></div>
-<div id="t4"></div>
-</section>
-
-<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">亲手看到每一层限制生效。</div></div></div>
-<div class="prac"><div class="st"><span class="n">01</span><div><p>容器里的 root 默认拥有哪些 capabilities？</p><pre class="cmd">docker run --rm alpine sh -c &quot;apk add -q libcap; capsh --print | grep Current&quot;</pre><pre class="out">Current: cap_chown,cap_dac_override,cap_fowner,cap_fsetid,cap_kill,cap_setgid,cap_setuid,cap_setpcap,cap_net_bind_service,cap_net_raw,cap_sys_chroot,cap_mknod,cap_audit_write,cap_setfcap=ep</pre></div></div><div class="st"><span class="n">02</span><div><p>删除全部后，root 连改文件属主都不行。</p><pre class="cmd">docker run --rm --cap-drop ALL alpine chown nobody /etc/hosts</pre><pre class="out">chown: /etc/hosts: Operation not permitted</pre></div></div><div class="st"><span class="n">03</span><div><p>NET_RAW 允许原始套接字，但现代 Linux 的 ping 也可使用无特权 ICMP socket。为观察权限拒绝，先在这个容器里禁止 ping socket，再移除 NET_RAW。</p><pre class="cmd">docker run --rm --cap-drop NET_RAW --sysctl &quot;net.ipv4.ping_group_range=1 0&quot; alpine ping -c1 127.0.0.1</pre><pre class="out">ping: permission denied (are you root?)</pre></div></div><div class="st"><span class="n">04</span><div><p>seccomp 拦截 unshare 等系统调用（即使是 root）。</p><pre class="cmd">docker run --rm alpine unshare --user --map-root-user id</pre><pre class="out">unshare: unshare(0x10000000): Operation not permitted</pre></div></div><div class="st"><span class="n">05</span><div><p>只读根文件系统，只给 /tmp 可写。</p><pre class="cmd">docker run --rm --read-only --tmpfs /tmp alpine sh -c &quot;touch /x; touch /tmp/y &amp;&amp; echo tmp ok&quot;</pre><pre class="out">touch: /x: Read-only file system
-tmp ok</pre></div></div><div class="st"><span class="n">06</span><div><p>检查 Docker 是否运行在 rootless 模式。</p><pre class="cmd">docker info -f &quot;{{.SecurityOptions}}&quot;</pre><pre class="out">[name=seccomp,profile=builtin name=cgroupns]
-（rootless 模式下还会出现 name=rootless）</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>加固 nginx</h3><p>让官方 <code>nginx:alpine</code> 在以下限制下仍能正常提供服务：删除所有 capabilities 只加回必需的、根文件系统只读、禁止提权、内存 64M、最多 100 个进程。用 curl 验证返回 200。</p><details><summary>查看参考答案</summary><div><pre class="cmd">docker run -d --name hard -p 8080:80 \
-  --sysctl net.ipv4.ip_unprivileged_port_start=1024 \
-  --cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID --cap-add NET_BIND_SERVICE \
-  --read-only --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp \
-  --security-opt no-new-privileges \
-  --memory 64m --pids-limit 100 nginx:alpine
-curl -s -o /dev/null -w "%{http_code}\n" localhost:8080</pre><pre class="out">200</pre><p>主进程以 root 绑定 80 端口（NET_BIND_SERVICE），创建缓存目录时改属主（CHOWN），再把 worker 切换到 nginx 用户（SETUID/SETGID）。nginx 要写 <code>/var/cache/nginx</code> 和 <code>/var/run/nginx.pid</code>，所以给它们 tmpfs。更进一步：改用 <code>nginxinc/nginx-unprivileged</code>，监听 8080，以非 root 运行，就连这四项都不需要。启动失败时用 <code>docker logs hard</code> 查看缺了什么。</p></div></details></div>
-</section>
-
-<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
-<div id="qs"></div>
-</section>
-
-<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
-<ol class="sum"><li>容器里的 root 默认就是宿主机的 uid 0，只是被 namespace、capabilities、seccomp 等限制住。任何一层被突破，后果就严重。</li><li>第一道防线：镜像里用 <code>USER</code> 以非 root 运行（第 5 课）。</li><li>Capabilities 把 root 权力拆成约 40 项。Docker 默认保留 14 项。最稳妥：<code>--cap-drop ALL</code>，再按需 <code>--cap-add</code>。</li><li>seccomp 过滤系统调用，默认配置阻止约 40 多个危险调用（如 <code>mount</code>、<code>kexec_load</code>）。<b>不要</b>随手 <code>--privileged</code> 或 <code>seccomp=unconfined</code>。</li><li><code>--security-opt no-new-privileges</code> 阻止 setuid 程序提权；<code>--read-only</code> + <code>--tmpfs</code> 让根文件系统不可写。</li><li>userns-remap 和 rootless 模式：容器里的 root 映射成宿主机上的普通用户，降低越界访问时的权限，但不能保证抵御内核提权漏洞。</li></ol></section>
-<footer class="endnav"><div class="k">下一课 · 20</div><a class="big" href="l20.html">安全（二）：镜像扫描、SBOM、签名 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../index.html">学习</a></div></footer>
-</main>
-<script src="../assets/play.js"></script>
-<script src="motion.js"></script>
-<script src="l19.js"></script>
-</body></html>
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>已移至归档 · Docker</title>
+<meta http-equiv="refresh" content="0; url=v1/l19.html"><link rel="canonical" href="v1/l19.html"><meta name="robots" content="noindex">
+<script>location.replace("v1/l19.html"+location.hash)</script>
+</head><body><p>这一课已移到 <a href="v1/l19.html">旧版归档</a>。</p></body></html>

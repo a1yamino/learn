@@ -1,0 +1,106 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Docker 第 5 课 · 多阶段构建与镜像瘦身</title>
+<script>(function(){var t;try{t=localStorage.getItem('learn.theme')}catch(e){}document.documentElement.dataset.theme=t==='light'?'light':'dark'})()</script>
+<link rel="icon" href="data:,"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../assets/play.css">
+<link rel="stylesheet" href="../layout.css"></head><body>
+<div class="top"><a href="../../index.html"><span class="dot"></span>学习</a><a class="crumb" href="index.html">Docker</a><span class="crumb">第 5 课</span><span class="sp"></span><a href="l04.html">← 第 4 课</a><button class="btn" data-theme-btn aria-label="切换主题">浅色</button></div><div class="prog"></div>
+<main class="wrap">
+<section class="lede"><div class="k">Docker · 第 5 课</div><h1>多阶段构建与镜像瘦身</h1>
+<p>为什么镜像会变大；用多阶段构建把编译环境和运行环境分开；怎样选择运行时基础镜像。约 35 分钟。</p>
+<ol class="ms"><li><a href="#s1"><span class="n">01</span><span class="t">镜像为什么会大</span></a></li><li><a href="#s2"><span class="n">02</span><span class="t">多阶段构建</span></a></li><li><a href="#s3"><span class="n">03</span><span class="t">动手：选择运行时基础镜像</span></a></li><li><a href="#s4"><span class="n">04</span><span class="t">相关命令</span></a></li><li><a href="#s5"><span class="n">05</span><span class="t">在你的电脑上练习</span></a></li><li><a href="#s6"><span class="n">06</span><span class="t">自测</span></a></li></ol></section>
+
+<section class="mis" id="s1"><div class="mh"><div><div class="k">01</div><h2>镜像为什么会大</h2><div class="goal">一个常见的错误写法，以及层是怎样累加的。</div></div></div>
+<div id="p1"></div>
+</section>
+
+<section class="mis" id="s2"><div class="mh"><div><div class="k">02</div><h2>多阶段构建</h2><div class="goal">一个 Dockerfile 里写多个 FROM。每个 FROM 开始一个新阶段，最终镜像只包含最后一个阶段。</div></div></div>
+<div id="p2"></div>
+</section>
+
+<section class="mis" id="s3"><div class="mh"><div><div class="k">03</div><h2>动手：选择运行时基础镜像</h2><div class="goal">一个 Go 写的 API（静态二进制 7 MB）。选择是否多阶段，以及运行阶段的基础镜像，看最终镜像的大小和取舍。</div></div></div>
+<div class="chal"><div class="lab">构建方式</div><div class="cmds" id="mode"></div><div class="lab" style="margin-top:14px">运行阶段基础镜像</div><div class="cmds" id="base"></div><div id="bars" style="margin-top:18px"></div><div class="msg" id="bm" aria-live="polite"></div></div>
+</section>
+
+<section class="mis" id="s4"><div class="mh"><div><div class="k">04</div><h2>相关命令</h2><div class="goal">只构建某个阶段、比较大小、查看每层。</div></div></div>
+<div id="t4"></div>
+</section>
+
+<section class="mis" id="s5"><div class="mh"><div><div class="k">05</div><h2>在你的电脑上练习</h2><div class="goal">用 Go 写一个最小的 HTTP 服务，对比单阶段和多阶段。不需要在本机安装 Go。</div></div></div>
+<div class="prac"><div class="st"><span class="n">01</span><div><p>新建项目。</p><pre class="cmd">mkdir slim-demo &amp;&amp; cd slim-demo
+cat &gt; main.go &lt;&lt;&#x27;EOF&#x27;
+package main
+
+import (
+	&quot;fmt&quot;
+	&quot;net/http&quot;
+)
+
+func main() {
+	http.HandleFunc(&quot;/&quot;, func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, &quot;ok&quot;) })
+	http.ListenAndServe(&quot;:8080&quot;, nil)
+}
+EOF
+cat &gt; go.mod &lt;&lt;&#x27;EOF&#x27;
+module slim
+
+go 1.23
+EOF</pre></div></div><div class="st"><span class="n">02</span><div><p>单阶段：直接用 golang 镜像构建并运行。</p><pre class="cmd">cat &gt; Dockerfile.single &lt;&lt;&#x27;EOF&#x27;
+FROM golang:1.23
+WORKDIR /src
+COPY . .
+RUN go build -o /app .
+CMD [&quot;/app&quot;]
+EOF
+docker build -f Dockerfile.single -t slim:single .</pre></div></div><div class="st"><span class="n">03</span><div><p>多阶段：builder 编译，distroless 运行。</p><pre class="cmd">cat &gt; Dockerfile &lt;&lt;&#x27;EOF&#x27;
+FROM golang:1.23 AS builder
+WORKDIR /src
+COPY go.mod ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags=&quot;-s -w&quot; -o /app .
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /app /app
+USER nonroot
+EXPOSE 8080
+ENTRYPOINT [&quot;/app&quot;]
+EOF
+docker build -t slim:multi .</pre></div></div><div class="st"><span class="n">04</span><div><p>比较大小。</p><pre class="cmd">docker images slim</pre><pre class="out">REPOSITORY   TAG      SIZE
+slim         multi    7.9MB
+slim         single   880MB</pre></div></div><div class="st"><span class="n">05</span><div><p>运行并访问。</p><pre class="cmd">docker run -d --name slim -p 8080:8080 slim:multi
+curl -s localhost:8080</pre><pre class="out">ok</pre></div></div><div class="st"><span class="n">06</span><div><p>试着进入容器。distroless 里没有 shell。</p><pre class="cmd">docker exec -it slim sh</pre><pre class="out">OCI runtime exec failed: exec failed: unable to start container process: exec: &quot;sh&quot;: executable file not found in $PATH: unknown</pre></div></div><div class="st"><span class="n">07</span><div><p>清理。</p><pre class="cmd">docker rm -f slim</pre><pre class="out">slim</pre></div></div></div><div class="task2"><div class="k">挑战</div><h3>给 Python 服务瘦身</h3><p>第 4 课的 api-demo 再加一个需要编译的依赖：在 requirements.txt 加一行 <code>psycopg2==2.9.9</code>（需要 gcc 和 libpq-dev 才能安装）。写一个多阶段 Dockerfile：编译工具只留在 builder 阶段，最终镜像小于 200 MB，并且能正常 <code>import psycopg2</code>。</p><details><summary>查看参考答案</summary><div><pre class="cmd">FROM python:3.12-slim AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev \
+ &amp;&amp; rm -rf /var/lib/apt/lists/*
+RUN python -m venv /venv
+ENV PATH=/venv/bin:$PATH
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 \
+ &amp;&amp; rm -rf /var/lib/apt/lists/* &amp;&amp; useradd -u 10001 app
+COPY --from=builder /venv /venv
+ENV PATH=/venv/bin:$PATH PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY . .
+USER app
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]</pre><pre class="cmd">docker build -t api-demo:slim . && docker images api-demo
+docker run --rm api-demo:slim python -c "import psycopg2; print(psycopg2.__version__)"</pre><pre class="out">api-demo   slim   ~170MB
+api-demo   1.0    ~190MB（单阶段装 gcc 后会超过 400MB）
+2.9.9 (dt dec pq3 ext lo64)</pre><p>要点：虚拟环境 <code>/venv</code> 是一个可以整体复制的目录；运行阶段只需要运行时库 <code>libpq5</code>，不需要 <code>gcc</code> 和 <code>-dev</code> 头文件。</p></div></details></div>
+</section>
+
+<section class="mis" id="s6"><div class="mh"><div><div class="k">06</div><h2>自测</h2><div class="goal">选完显示解释。答错可以再选。</div></div></div>
+<div id="qs"></div>
+</section>
+
+<section class="mis" id="sum"><div class="mh"><div><div class="k">小结</div><h2>记住这几点</h2></div></div>
+<ol class="sum"><li>镜像只增不减：后面的层删除文件，前面的层并不会变小。清理要在<b>同一个 RUN</b> 里完成。</li><li>多阶段构建：在 builder 阶段编译，只把产物 <code>COPY --from=builder</code> 到干净的运行阶段。编译器和源码都不会进入最终镜像。</li><li>Go 这类静态二进制可以用 <code>distroless/static</code> 或 <code>scratch</code>；Python 用 slim 镜像，把虚拟环境整体复制过去。</li><li>Alpine 用 musl libc，一些依赖 glibc 的 Python 包需要从源码编译，反而更大更慢。</li><li>更小的镜像：拉取更快、启动更快、漏洞更少。但没有 shell 的镜像调试更难，第 22 课讲怎样调试。</li></ol></section>
+<footer class="endnav"><div class="k">下一课 · 06</div><a class="big" href="l06.html">数据卷与持久化 →</a><div class="meta"><a href="index.html">← 课程目录</a><a href="../../index.html">学习</a></div></footer>
+</main>
+<script src="../../assets/play.js"></script>
+<script src="../motion.js"></script>
+<script src="l05.js"></script>
+</body></html>
